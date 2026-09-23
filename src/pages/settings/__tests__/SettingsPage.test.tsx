@@ -574,6 +574,44 @@ describe("SettingsPage — after a save", () => {
   });
 });
 
+describe("SettingsPage — the settings on the box changed or couldn't be read (final review I1)", () => {
+  it("refuses to save over settings changed elsewhere since the page loaded, and asks to reload", async () => {
+    const user = userEvent.setup();
+    const backend = boxBackend(MOCK_SETTINGS, async (s, write) => write(s));
+    renderPage(apiWith(backend), { client: "nimbus", network: "mainnet" });
+    await waitForLoaded();
+    // Another tab changes the fee recipient after this page loaded.
+    await backend.saveSettings({ ...MOCK_SETTINGS, validators_proposer_default_fee_recipient: "0x2222222222222222222222222222222222222222" });
+    (backend.saveSettings as ReturnType<typeof vi.fn>).mockClear();
+
+    await user.clear(screen.getByLabelText("Graffiti"));
+    await user.type(screen.getByLabelText("Graffiti"), "Mine");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your settings changed or couldn't be read — reload and try again");
+    expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
+    expect(backend.saveSettings).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Settings saved/)).toBeNull();
+    expect(screen.getByLabelText("Graffiti")).toHaveValue("Mine");
+  });
+
+  it("refuses to save when the backend answers the re-read with its defaults (settings.json unreadable)", async () => {
+    const user = userEvent.setup();
+    const backend = boxBackend(MOCK_SETTINGS, async (s, write) => write(s));
+    renderPage(apiWith(backend), { client: "nimbus", network: "mainnet" });
+    await waitForLoaded();
+    // The deno backend falls back to defaultsettings() on a read/parse failure.
+    (backend.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ ...MOCK_DEFAULT_SETTINGS });
+
+    await user.clear(screen.getByLabelText("Graffiti"));
+    await user.type(screen.getByLabelText("Graffiti"), "Mine");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your settings changed or couldn't be read — reload and try again");
+    expect(backend.saveSettings).not.toHaveBeenCalled();
+  });
+});
+
 describe("SettingsPage — opened from the fee-recipient banner", () => {
   it("?focus=fee-recipient focuses the default fee recipient field once loaded", async () => {
     renderPage(createMockApi({ packages: MOCK_PACKAGES }), { client: "nimbus", network: "mainnet" }, { path: "/settings?focus=fee-recipient" });

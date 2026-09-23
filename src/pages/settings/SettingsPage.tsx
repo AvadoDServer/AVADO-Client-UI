@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useApi } from "../../api/ApiProvider";
 import { isApiError } from "../../api/errors";
-import { saveSettingsMerged } from "../../api/settings";
+import { isSettingsChangedError, saveSettingsMerged, SETTINGS_CHANGED_MESSAGE } from "../../api/settings";
 import type { Settings } from "../../api/types";
 import { notifySettingsSaved } from "../../components/shell/events";
 import { Badge, Button, Card, CardDescription, CardHeader, CardTitle, Input, Skeleton } from "../../components/ui";
@@ -29,8 +29,12 @@ const FIELD_LABELS: Record<keyof SettingsFormErrors, string> = {
   checkpointUrl: "Checkpoint sync URL",
 };
 
-/** "unconfirmed": the save timed out and a re-read couldn't show whether it landed. */
-type SaveState = "idle" | "saving" | "saved" | "error" | "unconfirmed";
+/**
+ * "unconfirmed": the save timed out and a re-read couldn't show whether it landed.
+ * "conflict": the settings on the box are not the ones this page loaded (or
+ * couldn't be read); nothing was written.
+ */
+type SaveState = "idle" | "saving" | "saved" | "error" | "unconfirmed" | "conflict";
 
 /** Link target that opens this page with the fee recipient focused (from the shell's banner). */
 export const FOCUS_PARAM = "focus";
@@ -183,10 +187,16 @@ export default function SettingsPage() {
     setSaveError(null);
     try {
       // The saved object is what is on disk now: the fresh GET plus the patch.
-      const saved = await saveSettingsMerged(api.backend, patch);
+      // `settings` is what this page loaded: if the box now holds something
+      // else (or fell back to its defaults), nothing is written.
+      const saved = await saveSettingsMerged(api.backend, patch, settings);
       applySaved(saved);
       notifySettingsSaved();
     } catch (e) {
+      if (isSettingsChangedError(e)) {
+        setSaveState("conflict");
+        return;
+      }
       if (isApiError(e) && e.kind === "timeout") {
         // The backend writes the file before it restarts the client, so a
         // timeout doesn't mean nothing was saved. Read the file to find out.
@@ -444,6 +454,14 @@ export default function SettingsPage() {
           The box took too long to answer, so it isn&apos;t clear yet whether your changes were saved. {clientLabel} may be
           restarting. Reload this page in a minute to check.
         </p>
+      )}
+      {saveState === "conflict" && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-danger-text">
+          <p>{SETTINGS_CHANGED_MESSAGE}.</p>
+          <Button variant="secondary" onClick={() => window.location.reload()}>
+            Reload
+          </Button>
+        </div>
       )}
       {saveState === "error" && (
         <p role="alert" className="text-sm text-danger-text">
