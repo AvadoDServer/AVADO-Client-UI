@@ -28,17 +28,23 @@ describe("ApiProvider", () => {
     expect((await api.keymanager.listKeystores()).length).toBeGreaterThan(0);
   });
 
-  it("without mocks, calls reject instead of crashing the page (real adapters come in Task 2)", async () => {
+  it("without mocks, wires the real adapters to the config's apiUrl", async () => {
     vi.stubEnv("VITE_MOCK", "");
-    const api = createApi(normalizeClientConfig({}));
-    await expect(api.backend.getSettings()).rejects.toThrow(/backend.getSettings: no API adapters for nimbus yet/);
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ network: "holesky" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      const api = createApi(normalizeClientConfig({ client: "teku", network: "holesky" }));
+      expect(await api.backend.getSettings()).toEqual({ network: "holesky" });
+      expect(fetchSpy).toHaveBeenCalledWith("http://teku-holesky.my.ava.do:9999/settings", expect.anything());
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
-  it("the placeholder adapters are not thenable, so awaiting them doesn't hang", async () => {
+  it("the real adapters are not thenable, so awaiting them doesn't hang", async () => {
     vi.stubEnv("VITE_MOCK", "");
     const api = createApi(normalizeClientConfig({}));
     await expect(Promise.resolve(api.keymanager)).resolves.toBe(api.keymanager);
     expect(await api.beacon).toBe(api.beacon);
-    expect(JSON.stringify(api.dappmanager)).toBe("{}");
   });
 });

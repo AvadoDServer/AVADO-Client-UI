@@ -1,3 +1,4 @@
+import { isClientUnavailable } from "../errors";
 import { createMockApi, MOCK_BEACON_VALIDATORS, MOCK_DEFAULT_FEE_RECIPIENT, MOCK_OVERRIDE_FEE_RECIPIENT, MOCK_PUBKEYS } from "../mock";
 
 const keystoreJson = (pubkey: string) => JSON.stringify({ crypto: {}, pubkey: pubkey.slice(2), path: "m/12381/3600/0/0/0", version: 4 });
@@ -95,7 +96,9 @@ describe("mock API", () => {
     const api = createMockApi();
     await api.backend.service("stop");
     expect(await api.beacon.health()).toBe("not_ready");
-    await expect(api.keymanager.listKeystores()).rejects.toThrow();
+    await expect(api.keymanager.listKeystores()).rejects.toMatchObject({ kind: "upstream", service: "keymanager" });
+    await expect(api.beacon.syncing()).rejects.toMatchObject({ kind: "upstream", service: "beacon" });
+    expect(isClientUnavailable(await api.keymanager.listKeystores().catch((e) => e))).toBe(true);
     expect((await api.backend.serviceStatus()).find((p) => p.name === "nimbus")!.statename).toBe("STOPPED");
     await api.backend.service("start");
     expect(await api.beacon.health()).toBe("ready");
