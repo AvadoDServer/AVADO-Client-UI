@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { useClientConfig } from "../../config/ClientConfigProvider";
 import { useMode } from "../../settings/ModeProvider";
 import { Skeleton, StatusPill } from "../ui";
@@ -26,19 +27,25 @@ export function StatusStrip({ status, loading }: { status: NodeStatus | undefine
   const { isAdvanced } = useMode();
   const health = describeHealth(status);
   const ready = status && status.health !== "not_ready";
+  const name = CLIENT_TITLE[client];
+  const advancedLink = (label: string) => (
+    <Link to="/advanced" className="font-medium underline-offset-2 hover:underline">
+      {label}
+    </Link>
+  );
 
   return (
-    <section aria-label="Node status" className="border-b border-border bg-chrome px-4 py-3 sm:px-6 lg:px-8">
-      <dl className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-sm">
+    <section
+      aria-label="Node status"
+      className="flex flex-wrap items-center gap-x-6 gap-y-1.5 border-b border-border bg-chrome px-4 py-3 text-sm sm:px-6 lg:px-8"
+    >
+      <dl className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
         <div className="flex items-center">
           <dt className="sr-only">Status</dt>
           <dd>
             {loading && !status ? <Skeleton className="h-5 w-24" /> : <StatusPill status={health} />}
           </dd>
         </div>
-        {status?.health === "not_ready" && (
-          <p className="text-fg-muted">{CLIENT_TITLE[client]} is starting or stopped. This can take a few minutes.</p>
-        )}
         {ready && status.peers !== undefined && <Item label="Peers">{fmt(status.peers)}</Item>}
         {ready && status.version && (
           <Item label="Version">
@@ -54,6 +61,21 @@ export function StatusStrip({ status, loading }: { status: NodeStatus | undefine
           <Item label="Head slot">{fmt(Number(status.syncing.head_slot))}</Item>
         )}
       </dl>
+      {status?.health === "not_ready" && (
+        <p className="min-w-0 text-fg-muted" data-testid="not-ready-hint">
+          {status.service === "stopped" ? (
+            <>
+              {name} is stopped. {advancedLink("Start it in Advanced")}
+            </>
+          ) : status.service === "starting" ? (
+            <>{name} is starting. This can take a few minutes.</>
+          ) : (
+            <>
+              {name} is starting, or it is stopped. Starting takes a few minutes; if this stays, {advancedLink("check Advanced")}.
+            </>
+          )}
+        </p>
+      )}
     </section>
   );
 }

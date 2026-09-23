@@ -44,6 +44,8 @@ describe.each([
     ["warning-text", "chrome", 4.5],
     ["danger-text", "chrome", 4.5],
     ["fg-muted", "chrome", 4.5],
+    // The "Start it in Advanced" link in the not-ready hint.
+    ["accent", "chrome", 4.5],
     // Sidebar (surface): inactive items and the active pill.
     ["fg-muted", "surface", 4.5],
     ["accent-fg", "accent", 4.5],

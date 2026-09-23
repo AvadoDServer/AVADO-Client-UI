@@ -1,8 +1,9 @@
 import type { Settings } from "../../api/types";
 import { NETWORKS, type ClientName, type Network } from "../../config/clientConfig";
 import { CLIENT_TITLE, NETWORK_TITLE, TEST_NETWORKS } from "./identity";
-import { executionCandidates } from "./executionCandidates";
-import { ADMIN_STORE_URL, adminPackageUrl } from "./links";
+import { executionCandidates, executionClientTitle, orList } from "./executionCandidates";
+import { ADMIN_STORE_URL, adminInstallerUrl, adminPackageUrl } from "./links";
+import type { PackageState } from "./packageStates";
 
 /**
  * The problem banners (spec §4). Pure rules over what the shell has loaded;
@@ -14,6 +15,7 @@ export type ProblemId =
   | "unknown-network"
   | "no-execution-client"
   | "execution-client-not-installed"
+  | "execution-client-stopped"
   | "execution-client-offline"
   | "fee-recipient"
   | "testnet";
@@ -43,11 +45,16 @@ export interface ProblemInputs {
   /** `useClientConfigStatus().problems` */
   configProblems: string[];
   settings?: Settings | null;
-  /** Installed package names from DAPPMANAGER. */
-  packages?: string[] | null;
+  /** Installed packages (running or stopped) from DAPPMANAGER. */
+  packages?: PackageState[] | null;
   /** `syncing.el_offline` from the beacon node. */
   elOffline?: boolean;
 }
+
+/** Test networks that no longer run. */
+const SHUT_DOWN_NETWORKS: readonly Network[] = ["prater"];
+
+const RESTART_HINT = "Restart the package from its page in the AVADO Admin. If this stays, contact AVADO support.";
 
 const isKnownNetwork = (n: string): n is Network => (NETWORKS as readonly string[]).includes(n);
 
@@ -74,46 +81,68 @@ export function findProblems(i: ProblemInputs): Problem[] {
       tone: "danger",
       title: "Wrong configuration",
       body: isKnownNetwork(settingsNetwork)
-        ? `The ${name} settings are for ${NETWORK_TITLE[settingsNetwork]}, but this package runs on ${NETWORK_TITLE[i.network]}.`
-        : `The ${name} settings name a network this page doesn't know: "${settingsNetwork}".`,
+        ? `The ${name} settings are for ${NETWORK_TITLE[settingsNetwork]}, but this package runs on ${NETWORK_TITLE[i.network]}. ${RESTART_HINT}`
+        : `The ${name} settings name a network this page doesn't know: "${settingsNetwork}". ${RESTART_HINT}`,
       action: { label: "Open the package", href: packagePage },
     });
   }
 
-  const packages = i.packages;
   const engine = typeof i.settings?.execution_engine === "string" ? i.settings.execution_engine : "";
   let executionProblem = false;
-  if (packages) {
+  if (i.packages) {
+    const states = new Map(i.packages.map((p) => [p.name, p.running]));
+    const installed = (n: string) => states.has(n);
     const candidates = executionCandidates(i.network);
-    const installed = candidates.filter((c) => packages.includes(c));
-    if (candidates.length > 0 && installed.length === 0) {
+    const installedCandidates = candidates.filter((c) => installed(c.packageName));
+    if (candidates.length > 0 && installedCandidates.length === 0) {
       executionProblem = true;
+      const only = candidates.length === 1 ? candidates[0] : undefined;
       out.push({
         id: "no-execution-client",
         tone: "danger",
         title: "No execution client installed",
-        body: `${name} needs an execution client to follow the chain and propose blocks. Install one from the DappStore.`,
-        action: { label: "Install an execution client", href: ADMIN_STORE_URL },
+        body: `${name} needs an execution client to follow the chain and propose blocks. Install ${orList(candidates.map((c) => c.title))} from the DappStore.`,
+        action: only
+          ? { label: `Install ${only.title}`, href: adminInstallerUrl(only.packageName) }
+          : { label: "Install an execution client", href: ADMIN_STORE_URL },
       });
-    } else if (i.settings && engine && !packages.includes(engine)) {
+    } else if (i.settings && engine && !installed(engine)) {
       executionProblem = true;
+      const choices = installedCandidates.map((c) => c.title);
       out.push({
         id: "execution-client-not-installed",
         tone: "warning",
         title: "The chosen execution client is not installed",
-        body: `${name} is set to use ${engine}, which is not installed. Choose an installed one in settings.`,
+        body: `${name} is set to use ${executionClientTitle(engine)}, which is not installed. ${
+          choices.length > 0 ? `Choose ${orList(choices)} in settings.` : "Choose an installed one in settings."
+        }`,
         action: { label: "Choose in settings", to: "/settings" },
       });
+    } else {
+      // The engine this client uses: the chosen one, else any installed candidate.
+      const relevant = engine && installed(engine) ? [engine] : installedCandidates.map((c) => c.packageName);
+      if (relevant.length > 0 && relevant.every((n) => states.get(n) === false)) {
+        executionProblem = true;
+        const title = executionClientTitle(relevant[0]);
+        out.push({
+          id: "execution-client-stopped",
+          tone: "danger",
+          title: `${title} is stopped`,
+          body: `${title} is installed but not running, so ${name} can't follow the chain. Start it from its page in the AVADO Admin.`,
+          action: { label: `Open ${title}`, href: adminPackageUrl(relevant[0]) },
+        });
+      }
     }
   }
 
   if (i.elOffline && !executionProblem) {
+    const title = engine ? executionClientTitle(engine) : "";
     out.push({
       id: "execution-client-offline",
       tone: "warning",
       title: "Execution client not reachable",
-      body: `${name} can't reach its execution client. It may still be starting; if this stays, check the execution client.`,
-      action: engine ? { label: "Open execution client", href: adminPackageUrl(engine) } : { label: "Check settings", to: "/settings" },
+      body: `${name} can't reach ${title || "its execution client"}. It may still be starting; if this stays, check it in the AVADO Admin.`,
+      action: engine ? { label: `Open ${title}`, href: adminPackageUrl(engine) } : { label: "Check settings", to: "/settings" },
     });
   }
 
@@ -131,11 +160,14 @@ export function findProblems(i: ProblemInputs): Problem[] {
   }
 
   if (TEST_NETWORKS.includes(i.network)) {
+    const shutDown = SHUT_DOWN_NETWORKS.includes(i.network);
     out.push({
       id: "testnet",
-      tone: "accent",
+      tone: shutDown ? "warning" : "accent",
       title: `${NETWORK_TITLE[i.network]} test network`,
-      body: "Validators on a test network don't earn real ETH.",
+      body: shutDown
+        ? `The ${NETWORK_TITLE[i.network]} (Goerli) test network has been shut down, so validators here no longer do anything.`
+        : "Validators on a test network don't earn real ETH.",
       action: { label: "Find the mainnet version", href: ADMIN_STORE_URL },
     });
   }

@@ -1,13 +1,15 @@
 import { findProblems, type ProblemInputs } from "../problems";
 
 const FEE = "0x" + "ab".repeat(20);
+const up = (...names: string[]) => names.map((name) => ({ name, running: true }));
+const down = (...names: string[]) => names.map((name) => ({ name, running: false }));
 const base: ProblemInputs = {
   client: "nimbus",
   network: "mainnet",
   packageName: "nimbus.avado.dnp.dappnode.eth",
   configProblems: [],
   settings: { network: "mainnet", execution_engine: "ethchain-geth.public.dappnode.eth", validators_proposer_default_fee_recipient: FEE },
-  packages: ["dappmanager.dnp.dappnode.eth", "ethchain-geth.public.dappnode.eth", "nimbus.avado.dnp.dappnode.eth"],
+  packages: up("dappmanager.dnp.dappnode.eth", "ethchain-geth.public.dappnode.eth", "nimbus.avado.dnp.dappnode.eth"),
   elOffline: false,
 };
 const ids = (i: Partial<ProblemInputs>) => findProblems({ ...base, ...i }).map((p) => p.id);
@@ -36,9 +38,10 @@ describe("findProblems", () => {
 
   describe("execution client", () => {
     it("flags a box with none of the network's candidates installed, linking to the DappStore", () => {
-      const p = one({ packages: ["dappmanager.dnp.dappnode.eth"] }, "no-execution-client");
+      const p = one({ packages: up("dappmanager.dnp.dappnode.eth") }, "no-execution-client");
       expect(p.tone).toBe("danger");
       expect(p.title).toBe("No execution client installed");
+      expect(p.body).toContain("Install Geth or Nethermind from the DappStore");
       expect(p.action).toEqual({ label: "Install an execution client", href: "http://my.ava.do/#/installer" });
     });
 
@@ -46,21 +49,31 @@ describe("findProblems", () => {
       expect(
         ids({
           settings: { ...base.settings, execution_engine: "avado-dnp-nethermind.public.dappnode.eth" },
-          packages: ["avado-dnp-nethermind.public.dappnode.eth"],
+          packages: up("avado-dnp-nethermind.public.dappnode.eth"),
         }),
       ).toEqual([]);
     });
 
     it("matches candidates per network: mainnet Geth does not count on Holesky", () => {
       const holesky = { network: "holesky" as const, settings: { ...base.settings, network: "holesky", execution_engine: "holesky-geth.avado.dnp.dappnode.eth" } };
-      expect(ids({ ...holesky, packages: ["ethchain-geth.public.dappnode.eth"] })).toContain("no-execution-client");
-      expect(ids({ ...holesky, packages: ["holesky-geth.avado.dnp.dappnode.eth"] })).not.toContain("no-execution-client");
+      expect(ids({ ...holesky, packages: up("ethchain-geth.public.dappnode.eth") })).toContain("no-execution-client");
+      expect(ids({ ...holesky, packages: up("holesky-geth.avado.dnp.dappnode.eth") })).not.toContain("no-execution-client");
     });
 
     it("gnosis needs nethermind-gnosis", () => {
       const gnosis = { network: "gnosis" as const, settings: { ...base.settings, network: "gnosis", execution_engine: "nethermind-gnosis.avado.dnp.dappnode.eth" } };
       expect(ids({ ...gnosis, packages: [] })).toContain("no-execution-client");
-      expect(ids({ ...gnosis, packages: ["nethermind-gnosis.avado.dnp.dappnode.eth"] })).toEqual([]);
+      expect(ids({ ...gnosis, packages: up("nethermind-gnosis.avado.dnp.dappnode.eth") })).toEqual([]);
+    });
+
+    it("links a single-candidate network straight to that client's store page", () => {
+      const gnosis = { network: "gnosis" as const, settings: { ...base.settings, network: "gnosis", execution_engine: undefined } };
+      const p = one({ ...gnosis, packages: [] }, "no-execution-client");
+      expect(p.body).toContain("Install Nethermind");
+      expect(p.action).toEqual({
+        label: "Install Nethermind",
+        href: "http://my.ava.do/#/installer/nethermind-gnosis.avado.dnp.dappnode.eth",
+      });
     });
 
     it("says nothing about installs on a network without a known candidate list", () => {
@@ -74,7 +87,8 @@ describe("findProblems", () => {
         "execution-client-not-installed",
       );
       expect(p.tone).toBe("warning");
-      expect(p.body).toContain("avado-dnp-nethermind.public.dappnode.eth");
+      expect(p.body).toBe("Nimbus is set to use Nethermind, which is not installed. Choose Geth in settings.");
+      expect(p.body).not.toContain("dappnode.eth");
       expect(p.action).toEqual({ label: "Choose in settings", to: "/settings" });
       expect(ids({ settings: { ...base.settings, execution_engine: "avado-dnp-nethermind.public.dappnode.eth" } })).not.toContain(
         "no-execution-client",
@@ -83,7 +97,38 @@ describe("findProblems", () => {
 
     it("flags an unreachable execution client (el_offline) with a link to its package", () => {
       const p = one({ elOffline: true }, "execution-client-offline");
-      expect(p.action).toEqual({ label: "Open execution client", href: "http://my.ava.do/#/packages/ethchain-geth.public.dappnode.eth" });
+      expect(p.title).toBe("Execution client not reachable");
+      expect(p.body).toContain("can't reach Geth");
+      expect(p.action).toEqual({ label: "Open Geth", href: "http://my.ava.do/#/packages/ethchain-geth.public.dappnode.eth" });
+    });
+
+    describe("stopped execution client", () => {
+      it("an installed but stopped execution client is stopped, not missing", () => {
+        const packages = [...up("nimbus.avado.dnp.dappnode.eth"), ...down("ethchain-geth.public.dappnode.eth")];
+        expect(ids({ packages })).toEqual(["execution-client-stopped"]);
+        const p = one({ packages }, "execution-client-stopped");
+        expect(p.tone).toBe("danger");
+        expect(p.title).toBe("Geth is stopped");
+        expect(p.action).toEqual({ label: "Open Geth", href: "http://my.ava.do/#/packages/ethchain-geth.public.dappnode.eth" });
+      });
+
+      it("uses the chosen engine: chosen Geth stopped while Nethermind runs is still a problem", () => {
+        const packages = [...down("ethchain-geth.public.dappnode.eth"), ...up("avado-dnp-nethermind.public.dappnode.eth")];
+        expect(ids({ packages })).toEqual(["execution-client-stopped"]);
+      });
+
+      it("without a chosen engine, one running candidate is enough", () => {
+        const settings = { ...base.settings, execution_engine: undefined };
+        const packages = [...down("ethchain-geth.public.dappnode.eth"), ...up("avado-dnp-nethermind.public.dappnode.eth")];
+        expect(ids({ settings, packages })).toEqual([]);
+        expect(ids({ settings, packages: down("ethchain-geth.public.dappnode.eth", "avado-dnp-nethermind.public.dappnode.eth") })).toEqual([
+          "execution-client-stopped",
+        ]);
+      });
+
+      it("a stopped client explains el_offline, so only the stopped banner shows", () => {
+        expect(ids({ packages: down("ethchain-geth.public.dappnode.eth"), elOffline: true })).toEqual(["execution-client-stopped"]);
+      });
     });
 
     it("shows only the install banner when nothing is installed, even if el_offline", () => {
@@ -92,7 +137,13 @@ describe("findProblems", () => {
   });
 
   describe("network", () => {
-    it.each([["holesky"], ["prater"], ["hoodi"]] as const)("shows a testnet notice on %s", (network) => {
+    it("says Prater is shut down", () => {
+      const p = one({ network: "prater", settings: { ...base.settings, network: "prater", execution_engine: undefined }, packages: null }, "testnet");
+      expect(p.tone).toBe("warning");
+      expect(p.body).toContain("has been shut down");
+    });
+
+    it.each([["holesky"], ["hoodi"]] as const)("shows a testnet notice on %s", (network) => {
       const p = one({ network, settings: { ...base.settings, network, execution_engine: undefined }, packages: null }, "testnet");
       expect(p.tone).toBe("accent");
       expect(p.action.href).toBe("http://my.ava.do/#/installer");
@@ -113,6 +164,8 @@ describe("findProblems", () => {
       const p = one({ settings: { ...base.settings, network: "holesky" } }, "unknown-network");
       expect(p.body).toContain("Holesky");
       expect(p.body).toContain("Mainnet");
+      expect(p.body).toContain("Restart the package");
+      expect(p.body).toContain("contact AVADO support");
     });
 
     it("ignores a settings file without a network field", () => {

@@ -1,6 +1,9 @@
 import { createMockApi } from "../../../api/mock";
 import type { BeaconApi, SyncingStatus } from "../../../api/types";
-import { describeHealth, fetchNodeStatus, syncPercent } from "../nodeStatus";
+import type { ProcessInfo } from "../../../api/types";
+import { clientServiceState, describeHealth, fetchNodeStatus, syncPercent } from "../nodeStatus";
+
+const proc = (name: string, statename: string): ProcessInfo => ({ name, statename });
 
 const syncing = (head: number, distance: number, is_syncing = distance > 0): SyncingStatus => ({
   head_slot: String(head),
@@ -26,6 +29,10 @@ describe("describeHealth", () => {
   it("says Not ready when the node is not ready", () => {
     expect(describeHealth({ health: "not_ready" })).toEqual({ tone: "danger", label: "Not ready" });
   });
+  it("says Stopped or Starting when the process state is known", () => {
+    expect(describeHealth({ health: "not_ready", service: "stopped" })).toEqual({ tone: "danger", label: "Stopped" });
+    expect(describeHealth({ health: "not_ready", service: "starting" })).toEqual({ tone: "warning", label: "Starting" });
+  });
   it("says Syncing with the percentage", () => {
     expect(describeHealth({ health: "syncing", syncing: syncing(9712, 288) })).toEqual({ tone: "warning", label: "Syncing 97.12%" });
   });
@@ -40,7 +47,43 @@ describe("describeHealth", () => {
   });
 });
 
+describe("clientServiceState", () => {
+  it("reads the client's own process", () => {
+    expect(clientServiceState([proc("nimbus", "STOPPED"), proc("server", "RUNNING")], "nimbus")).toBe("stopped");
+    expect(clientServiceState([proc("nimbus", "RUNNING"), proc("server", "RUNNING")], "nimbus")).toBe("starting");
+    expect(clientServiceState([proc("nimbus", "STARTING")], "nimbus")).toBe("starting");
+    expect(clientServiceState([proc("nimbus", "BACKOFF")], "nimbus")).toBe("starting");
+    expect(clientServiceState([proc("nimbus", "EXITED")], "nimbus")).toBe("stopped");
+    expect(clientServiceState([proc("nimbus", "FATAL")], "nimbus")).toBe("stopped");
+  });
+  it("falls back to the one process that isn't the package's own server", () => {
+    expect(clientServiceState([proc("teku-beacon", "STOPPED"), proc("monitor", "RUNNING")], "teku")).toBe("stopped");
+  });
+  it("is unknown when it can't tell", () => {
+    expect(clientServiceState([], "nimbus")).toBeUndefined();
+    expect(clientServiceState([proc("a", "STOPPED"), proc("b", "RUNNING")], "nimbus")).toBeUndefined();
+    expect(clientServiceState([proc("nimbus", "UNKNOWN")], "nimbus")).toBeUndefined();
+  });
+});
+
 describe("fetchNodeStatus", () => {
+  it("when not ready, asks supervisord whether the client is stopped or starting", async () => {
+    const api = createMockApi({ latencyMs: 0 });
+    await api.backend.service("stop");
+    expect(await fetchNodeStatus(api.beacon, false, { client: "nimbus", serviceStatus: api.backend.serviceStatus })).toEqual({
+      health: "not_ready",
+      service: "stopped",
+    });
+  });
+
+  it("when not ready and supervisord can't be read, says nothing about the process", async () => {
+    const api = createMockApi({ latencyMs: 0, health: "not_ready" });
+    vi.spyOn(api.backend, "serviceStatus").mockRejectedValue(new Error("down"));
+    expect(await fetchNodeStatus(api.beacon, false, { client: "nimbus", serviceStatus: api.backend.serviceStatus })).toEqual({
+      health: "not_ready",
+    });
+  });
+
   it("reads health, sync, peers and version (simple)", async () => {
     const api = createMockApi({ latencyMs: 0 });
     const peers = vi.spyOn(api.beacon, "peers");

@@ -1,4 +1,5 @@
-import type { BeaconApi, NodeHealth, SyncingStatus } from "../../api/types";
+import type { BeaconApi, NodeHealth, ProcessInfo, SyncingStatus } from "../../api/types";
+import type { ClientName } from "../../config/clientConfig";
 import type { StatusTone } from "../ui";
 
 /** What the status strip shows. Numbers are parsed; missing means "unknown". */
@@ -14,6 +15,35 @@ export interface NodeStatus {
   outbound?: number;
   /** The beacon node reports its execution client offline. */
   elOffline?: boolean;
+  /** When not ready: what supervisord says about the client process, if known. */
+  service?: ServiceState;
+}
+
+export type ServiceState = "stopped" | "starting";
+
+/** The package's own helper processes, never the client itself. */
+const HELPER_PROCESSES = new Set(["server", "wizard", "monitor", "nginx"]);
+const STOPPED = new Set(["STOPPED", "EXITED", "FATAL"]);
+const STARTING = new Set(["RUNNING", "STARTING", "BACKOFF"]);
+
+/**
+ * The client process's state from supervisord: the process named after the
+ * client, else the only process that isn't a helper. "starting" covers a
+ * running process whose beacon API isn't up yet. Undefined when unclear.
+ */
+export function clientServiceState(processes: ProcessInfo[], client: ClientName): ServiceState | undefined {
+  const own = processes.find((p) => p.name === client);
+  const others = processes.filter((p) => !HELPER_PROCESSES.has(p.name));
+  const proc = own ?? (others.length === 1 ? others[0] : undefined);
+  if (!proc) return undefined;
+  if (STOPPED.has(proc.statename)) return "stopped";
+  if (STARTING.has(proc.statename)) return "starting";
+  return undefined;
+}
+
+export interface ServiceProbe {
+  client: ClientName;
+  serviceStatus: () => Promise<ProcessInfo[]>;
 }
 
 const settled = <T,>(r: PromiseSettledResult<T>): T | undefined => (r.status === "fulfilled" ? r.value : undefined);
@@ -23,14 +53,25 @@ const settled = <T,>(r: PromiseSettledResult<T>): T | undefined => (r.status ===
  * else, so the rest is skipped. The other calls run together and each may
  * fail on its own.
  */
-export async function fetchNodeStatus(beacon: BeaconApi, advanced: boolean): Promise<NodeStatus> {
+export async function fetchNodeStatus(beacon: BeaconApi, advanced: boolean, probe?: ServiceProbe): Promise<NodeStatus> {
   let health: NodeHealth;
   try {
     health = await beacon.health();
   } catch {
-    return { health: "not_ready" };
+    health = "not_ready";
   }
-  if (health === "not_ready") return { health };
+  if (health === "not_ready") {
+    const status: NodeStatus = { health };
+    if (probe) {
+      try {
+        const service = clientServiceState(await probe.serviceStatus(), probe.client);
+        if (service) status.service = service;
+      } catch {
+        /* backend unreachable: say nothing about the process */
+      }
+    }
+    return status;
+  }
 
   const [syncing, peerCount, version, peers] = await Promise.allSettled([
     beacon.syncing(),
@@ -67,10 +108,14 @@ export function syncPercent(s: SyncingStatus): string {
   return pct.toFixed(2);
 }
 
-/** Health in plain words (spec §4): Synced, Syncing n%, Not ready. */
+/** Health in plain words (spec §4): Synced, Syncing n%, Not ready (Stopped or Starting when known). */
 export function describeHealth(status: NodeStatus | undefined): { tone: StatusTone; label: string } {
   if (!status) return { tone: "neutral", label: "Checking" };
-  if (status.health === "not_ready") return { tone: "danger", label: "Not ready" };
+  if (status.health === "not_ready") {
+    if (status.service === "stopped") return { tone: "danger", label: "Stopped" };
+    if (status.service === "starting") return { tone: "warning", label: "Starting" };
+    return { tone: "danger", label: "Not ready" };
+  }
   const s = status.syncing;
   if (status.health === "syncing" || s?.is_syncing) {
     return { tone: "warning", label: s ? `Syncing ${syncPercent(s)}%` : "Syncing" };

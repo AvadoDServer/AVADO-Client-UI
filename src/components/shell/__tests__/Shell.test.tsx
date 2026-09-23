@@ -161,11 +161,56 @@ describe("Status strip", () => {
     expect(await within(strip()).findByText("Syncing 97.12%")).toBeInTheDocument();
   });
 
-  it("says Not ready and nothing else when the node is not ready", async () => {
+  it("says Starting when the process runs but the node is not ready yet", async () => {
     renderApp({ mock: { health: "not_ready" } });
-    expect(await within(strip()).findByText("Not ready")).toBeInTheDocument();
-    expect(strip()).toHaveTextContent("starting or stopped");
+    expect(await within(strip()).findByText("Starting")).toBeInTheDocument();
+    expect(strip()).toHaveTextContent("Nimbus is starting. This can take a few minutes.");
     expect(strip()).not.toHaveTextContent("Peers");
+  });
+
+  it("says Stopped, with a way to start it, when supervisord reports the client stopped", async () => {
+    const api = createMockApi({ latencyMs: 0 });
+    await api.backend.service("stop");
+    renderApp({ api });
+    expect(await within(strip()).findByText("Stopped")).toBeInTheDocument();
+    expect(within(strip()).getByRole("link", { name: "Start it in Advanced" })).toHaveAttribute("href", "/advanced");
+  });
+
+  it("says Not ready, and both possibilities, when the process state is unknown", async () => {
+    const api = createMockApi({ latencyMs: 0, health: "not_ready" });
+    vi.spyOn(api.backend, "serviceStatus").mockRejectedValue(new Error("down"));
+    renderApp({ api });
+    expect(await within(strip()).findByText("Not ready")).toBeInTheDocument();
+    expect(strip()).toHaveTextContent("Nimbus is starting, or it is stopped.");
+    expect(within(strip()).getByRole("link", { name: "check Advanced" })).toHaveAttribute("href", "/advanced");
+  });
+
+  it("the hint sits outside the description list (valid <dl>)", async () => {
+    renderApp({ mock: { health: "not_ready" } });
+    await within(strip()).findByText("Starting");
+    const dl = strip().querySelector("dl")!;
+    for (const child of Array.from(dl.children)) expect(child.tagName).toBe("DIV");
+    expect(dl).not.toContainElement(screen.getByTestId("not-ready-hint"));
+  });
+
+  it("survives a restart during the session: ready, then down, then ready again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const api = createMockApi({ latencyMs: 0 });
+      renderApp({ api });
+      await within(strip()).findByText("Synced");
+      const health = vi.spyOn(api.beacon, "health").mockRejectedValue(new Error("connection refused"));
+      await act(() => vi.advanceTimersByTimeAsync(12_000));
+      expect(await within(strip()).findByText("Starting")).toBeInTheDocument();
+      expect(strip()).not.toHaveTextContent("Peers");
+      health.mockRestore();
+      await act(() => vi.advanceTimersByTimeAsync(12_000));
+      expect(await within(strip()).findByText("Synced")).toBeInTheDocument();
+      expect(strip()).toHaveTextContent("Peers78");
+      expect(strip()).toHaveTextContent("VersionNimbus v26.8.0");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("polls every 12 s", async () => {
@@ -210,8 +255,39 @@ describe("Problem banners", () => {
         syncing: { head_slot: "100", sync_distance: "0", is_syncing: false, el_offline: true },
       },
     });
-    const link = await screen.findByRole("link", { name: "Open execution client" });
+    const link = await screen.findByRole("link", { name: "Open Geth" });
     expect(link).toHaveAttribute("href", "http://my.ava.do/#/packages/ethchain-geth.public.dappnode.eth");
+  });
+
+  it("an installed but stopped execution client (listPackageStates) is stopped, not missing", async () => {
+    const api = createMockApi({ latencyMs: 0, settings: MOCK_SETTINGS });
+    Object.assign(api.dappmanager, {
+      listPackageStates: vi.fn().mockResolvedValue([
+        { name: "nimbus.avado.dnp.dappnode.eth", running: true },
+        { name: "ethchain-geth.public.dappnode.eth", running: false },
+      ]),
+    });
+    renderApp({ api });
+    expect(await screen.findByText("Geth is stopped")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open Geth" })).toHaveAttribute(
+      "href",
+      "http://my.ava.do/#/packages/ethchain-geth.public.dappnode.eth",
+    );
+    expect(screen.queryByText("No execution client installed")).toBeNull();
+  });
+
+  it("keeps the last known banners while the backend and DAPPMANAGER can't be read (restart)", async () => {
+    const user = userEvent.setup();
+    const { api } = renderApp({ mock: { settings: { ...MOCK_SETTINGS, validators_proposer_default_fee_recipient: "" }, packages: [] } });
+    await screen.findByText("No fee recipient set");
+    await screen.findByText("No execution client installed");
+    const get = vi.spyOn(api.backend, "getSettings").mockRejectedValue(new Error("restarting"));
+    const list = vi.spyOn(api.dappmanager, "listPackages").mockRejectedValue(new Error("wamp down"));
+    await user.click(within(mainNav()).getByRole("link", { name: "Settings" }));
+    await waitFor(() => expect(get).toHaveBeenCalled());
+    await waitFor(() => expect(list).toHaveBeenCalled());
+    expect(screen.getByText("No fee recipient set")).toBeInTheDocument();
+    expect(screen.getByText("No execution client installed")).toBeInTheDocument();
   });
 
   it("testnet notice on Holesky", async () => {
@@ -281,22 +357,101 @@ describe("Phone layout", () => {
     renderApp();
     const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
     expect(sidebar).toHaveClass("-translate-x-full", "invisible", "lg:translate-x-0", "lg:visible", "max-w-[85vw]");
+    expect(sidebar.className).not.toMatch(/visibility/);
   });
 
-  it("the menu button opens the drawer; Escape closes it and returns focus", async () => {
+  it("the menu button opens the drawer as a modal dialog; Escape closes it and returns focus", async () => {
     const user = userEvent.setup();
     renderApp();
     const menu = screen.getByRole("button", { name: "Open menu" });
     expect(menu).toHaveAttribute("aria-expanded", "false");
     expect(menu).toHaveAttribute("aria-controls", "sidebar");
     await user.click(menu);
-    const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    const drawer = screen.getByRole("dialog", { name: "Menu" });
+    expect(drawer).toHaveAttribute("aria-modal", "true");
+    expect(drawer).toHaveAttribute("id", "sidebar");
     expect(menu).toHaveAttribute("aria-expanded", "true");
-    expect(sidebar).toHaveClass("translate-x-0", "visible");
-    expect(sidebar).toContainElement(document.activeElement as HTMLElement);
+    expect(drawer).toHaveClass("translate-x-0", "visible");
+    expect(drawer).toContainElement(document.activeElement as HTMLElement);
+    expect(screen.getByTestId("page-behind-drawer")).toHaveAttribute("inert");
     await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Sidebar" })).toBeInTheDocument();
+    expect(screen.getByTestId("page-behind-drawer")).not.toHaveAttribute("inert");
     expect(menu).toHaveAttribute("aria-expanded", "false");
     expect(menu).toHaveFocus();
+  });
+
+  it("visibility never transitions: shown at once on open, hidden by a timer after the slide-out", async () => {
+    // A visibility transition kept focus() from moving in on open, and could
+    // leave a closed drawer visible (and tabbable) where transitions stall.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderApp();
+      const closed = screen.getByRole("complementary", { name: "Sidebar" });
+      expect(closed).toHaveClass("invisible", "-translate-x-full", "transition-transform");
+      expect(closed.className).not.toMatch(/visibility/);
+      await user.click(screen.getByRole("button", { name: "Open menu" }));
+      const open = screen.getByRole("dialog", { name: "Menu" });
+      expect(open).toHaveClass("visible", "translate-x-0");
+      expect(open.className).not.toMatch(/visibility/);
+      await user.keyboard("{Escape}");
+      const closing = screen.getByRole("complementary", { name: "Sidebar" });
+      expect(closing).toHaveClass("visible", "-translate-x-full");
+      await act(() => vi.advanceTimersByTimeAsync(200));
+      expect(screen.getByRole("complementary", { name: "Sidebar" })).toHaveClass("invisible");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("Tab stays inside the open drawer", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole("button", { name: "Open menu" }));
+    const drawer = screen.getByRole("dialog", { name: "Menu" });
+    const focusables = Array.from(drawer.querySelectorAll<HTMLElement>("a[href], button"));
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    expect(first).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+    await user.tab();
+    expect(first).toHaveFocus();
+    for (let i = 0; i < focusables.length + 2; i++) {
+      await user.tab();
+      expect(drawer).toContainElement(document.activeElement as HTMLElement);
+    }
+  });
+
+  it("closes when the window grows to the docked (lg) layout", async () => {
+    let listener: (() => void) | undefined;
+    let matches = false;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((q: string) => ({
+        get matches() {
+          return q === "(min-width: 1024px)" ? matches : false;
+        },
+        media: q,
+        addEventListener: (_: string, l: () => void) => {
+          if (q === "(min-width: 1024px)") listener = l;
+        },
+        removeEventListener: () => {},
+      })),
+    );
+    try {
+      const user = userEvent.setup();
+      renderApp();
+      await user.click(screen.getByRole("button", { name: "Open menu" }));
+      expect(screen.getByRole("dialog", { name: "Menu" })).toBeInTheDocument();
+      matches = true;
+      act(() => listener?.());
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("the drawer closes on navigation and on the overlay", async () => {
@@ -305,9 +460,22 @@ describe("Phone layout", () => {
     await user.click(screen.getByRole("button", { name: "Open menu" }));
     await user.click(within(mainNav()).getByRole("link", { name: "Add validators" }));
     expect(screen.getByRole("button", { name: "Open menu" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Open menu" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Open menu" }));
     await user.click(screen.getByTestId("sidebar-overlay"));
     expect(screen.getByRole("button", { name: "Open menu" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Open menu" })).toHaveFocus();
+  });
+
+  it("a skip link moves focus to the page content without changing the route", async () => {
+    const user = userEvent.setup();
+    renderApp({ path: "/settings" });
+    await user.tab();
+    const skip = screen.getByRole("link", { name: "Skip to content" });
+    expect(skip).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("main")).toHaveFocus();
+    expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
   });
 
   it("content can shrink to a phone width: nothing forces a horizontal scroll", async () => {
