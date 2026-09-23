@@ -27,6 +27,7 @@ import type {
   SyncingStatus,
   ValidatorState,
 } from "./types";
+import { ApiError } from "./errors";
 
 /** Deterministic fake hex of `bytes` bytes, so mock keys look real but stay stable. */
 export function fakeHex(seed: number, bytes: number): string {
@@ -129,7 +130,10 @@ export interface MockOptions {
   beaconValidators?: ValidatorState[];
   /** Fee-recipient overrides by pubkey. */
   feeRecipients?: Record<string, string>;
+  /** Installed packages (running unless listed in `stoppedPackages`). */
   packages?: string[];
+  /** Installed packages that are stopped. */
+  stoppedPackages?: string[];
   health?: NodeHealth;
   syncing?: SyncingStatus;
   peers?: Peer[];
@@ -193,6 +197,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
     beacon: new Map((opts.beaconValidators ?? MOCK_BEACON_VALIDATORS).map((v) => [v.validator.pubkey, clone(v)])),
     feeRecipients: { ...(opts.feeRecipients ?? { [MOCK_PUBKEYS.active02]: MOCK_OVERRIDE_FEE_RECIPIENT }) } as Record<string, string>,
     packages: [...(opts.packages ?? MOCK_PACKAGES)],
+    stoppedPackages: [...(opts.stoppedPackages ?? [])],
     health: opts.health ?? ("ready" as NodeHealth),
     syncing: opts.syncing ?? { head_slot: "12634567", sync_distance: "0", is_syncing: false, is_optimistic: false, el_offline: false },
     peers: opts.peers ?? mockPeers(),
@@ -251,8 +256,9 @@ export function createMockApi(opts: MockOptions = {}): Api {
     },
   };
 
-  const notRunning = () => {
-    if (!state.running) throw new Error("The client is not running");
+  /** Like the real proxies while the client is stopped: an `upstream` ApiError. */
+  const notRunning = (service: "beacon" | "keymanager") => {
+    if (!state.running) throw new ApiError({ kind: "upstream", service, status: 500, detail: "The client is not running" });
   };
 
   const beacon: BeaconApi = {
@@ -262,33 +268,33 @@ export function createMockApi(opts: MockOptions = {}): Api {
     },
     async syncing() {
       await wait();
-      notRunning();
+      notRunning("beacon");
       return clone(state.syncing);
     },
     async peerCount() {
       await wait();
-      notRunning();
+      notRunning("beacon");
       return { connected: String(state.peers.length), disconnected: "12", connecting: "0", disconnecting: "0" };
     },
     async peers() {
       await wait();
-      notRunning();
+      notRunning("beacon");
       return clone(state.peers);
     },
     async version() {
       await wait();
-      notRunning();
+      notRunning("beacon");
       return state.version;
     },
     async validator(pubkey) {
       await wait();
-      notRunning();
+      notRunning("beacon");
       const v = state.beacon.get(pubkey.toLowerCase());
       return v ? clone(v) : null;
     },
     async submitVoluntaryExit(msg) {
       await wait();
-      notRunning();
+      notRunning("beacon");
       state.exits.push(clone(msg));
       const v = [...state.beacon.values()].find((x) => x.index === msg.message.validator_index);
       if (!v) throw new Error(`Validator ${msg.message.validator_index} not found`);
@@ -300,12 +306,12 @@ export function createMockApi(opts: MockOptions = {}): Api {
   const keymanager: KeymanagerApi = {
     async listKeystores(): Promise<Keystore[]> {
       await wait();
-      notRunning();
+      notRunning("keymanager");
       return state.keystores.map((p) => ({ validating_pubkey: p, derivation_path: "", readonly: false }));
     },
     async importKeystores(req: ImportKeystoresRequest): Promise<ImportResult[]> {
       await wait();
-      notRunning();
+      notRunning("keymanager");
       if (req.keystores.length !== req.passwords.length) throw new Error("keystores and passwords differ in length");
       return req.keystores.map((json, i) => {
         const p = pubkeyFromKeystore(json);
@@ -319,7 +325,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
     },
     async deleteKeystores(pubkeys: string[]): Promise<DeleteKeystoresResponse> {
       await wait();
-      notRunning();
+      notRunning("keymanager");
       const data = pubkeys.map((p) => {
         const i = state.keystores.indexOf(p.toLowerCase());
         if (i < 0) return { status: "not_found" as const };
@@ -331,7 +337,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
     },
     async getFeeRecipient(pubkey) {
       await wait();
-      notRunning();
+      notRunning("keymanager");
       const p = pubkey.toLowerCase();
       if (!state.keystores.includes(p)) return null;
       // No override and no default: nothing to report (like a keymanager 404).
@@ -339,18 +345,18 @@ export function createMockApi(opts: MockOptions = {}): Api {
     },
     async setFeeRecipient(pubkey, ethaddress) {
       await wait();
-      notRunning();
+      notRunning("keymanager");
       if (!/^0x[a-fA-F0-9]{40}$/.test(ethaddress)) throw new Error("Invalid address");
       state.feeRecipients[pubkey.toLowerCase()] = ethaddress;
     },
     async deleteFeeRecipient(pubkey) {
       await wait();
-      notRunning();
+      notRunning("keymanager");
       delete state.feeRecipients[pubkey.toLowerCase()];
     },
     async signVoluntaryExit(pubkey, epoch) {
       await wait();
-      notRunning();
+      notRunning("keymanager");
       const v = state.beacon.get(pubkey.toLowerCase());
       if (!v) throw new Error("The beacon node does not know this validator yet");
       return {
@@ -364,6 +370,10 @@ export function createMockApi(opts: MockOptions = {}): Api {
     async listPackages() {
       await wait();
       return [...state.packages];
+    },
+    async listPackageStates() {
+      await wait();
+      return state.packages.map((name) => ({ name, running: !state.stoppedPackages.includes(name) }));
     },
     async logs(_pkg, tail) {
       await wait();

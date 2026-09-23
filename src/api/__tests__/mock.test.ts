@@ -1,3 +1,4 @@
+import { isClientUnavailable } from "../errors";
 import { createMockApi, MOCK_BEACON_VALIDATORS, MOCK_DEFAULT_FEE_RECIPIENT, MOCK_OVERRIDE_FEE_RECIPIENT, MOCK_PUBKEYS } from "../mock";
 
 const keystoreJson = (pubkey: string) => JSON.stringify({ crypto: {}, pubkey: pubkey.slice(2), path: "m/12381/3600/0/0/0", version: 4 });
@@ -95,7 +96,9 @@ describe("mock API", () => {
     const api = createMockApi();
     await api.backend.service("stop");
     expect(await api.beacon.health()).toBe("not_ready");
-    await expect(api.keymanager.listKeystores()).rejects.toThrow();
+    await expect(api.keymanager.listKeystores()).rejects.toMatchObject({ kind: "upstream", service: "keymanager" });
+    await expect(api.beacon.syncing()).rejects.toMatchObject({ kind: "upstream", service: "beacon" });
+    expect(isClientUnavailable(await api.keymanager.listKeystores().catch((e) => e))).toBe(true);
     expect((await api.backend.serviceStatus()).find((p) => p.name === "nimbus")!.statename).toBe("STOPPED");
     await api.backend.service("start");
     expect(await api.beacon.health()).toBe("ready");
@@ -111,6 +114,14 @@ describe("mock API", () => {
     expect(await api.beacon.version()).toMatch(/^v\d+\.\d+\.\d+$/);
     expect(await api.dappmanager.listPackages()).toContain("mevboost.avado.dnp.dappnode.eth");
     expect((await api.dappmanager.logs("nimbus.avado.dnp.dappnode.eth", 20)).split("\n")).toHaveLength(20);
+  });
+
+  it("lists stopped packages as installed, with running false", async () => {
+    const api = createMockApi({ stoppedPackages: ["ethchain-geth.public.dappnode.eth"] });
+    expect(await api.dappmanager.listPackages()).toContain("ethchain-geth.public.dappnode.eth");
+    const states = await api.dappmanager.listPackageStates();
+    expect(states.find((p) => p.name === "ethchain-geth.public.dappnode.eth")).toEqual({ name: "ethchain-geth.public.dappnode.eth", running: false });
+    expect(states.find((p) => p.name === "mevboost.avado.dnp.dappnode.eth")?.running).toBe(true);
   });
 
   it("accepts overrides for other scenarios", async () => {
