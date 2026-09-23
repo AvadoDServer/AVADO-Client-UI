@@ -1,47 +1,61 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Spinner } from "../components/ui";
-import { loadClientConfig, type ClientConfig } from "./clientConfig";
+import { loadClientConfigResult, type ClientConfig, type ClientConfigResult } from "./clientConfig";
 
-const ClientConfigContext = createContext<ClientConfig | null>(null);
+const ClientConfigContext = createContext<ClientConfigResult | null>(null);
 
 export interface ClientConfigProviderProps {
   children: ReactNode;
-  /** Skip loading and use this config (tests, previews). */
+  /** Skip loading and use this config, as if read from the file (tests, previews). */
   config?: ClientConfig;
+  /** Skip loading and use this full result (tests of the "wrong configuration" banner). */
+  result?: ClientConfigResult;
   /** Override the loader (tests). */
-  load?: () => Promise<ClientConfig>;
+  load?: () => Promise<ClientConfigResult>;
 }
 
 /** Loads the runtime config once and renders children when it's ready. */
-export function ClientConfigProvider({ children, config, load = loadClientConfig }: ClientConfigProviderProps) {
-  const [loaded, setLoaded] = useState<ClientConfig | null>(config ?? null);
+export function ClientConfigProvider({ children, config, result, load = loadClientConfigResult }: ClientConfigProviderProps) {
+  const [loaded, setLoaded] = useState<ClientConfigResult | null>(null);
 
   useEffect(() => {
-    if (config) {
-      setLoaded(config);
-      return;
-    }
+    if (result || config) return;
     let cancelled = false;
-    load().then((c) => {
-      if (!cancelled) setLoaded(c);
+    load().then((r) => {
+      if (!cancelled) setLoaded(r);
     });
     return () => {
       cancelled = true;
     };
-  }, [config, load]);
+  }, [config, result, load]);
 
-  if (!loaded) {
+  const value = useMemo<ClientConfigResult | null>(
+    () => result ?? (config ? { config, source: "file", problems: [] } : loaded),
+    [result, config, loaded],
+  );
+
+  if (!value) {
     return (
       <div className="flex min-h-screen items-center justify-center text-fg-muted">
         <Spinner size="lg" label="Loading" />
       </div>
     );
   }
-  return <ClientConfigContext.Provider value={loaded}>{children}</ClientConfigContext.Provider>;
+  return <ClientConfigContext.Provider value={value}>{children}</ClientConfigContext.Provider>;
 }
 
-export function useClientConfig(): ClientConfig {
+/**
+ * The config plus where it came from ("file" | "hostname" | "default") and
+ * the problems found. Non-empty `problems` means "wrong configuration".
+ * Throws outside <ClientConfigProvider>.
+ */
+export function useClientConfigStatus(): ClientConfigResult {
   const c = useContext(ClientConfigContext);
   if (!c) throw new Error("useClientConfig() must be used inside <ClientConfigProvider>");
   return c;
+}
+
+/** The runtime config. Throws outside <ClientConfigProvider>. */
+export function useClientConfig(): ClientConfig {
+  return useClientConfigStatus().config;
 }

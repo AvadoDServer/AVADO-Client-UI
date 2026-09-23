@@ -52,6 +52,12 @@ describe("mock API", () => {
     await expect(api.keymanager.setFeeRecipient(MOCK_PUBKEYS.active01, "0x123")).rejects.toThrow();
   });
 
+  it("getFeeRecipient is null (not \"\") when there is no override and no default", async () => {
+    const api = createMockApi({ settings: { validators_proposer_default_fee_recipient: "" } });
+    expect(await api.keymanager.getFeeRecipient(MOCK_PUBKEYS.active01)).toBeNull();
+    expect(await api.keymanager.getFeeRecipient(MOCK_PUBKEYS.active02)).toBe(MOCK_OVERRIDE_FEE_RECIPIENT);
+  });
+
   it("import returns per-file results and keeps the successes", async () => {
     const api = createMockApi();
     const fresh = `0x${"ab".repeat(48)}`;

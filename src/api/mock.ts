@@ -334,7 +334,8 @@ export function createMockApi(opts: MockOptions = {}): Api {
       notRunning();
       const p = pubkey.toLowerCase();
       if (!state.keystores.includes(p)) return null;
-      return state.feeRecipients[p] ?? state.settings.validators_proposer_default_fee_recipient ?? null;
+      // No override and no default: nothing to report (like a keymanager 404).
+      return state.feeRecipients[p] || state.settings.validators_proposer_default_fee_recipient || null;
     },
     async setFeeRecipient(pubkey, ethaddress) {
       await wait();

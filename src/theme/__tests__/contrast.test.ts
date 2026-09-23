@@ -68,10 +68,51 @@ describe.each(Object.entries(THEMES))("%s theme contrast", (_, selector) => {
     ["danger-fg", "danger-solid", 4.5],
     ["success-fg", "success-solid", 4.5],
     ["warning-fg", "warning-solid", 4.5],
+    // Modal / ConfirmDialog panels sit on --surface-raised: every text token
+    // used in them (title, body, labels, hints, errors) must clear AA.
+    ["accent", "surface-raised", 3],
+    ["danger", "surface-raised", 3],
+    // Sidebar and its footer (Admin: --bg-subtle plane, --chrome top bar;
+    // the dark selected segment sits on --border).
+    ["fg", "bg-subtle", 4.5],
+    ["fg-muted", "bg-subtle", 4.5],
+    ["fg", "chrome", 4.5],
+    ["fg-muted", "chrome", 4.5],
+    ["accent", "bg-subtle", 3],
+    ["fg", "border", 4.5],
+    // fg-subtle is NOT AA text on --surface-raised (dark, 4.0:1) or on
+    // --bg-subtle (light, 4.46:1). Components use it there only for icons
+    // (Modal close, Select chevron), which need 3:1.
+    ["fg-subtle", "surface-raised", 3],
+    ["fg-subtle", "bg-subtle", 3],
   ] as const)("%s on %s ≥ %s", (fg, bg, min) => {
     expect(t[fg]).toBeDefined();
     expect(t[bg]).toBeDefined();
     expect(ratio(t[fg], t[bg])).toBeGreaterThanOrEqual(min);
+  });
+
+  // Tinted surfaces: a token at some opacity over a plane, then text on it.
+  it.each([
+    // Sidebar active item / avatar: accent text on accent/15 over bg-subtle.
+    ["accent", "accent", 0.15, "bg-subtle", 4.5],
+    // Badge accent: accent text on accent/0.12 over a card.
+    ["accent", "accent", 0.12, "surface", 4.5],
+    // Tabs selected: fg on accent/10 over the canvas.
+    ["fg", "accent", 0.1, "bg", 4.5],
+  ] as const)("%s on %s/%s over %s ≥ %s", (fg, tint, alpha, base, min) => {
+    expect(ratio(t[fg], blend(t[tint], alpha, t[base]))).toBeGreaterThanOrEqual(min);
+  });
+});
+
+function blend(top: RGB, alpha: number, base: RGB): RGB {
+  return [0, 1, 2].map((i) => Math.round(top[i] * alpha + base[i] * (1 - alpha))) as RGB;
+}
+
+describe("text colour rules the components follow", () => {
+  it("no component uses text-fg-subtle for text on raised panels (Input hints use fg-muted)", () => {
+    const input = fs.readFileSync(path.resolve(__dirname, "../../components/ui/Input.tsx"), "utf8");
+    const hintLine = input.split("\n").find((l) => l.includes("-hint`} className="));
+    expect(hintLine).toContain("text-fg-muted");
   });
 });
 

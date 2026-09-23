@@ -46,11 +46,19 @@ client package's Dockerfile writes it at image build time:
 - `network`: `mainnet` | `holesky` | `prater` | `gnosis` | `hoodi`
 - `backend`: `deno` (Nimbus, Lighthouse) or `monitor` (Teku, Prysm)
 
-Every field is optional. Missing ones come from `client` and `network`
-(`<client>[-<network>]`, no suffix on mainnet): `packageName =
-<prefix>.avado.dnp.dappnode.eth`, `apiUrl = http://<prefix>.my.ava.do:9999`.
-If the file is missing, the UI guesses from the hostname
-(`teku-holesky.my.ava.do`), then falls back to Nimbus on mainnet.
+Every field is optional except `client` and `network`. Missing ones come
+from `client` and `network` via the package prefix: `<client>` on mainnet,
+`<client>-<network>` elsewhere, and always `prysm-beacon-chain-<network>`
+for Prysm (mainnet included). `packageName = <prefix>.avado.dnp.dappnode.eth`,
+`apiUrl = http://<prefix>.my.ava.do:9999`. If the file is missing, the UI
+guesses from the hostname (`teku-holesky.my.ava.do`), then falls back to
+Nimbus on mainnet.
+
+`useClientConfigStatus()` returns `{config, source, problems}`: `source` is
+`file`, `hostname` or `default`, and `problems` lists every missing file,
+unknown client or network and invalid field. The shell shows a "wrong
+configuration" banner when `problems` is not empty. `useClientConfig()`
+returns just the config.
 
 `public/client-config.json` is a dev sample; the build removes it from
 `dist/` so a package can't ship it by accident.
@@ -72,6 +80,7 @@ Serve `index.html` with `Cache-Control: no-cache`; assets are content-hashed.
   Spinner, Skeleton, `cn`). Tokens only, no raw hex.
 - `src/theme/ThemeProvider.tsx` (`avado.theme` in localStorage) and
   `src/settings/ModeProvider.tsx` (`avado.mode`, default simple).
-- `src/config/`: `loadClientConfig()`, `ClientConfigProvider`, `useClientConfig()`.
+- `src/config/`: `loadClientConfig()`, `loadClientConfigResult()`, `ClientConfigProvider`,
+  `useClientConfig()`, `useClientConfigStatus()`.
 - `src/api/types.ts`: adapter interfaces; `src/api/ApiProvider.tsx`:
   `ApiProvider` and `useApi()`; `src/api/mock.ts`: in-memory adapters.

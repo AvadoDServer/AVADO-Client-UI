@@ -31,6 +31,14 @@ describe("ApiProvider", () => {
   it("without mocks, calls reject instead of crashing the page (real adapters come in Task 2)", async () => {
     vi.stubEnv("VITE_MOCK", "");
     const api = createApi(normalizeClientConfig({}));
-    await expect(api.backend.getSettings()).rejects.toThrow();
+    await expect(api.backend.getSettings()).rejects.toThrow(/backend.getSettings: no API adapters for nimbus yet/);
+  });
+
+  it("the placeholder adapters are not thenable, so awaiting them doesn't hang", async () => {
+    vi.stubEnv("VITE_MOCK", "");
+    const api = createApi(normalizeClientConfig({}));
+    await expect(Promise.resolve(api.keymanager)).resolves.toBe(api.keymanager);
+    expect(await api.beacon).toBe(api.beacon);
+    expect(JSON.stringify(api.dappmanager)).toBe("{}");
   });
 });

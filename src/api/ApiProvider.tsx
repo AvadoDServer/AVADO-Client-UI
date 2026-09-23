@@ -6,12 +6,24 @@ import type { Api } from "./types";
 
 export const isMock = (): boolean => import.meta.env.VITE_MOCK === "1";
 
-/** Adapters that fail loudly until the real ones land (Task 2). */
+/**
+ * Adapters that fail loudly until the real ones land (Task 2): every method
+ * call rejects with a clear error. The objects are not thenable and answer
+ * symbol lookups with undefined, so `await api.backend`, devtools and React
+ * never hang or crash on them.
+ */
 function createUnavailableApi(config: ClientConfig): Api {
-  const fail = () => Promise.reject(new Error(`No API adapters for ${config.client} yet`));
-  const handler: ProxyHandler<object> = { get: () => fail };
-  const part = <T,>() => new Proxy({}, handler) as T;
-  return { backend: part(), beacon: part(), keymanager: part(), dappmanager: part() };
+  const part = <T,>(name: string): T =>
+    new Proxy(
+      {},
+      {
+        get: (_t, prop) => {
+          if (typeof prop === "symbol" || prop === "then" || prop === "toJSON" || prop === "$$typeof") return undefined;
+          return () => Promise.reject(new Error(`${name}.${prop}: no API adapters for ${config.client} yet`));
+        },
+      },
+    ) as T;
+  return { backend: part("backend"), beacon: part("beacon"), keymanager: part("keymanager"), dappmanager: part("dappmanager") };
 }
 
 /** Picks the adapters for this config: mocks under VITE_MOCK=1. */

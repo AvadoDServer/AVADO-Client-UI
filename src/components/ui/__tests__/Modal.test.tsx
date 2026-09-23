@@ -66,3 +66,72 @@ describe("ConfirmDialog", () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("Modal focus management", () => {
+  function Harness({ open }: { open: boolean }) {
+    return (
+      <>
+        <button>Outside</button>
+        <Modal open={open} title="Remove validator" onClose={() => {}} footer={<button>Remove</button>}>
+          <input aria-label="Reason" />
+        </Modal>
+      </>
+    );
+  }
+
+  it("moves focus into the dialog when it opens", async () => {
+    render(<Harness open />);
+    await vi.waitFor(() => expect(screen.getByRole("dialog")).toHaveFocus());
+  });
+
+  it("Tab from the last control wraps to the first; Shift+Tab from the first wraps to the last", async () => {
+    render(<Harness open />);
+    const close = screen.getByRole("button", { name: "Close dialog" });
+    const reason = screen.getByLabelText("Reason");
+    const remove = screen.getByRole("button", { name: "Remove" });
+    await vi.waitFor(() => expect(screen.getByRole("dialog")).toHaveFocus());
+
+    await userEvent.tab();
+    expect(close).toHaveFocus();
+    await userEvent.tab();
+    expect(reason).toHaveFocus();
+    await userEvent.tab();
+    expect(remove).toHaveFocus();
+    await userEvent.tab();
+    expect(close).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(remove).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Outside" })).not.toHaveFocus();
+  });
+
+  it("Shift+Tab from the panel itself goes to the last control", async () => {
+    render(<Harness open />);
+    await vi.waitFor(() => expect(screen.getByRole("dialog")).toHaveFocus());
+    await userEvent.tab({ shift: true });
+    expect(screen.getByRole("button", { name: "Remove" })).toHaveFocus();
+  });
+
+  it("returns focus to the element that opened it", async () => {
+    const { rerender } = render(<Harness open={false} />);
+    const outside = screen.getByRole("button", { name: "Outside" });
+    outside.focus();
+    rerender(<Harness open />);
+    await vi.waitFor(() => expect(screen.getByRole("dialog")).toHaveFocus());
+    rerender(<Harness open={false} />);
+    expect(outside).toHaveFocus();
+  });
+
+  it("makes #root inert while open, and restores it after", () => {
+    const root = document.createElement("div");
+    root.id = "root";
+    document.body.appendChild(root);
+    try {
+      const { rerender } = render(<Harness open />);
+      expect(root).toHaveAttribute("inert");
+      rerender(<Harness open={false} />);
+      expect(root).not.toHaveAttribute("inert");
+    } finally {
+      root.remove();
+    }
+  });
+});

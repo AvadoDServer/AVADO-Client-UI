@@ -52,7 +52,7 @@ function Field({
           {error}
         </span>
       ) : hint ? (
-        <span id={`${fieldId}-hint`} className="text-xs text-fg-subtle">
+        <span id={`${fieldId}-hint`} className="text-xs text-fg-muted">
           {hint}
         </span>
       ) : null}

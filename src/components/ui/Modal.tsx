@@ -16,10 +16,57 @@ export interface ModalProps {
   className?: string;
 }
 
+const FOCUSABLE =
+  'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), iframe, [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+
+function focusables(panel: HTMLElement): HTMLElement[] {
+  return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+    (el) => !el.hasAttribute("inert") && el.getAttribute("aria-hidden") !== "true",
+  );
+}
+
+/** Keep Tab / Shift+Tab cycling inside the dialog panel. */
+function trapTab(e: KeyboardEvent, panel: HTMLElement) {
+  const items = focusables(panel);
+  const active = document.activeElement as HTMLElement | null;
+  if (items.length === 0) {
+    e.preventDefault();
+    panel.focus();
+    return;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const inside = !!active && panel.contains(active);
+  if (e.shiftKey) {
+    if (!inside || active === first || active === panel) {
+      e.preventDefault();
+      last.focus();
+    }
+  } else if (!inside || active === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+// While any dialog is open, the app behind it is inert (not focusable or
+// clickable, hidden from assistive tech). Counted, so stacked dialogs work.
+let inertCount = 0;
+function makeAppInert(): () => void {
+  const root = document.getElementById("root");
+  if (!root) return () => {};
+  inertCount += 1;
+  root.setAttribute("inert", "");
+  return () => {
+    inertCount = Math.max(0, inertCount - 1);
+    if (inertCount === 0) root.removeAttribute("inert");
+  };
+}
+
 /**
  * Modal — ported from the AVADO Admin.
  *  - Portal into document.body; closes on Escape and backdrop click.
- *  - Locks body scroll, moves focus in, and returns it on close.
+ *  - Locks body scroll, makes #root inert, moves focus in, traps Tab and
+ *    Shift+Tab inside the panel, and returns focus on close.
  */
 export function Modal({
   open,
@@ -42,15 +89,21 @@ export function Modal({
     if (!open) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current?.();
+      if (e.key === "Escape") {
+        onCloseRef.current?.();
+        return;
+      }
+      if (e.key === "Tab" && panelRef.current) trapTab(e, panelRef.current);
     };
     document.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    const releaseInert = makeAppInert();
     const t = setTimeout(() => panelRef.current?.focus(), 0);
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
+      releaseInert();
       clearTimeout(t);
       previouslyFocused?.focus?.();
     };
