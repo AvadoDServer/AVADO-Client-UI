@@ -7,7 +7,9 @@ import { ADMIN_STORE_URL, adminPackageUrl } from "../../../components/shell/link
 import type { Problem, ProblemTone } from "../../../components/shell/problems";
 import type { AvadoStatus, NodeStatus, ReconcileKeyState, ReconcileStatus, ReconcileView } from "../api/models";
 import { reconcileStatusOf } from "../api/reconcile";
+import { txUrl } from "../lib/explorer";
 import { formatEth, isZeroAddress, sameAddress, toBigInt } from "../lib/units";
+import type { PendingTx } from "../tx/pending";
 
 export const RP_PACKAGE = "rocketpool.avado.dnp.dappnode.eth";
 export const SUPPORT_EMAIL = "support@ava.do";
@@ -22,11 +24,16 @@ export type RpProblemId =
   | "password-missing"
   | "legacy-mnemonic"
   | "no-consensus-client"
+  | "keys-loaded-twice"
   | "keys-awaiting-approval"
+  | "keys-settling"
   | "keys-not-loaded"
   | "fee-recipient-failed"
   | "reconcile-failed"
   | "reconcile-errors"
+  | "reconcile-newer"
+  | "tx-unclear"
+  | "tx-on-its-way"
   | "withdrawal-is-hot-wallet"
   | "low-gas-balance";
 
@@ -147,7 +154,11 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
 
   // Validator keys: only meaningful while the daemon runs and a wallet exists.
   const status = reconcileStatusOf(reconcile);
-  if (status && ready && avado.walletFilePresent) out.push(...reconcileProblems(status));
+  if (status) {
+    const found = reconcileProblems(status);
+    // A key loaded twice is danger whatever the daemon is doing; the rest only means something while it runs.
+    out.push(...(ready && avado.walletFilePresent ? found : found.filter((p) => p.id === "keys-loaded-twice")));
+  }
 
   return out.sort(bySeverity);
 }
@@ -155,24 +166,47 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
 /** Where the owner approves loading keys (the approval screen lives on Home). */
 export const KEY_APPROVAL_ROUTE = "/";
 
-/** Key states that mean "should run in the client but doesn't", other than waiting for approval. */
+/** Key states that mean "should run in the client but doesn't", other than waiting for approval or settling. */
 const NOT_RUNNING: ReadonlySet<ReconcileKeyState> = new Set([
   "elsewhere",
   "import-blocked",
+  "client-update-needed",
   "missing-keystore",
   "import-failed",
   "retry-limit",
   "deferred",
   "no-client",
+  "unknown",
 ]);
 
+const shortKey = (pk: string) => `0x${pk.slice(0, 8)}…${pk.slice(-4)}`;
+
+const timeOf = (iso: string | undefined): string | null => {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(t) ? new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
+};
+
 function reconcileProblems(s: ReconcileStatus): RpProblem[] {
-  // "waiting": no wallet, not registered, daemon starting or syncing; the other banners say so.
-  if (s.state === "waiting") return [];
   const out: RpProblem[] = [];
   const name = s.client?.name ?? "your consensus client";
   const details = s.errors.slice(0, 5);
   let errorsShown = false;
+
+  // Slashing danger comes first, whatever else the pass says, and stays until the key is removed from one client.
+  if (s.loadedTwice.length > 0) {
+    const n = s.loadedTwice.length;
+    out.push({
+      id: "keys-loaded-twice",
+      tone: "danger",
+      title: n === 1 ? "A validator key is loaded in two clients — this can get it slashed" : `${n} validator keys are loaded in two clients — this can get them slashed`,
+      body: `Remove ${n === 1 ? "it" : "them"} from one of the clients now. Rocket Pool never removes keys itself.`,
+      details: s.loadedTwice.slice(0, 5).map((t) => `${shortKey(t.pubkey)}: ${t.packages.join(" and ") || "two clients"}`),
+      action: { label: "See details", to: "/advanced" },
+    });
+  }
+
+  // "waiting": no wallet, not registered, daemon starting or syncing; the other banners say so.
+  if (s.state === "waiting") return out;
 
   if (!s.client) {
     out.push({
@@ -194,31 +228,51 @@ function reconcileProblems(s: ReconcileStatus): RpProblem[] {
       body: `${awaiting === 1 ? "It is" : "They are"} not loaded in ${name} yet. Load ${awaiting === 1 ? "it" : "them"} only if ${
         awaiting === 1 ? "this validator is" : "these validators are"
       } not running anywhere else: running a key on two machines gets it slashed.`,
+      details: s.importBlockedReasons.slice(0, 5),
       action: { label: "Review keys", to: KEY_APPROVAL_ROUTE },
     });
   }
 
+  const settling = s.validators.filter((v) => v.state === "settling");
+  if (settling.length > 0) {
+    const times = settling.map((v) => timeOf(v.settlesAt)).filter((t): t is string => !!t).sort();
+    out.push({
+      id: "keys-settling",
+      tone: "accent",
+      title: `${plural(settling.length, "validator key")} will be loaded soon`,
+      body: `To be safe from double signing, Rocket Pool first makes sure ${
+        settling.length === 1 ? "it isn't" : "they aren't"
+      } running anywhere else${times.length ? `; loading starts at about ${times[times.length - 1]}` : ""}.`,
+      action: { label: "See details", to: "/advanced" },
+    });
+  }
+
   const stuck = s.validators.filter((v) => NOT_RUNNING.has(v.state));
-  const notRunning = s.validators.length > 0 ? stuck.length : Math.max(0, s.keys.total - s.keys.inSync - awaiting);
+  const counted = s.validators.length > 0;
+  const notRunning = counted ? stuck.length : Math.max(0, s.keys.total - s.keys.inSync - awaiting);
   if (notRunning > 0) {
     const elsewhere = stuck.filter((v) => v.state === "elsewhere");
-    const where = [...new Set(elsewhere.map((v) => v.loadedIn).filter((p): p is string => !!p))];
+    const where = [...new Set(elsewhere.flatMap((v) => v.loadedIn))];
     const blocked = stuck.some((v) => v.state === "import-blocked");
+    const update = stuck.some((v) => v.state === "client-update-needed");
     let body = "Rocket Pool tries again every few minutes. If this stays, check the details on the Advanced page.";
     if (elsewhere.length > 0) {
       body = `${plural(elsewhere.length, "key is", "keys are")} loaded in ${where.length ? where.join(", ") : "another consensus client"} instead, so ${
         elsewhere.length === 1 ? "it was" : "they were"
       } not added to ${name} as well (that would get ${elsewhere.length === 1 ? "it" : "them"} slashed). If that is the client you use, choose it as Rocket Pool's consensus client.`;
+    } else if (update) {
+      body = `Update ${name} from the AVADO Admin: this version can't have keys loaded into it safely.`;
     } else if (blocked) {
       body = `Another consensus client on this AVADO could not be checked, so nothing was loaded into ${name}, to be safe from double signing. Start or remove that client.`;
     }
+    const reasons = [...s.importBlockedReasons, ...details].slice(0, 5);
     errorsShown = details.length > 0;
     out.push({
       id: "keys-not-loaded",
       tone: "warning",
       title: `${plural(notRunning, "validator key")} not running in ${name}`,
       body,
-      details,
+      details: reasons,
       action: { label: "See details", to: "/advanced" },
     });
   }
@@ -233,22 +287,32 @@ function reconcileProblems(s: ReconcileStatus): RpProblem[] {
     });
   }
 
-  if (s.state === "error") {
+  if (s.state === "error" && s.loadedTwice.length === 0) {
     out.push({
       id: "reconcile-failed",
-      tone: "warning",
+      tone: "danger",
       title: "The validator key check could not run",
       body: s.message || `Rocket Pool could not check your validator keys in ${name}.`,
       details: errorsShown ? [] : details,
       action: { label: "See details", to: "/advanced" },
     });
-  } else if (details.length > 0 && !errorsShown) {
+  } else if (details.length > 0 && !errorsShown && s.state !== "error") {
     out.push({
       id: "reconcile-errors",
       tone: "warning",
       title: "The validator key check found a problem",
       body: s.message || `Rocket Pool checks every few minutes that your validator keys and fee recipients are right in ${name}.`,
       details,
+      action: { label: "See details", to: "/advanced" },
+    });
+  }
+
+  if (s.newerThanUi && out.length === 0 && s.state !== "ok") {
+    out.push({
+      id: "reconcile-newer",
+      tone: "warning",
+      title: "Check your validator keys",
+      body: s.message || "The key check reported something this page can't show yet. Update the Rocket Pool package page by reloading it.",
       action: { label: "See details", to: "/advanced" },
     });
   }
@@ -285,4 +349,42 @@ export function findNodeProblems(node: NodeStatus | null | undefined): RpProblem
     });
   }
   return out.sort(bySeverity);
+}
+
+/**
+ * Banners for the app's own transactions (the pending-transaction store): one
+ * for any whose outcome is unclear, one for any still on their way. They show
+ * on every page, also after a reload, until the transaction is settled.
+ */
+export function findPendingProblems(list: PendingTx[]): RpProblem[] {
+  const out: RpProblem[] = [];
+  const unclear = list.filter((e) => e.state === "unknown" || e.state === "lost");
+  const moving = list.filter((e) => e.state === "sending" || e.state === "sent");
+  const link = (e: PendingTx) => {
+    const href = e.txHash ? txUrl(e.txHash) : null;
+    return href ? { label: "View on Etherscan", href } : { label: "Open", to: e.page };
+  };
+  if (unclear.length > 0) {
+    const one = unclear[0];
+    out.push({
+      id: "tx-unclear",
+      tone: "warning",
+      title: unclear.length === 1 ? `Check your transaction: ${one.title}` : `${unclear.length} transactions need checking`,
+      body: "It's not known yet whether it went through. Don't start it again until you've checked it; the same action stays locked meanwhile.",
+      details: unclear.length > 1 ? unclear.map((e) => e.title) : [],
+      action: unclear.length === 1 ? link(one) : { label: "Open", to: one.page },
+    });
+  }
+  if (moving.length > 0) {
+    const one = moving[0];
+    out.push({
+      id: "tx-on-its-way",
+      tone: "accent",
+      title: moving.length === 1 ? `Transaction on its way: ${one.title}` : `${moving.length} transactions on their way`,
+      body: "It is waiting to be included in a block. This page keeps following it.",
+      details: moving.length > 1 ? moving.map((e) => e.title) : [],
+      action: link(one),
+    });
+  }
+  return out;
 }

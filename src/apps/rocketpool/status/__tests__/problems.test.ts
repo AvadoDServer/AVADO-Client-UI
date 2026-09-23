@@ -1,6 +1,7 @@
 import { DEMO, SCENARIOS, demoKey, reconcileView } from "../../api/fixtures";
 import type { AvadoStatus, NodeStatus, ReconcileView } from "../../api/models";
-import { findNodeProblems, findStatusProblems } from "../problems";
+import { findNodeProblems, findPendingProblems, findStatusProblems } from "../problems";
+import type { PendingTx } from "../../tx/pending";
 
 const running = SCENARIOS.minipool.avado;
 const okReconcile = SCENARIOS.minipool.reconcile;
@@ -102,7 +103,7 @@ describe("status banners", () => {
   });
 
   it("keys loaded in another client, or blocked because another client can't be checked", () => {
-    const elsewhere = { ...k(1, "elsewhere"), loadedIn: "eth2validator.avado.dnp.dappnode.eth" };
+    const elsewhere = { ...k(1, "elsewhere"), loadedIn: ["eth2validator.avado.dnp.dappnode.eth"] };
     const p = findStatusProblems({ avado: running, reconcile: view({ state: "attention", client: TEKU, keys: [k(0, "loaded"), elsewhere] }) });
     expect(ids(p)).toEqual(["keys-not-loaded"]);
     expect(p[0].title).toBe("1 validator key not running in Teku");
@@ -136,6 +137,7 @@ describe("status banners", () => {
       ),
     });
     expect(ids(failed)).toEqual(["reconcile-failed"]);
+    expect(failed[0].tone).toBe("danger");
     expect(failed[0].body).toBe("Could not read the validator keys from Teku. Is it running?");
     expect(failed[0].details).toEqual(["Teku keymanager: connect ECONNREFUSED"]);
 
@@ -144,6 +146,60 @@ describe("status banners", () => {
       reconcile: view({ state: "attention", client: TEKU, keys: [k(0, "loaded")] }, { errors: ["More keys to import; the next check continues."] }),
     });
     expect(ids(other)).toEqual(["reconcile-errors"]);
+  });
+
+  it("a key loaded in two clients: a red banner, first, also while the daemon isn't ready", () => {
+    const twice = { ...k(1, "loaded-twice"), loadedIn: ["nimbus.avado.dnp.dappnode.eth", "teku.avado.dnp.dappnode.eth"] };
+    const r = view({ state: "error", client: TEKU, keys: [twice, k(2, "awaiting-approval")] }, { message: "Validator 0x… is loaded in both Nimbus and Teku — this can get it slashed." });
+    const p = findStatusProblems({ avado: with_({ legacyMnemonicPresent: true }), reconcile: r });
+    expect(ids(p)).toEqual(["keys-loaded-twice", "legacy-mnemonic", "keys-awaiting-approval"]);
+    expect(p[0]).toMatchObject({ tone: "danger", title: "A validator key is loaded in two clients — this can get it slashed" });
+    expect(p[0].details).toEqual([`0x11111111…1111: nimbus.avado.dnp.dappnode.eth and teku.avado.dnp.dappnode.eth`]);
+    // Not hidden by a daemon that isn't ready.
+    expect(ids(findStatusProblems({ avado: with_({ apiReachable: false }), reconcile: r }))).toEqual(["keys-loaded-twice", "daemon-starting"]);
+    // Nor by a "waiting" pass.
+    expect(ids(findStatusProblems({ avado: running, reconcile: view({ state: "waiting", client: TEKU, keys: [twice] }) }))).toEqual([
+      "keys-loaded-twice",
+    ]);
+    const two = findStatusProblems({ avado: running, reconcile: view({ state: "error", client: TEKU, keys: [twice, { ...twice, pubkey: "3".repeat(96) }] }) });
+    expect(two[0].title).toBe("2 validator keys are loaded in two clients — this can get them slashed");
+  });
+
+  it("approval shows why approved keys can't load right now; settling keys are announced, not warned about", () => {
+    const p = findStatusProblems({
+      avado: running,
+      reconcile: view(
+        { state: "attention", client: TEKU, keys: [k(1, "awaiting-approval"), k(2, "settling")] },
+        { importBlockedReasons: ["The keys in Prysm could not be checked."] },
+      ),
+    });
+    expect(ids(p)).toEqual(["keys-awaiting-approval", "keys-settling"]);
+    expect(p[0].details).toEqual(["The keys in Prysm could not be checked."]);
+    expect(p[1]).toMatchObject({ tone: "accent", title: "1 validator key will be loaded soon" });
+  });
+
+  it("an old client and unknown key states count as not running", () => {
+    const p = findStatusProblems({
+      avado: running,
+      reconcile: view(
+        { state: "attention", client: TEKU, keys: [k(1, "client-update-needed")] },
+        { importBlockedReasons: ["Update Teku before loading keys."] },
+      ),
+    });
+    expect(p[0].title).toBe("1 validator key not running in Teku");
+    expect(p[0].body).toMatch(/^Update Teku from the AVADO Admin/);
+    expect(p[0].details).toEqual(["Update Teku before loading keys."]);
+
+    const unknown = view({ state: "attention", client: TEKU, keys: [k(1, "loaded")] }, {});
+    (unknown.status as { validators: Array<{ state: string }> }).validators[0].state = "quarantined";
+    expect(findStatusProblems({ avado: running, reconcile: unknown })[0].title).toBe("1 validator key not running in Teku");
+  });
+
+  it("a newer status version with nothing this UI understands still asks the owner to check", () => {
+    const r = view({ state: "attention", client: TEKU, keys: [k(1, "loaded")] }, { version: 3, state: "degraded", message: "Something new." });
+    const p = findStatusProblems({ avado: running, reconcile: r });
+    expect(ids(p)).toEqual(["reconcile-newer"]);
+    expect(p[0].body).toBe("Something new.");
   });
 
   it("says nothing while the loop waits (no wallet, starting, syncing), or while the daemon isn't ready, or for a garbled file", () => {
@@ -170,5 +226,37 @@ describe("node banners (for Home)", () => {
     expect(findNodeProblems(node({}))).toEqual([]);
     expect(findNodeProblems(node({ registered: false }, "mixed"))).toEqual([]);
     expect(findNodeProblems(undefined)).toEqual([]);
+  });
+});
+
+describe("pending transaction banners", () => {
+  const entry = (patch: Partial<PendingTx>): PendingTx => ({
+    key: "k",
+    title: "Distribute your rewards",
+    route: "node/distribute",
+    params: {},
+    page: "/rewards",
+    state: "sent",
+    createdAt: 1,
+    updatedAt: 1,
+    ...patch,
+  });
+  const HASH = `0x${"ab".repeat(32)}`;
+
+  it("one on its way links the explorer; an unclear one warns and links back to its page", () => {
+    const p = findPendingProblems([entry({ txHash: HASH }), entry({ key: "u", title: "Claim rewards", state: "unknown" })]);
+    expect(p.map((x) => [x.id, x.tone, x.title])).toEqual([
+      ["tx-unclear", "warning", "Check your transaction: Claim rewards"],
+      ["tx-on-its-way", "accent", "Transaction on its way: Distribute your rewards"],
+    ]);
+    expect(p[0].action).toEqual({ label: "Open", to: "/rewards" });
+    expect(p[1].action).toEqual({ label: "View on Etherscan", href: `https://etherscan.io/tx/${HASH}` });
+  });
+
+  it("several are summed up; finished ones say nothing", () => {
+    const p = findPendingProblems([entry({ key: "a", state: "lost", txHash: HASH }), entry({ key: "b", state: "unknown", title: "Stake RPL" })]);
+    expect(p[0].title).toBe("2 transactions need checking");
+    expect(p[0].details).toEqual(["Distribute your rewards", "Stake RPL"]);
+    expect(findPendingProblems([entry({ state: "done" }), entry({ key: "f", state: "failed" })])).toEqual([]);
   });
 });

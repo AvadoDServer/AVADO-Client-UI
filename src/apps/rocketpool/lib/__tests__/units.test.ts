@@ -26,12 +26,13 @@ describe("amounts", () => {
     expect(toBigInt(" 42 ")).toBe(42n);
   });
 
-  it("shows ETH rounded half up, trailing zeros dropped, never raw wei", () => {
+  it("shows ETH rounded down (never overstating a balance), trailing zeros dropped, never raw wei", () => {
     expect(formatEth("1000000000000000000")).toBe("1 ETH");
     expect(formatEth("1250000000000000000")).toBe("1.25 ETH");
     expect(formatEth("32041200000000000000")).toBe("32.0412 ETH");
-    expect(formatEth("32041250000000000000")).toBe("32.0413 ETH"); // half up
-    expect(formatEth("32041249999999999999")).toBe("32.0412 ETH");
+    expect(formatEth("32041299999999999999")).toBe("32.0412 ETH"); // down, not up
+    expect(formatEth("9999000000000000")).toBe("0.0099 ETH"); // 0.009999: below 0.01, so it must not read "0.01"
+    expect(formatEth("999999999999999999999")).toBe("999.9999 ETH"); // not "1,000"
     expect(formatEth(0)).toBe("0 ETH");
     expect(formatEth("1234567000000000000000")).toBe("1,234.567 ETH");
     expect(formatEth(6_100_000_000_000_000)).toBe("0.0061 ETH"); // a safe-integer number
@@ -39,18 +40,21 @@ describe("amounts", () => {
 
   it("says '< 0.0001' for a non-zero amount too small to show, and '—' for nonsense", () => {
     expect(formatEth(1)).toBe("< 0.0001 ETH");
-    expect(formatEth(49_999_999_999_999)).toBe("< 0.0001 ETH");
-    expect(formatEth(50_000_000_000_000)).toBe("0.0001 ETH");
+    expect(formatEth(99_999_999_999_999)).toBe("< 0.0001 ETH");
+    expect(formatEth(100_000_000_000_000)).toBe("0.0001 ETH");
     expect(formatEth(undefined)).toBe("—");
     expect(formatEth("abc")).toBe("—");
     expect(formatUnits("-1500000000000000000")).toBe("-1.5");
   });
 
-  it("formats RPL with 2 decimals and gas costs with 6", () => {
+  it("formats RPL rounded down with 2 decimals, and costs rounded up with 6", () => {
     expect(formatRpl("1450000000000000000000")).toBe("1,450 RPL");
-    expect(formatRpl("18441200000000000000")).toBe("18.44 RPL");
-    expect(formatGasCost(123_250_000_000_000n)).toBe("0.000123 ETH");
-    expect(formatGasCost(123_500_000_000_000n)).toBe("0.000124 ETH");
+    expect(formatRpl("18449999999999999999")).toBe("18.44 RPL");
+    expect(formatGasCost(123_000_000_000_000n)).toBe("0.000123 ETH");
+    expect(formatGasCost(123_000_000_000_001n)).toBe("0.000124 ETH"); // a cost is never understated
+    expect(formatGasCost(1n)).toBe("0.000001 ETH");
+    expect(formatGasCost(0n)).toBe("0 ETH");
+    expect(formatUnits("9999000000000000", { maxDecimals: 2, rounding: "ceil" })).toBe("0.01");
   });
 
   it("gwei: exact strings for requests, rounded text for people", () => {
@@ -58,7 +62,7 @@ describe("amounts", () => {
     expect(weiToGweiString(1n)).toBe("0.000000001");
     expect(weiToGweiString(3_000_000_000n)).toBe("3");
     expect(formatGwei(850_000_000)).toBe("0.85 gwei");
-    expect(formatGwei(12_345_678_901)).toBe("12.35 gwei");
+    expect(formatGwei(12_341_000_001)).toBe("12.35 gwei"); // a price, rounded up
     expect(formatGwei(4_200_000)).toBe("0.0042 gwei");
   });
 

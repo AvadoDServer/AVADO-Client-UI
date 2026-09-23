@@ -16,7 +16,7 @@ import type {
   WalletExport,
   WalletStatus,
 } from "./models";
-import type { RocketpoolApi } from "./types";
+import type { CallOptions, RocketpoolApi } from "./types";
 
 export const getVersion = (api: RocketpoolApi) => api.snGet<VersionResponse>("version");
 export const getWalletStatus = (api: RocketpoolApi) => api.snGet<WalletStatus>("wallet/status");
@@ -34,9 +34,9 @@ export const getGasPrice = (api: RocketpoolApi) => api.snGet<GasPriceResponse>("
  * Blocks until the transaction is mined. Resolves when it succeeded; throws
  * a `smartnode` error when it was mined but failed ("status 0").
  */
-export function waitForTx(api: RocketpoolApi, txHash: string): Promise<SnEnvelope> {
+export function waitForTx(api: RocketpoolApi, txHash: string, opts: CallOptions = {}): Promise<SnEnvelope> {
   if (!isTxHash(txHash)) return Promise.reject(new TypeError("Not a transaction hash"));
-  return api.snGet<SnEnvelope>("wait", { txHash });
+  return api.snGet<SnEnvelope>("wait", { txHash }, opts);
 }
 
 /** The exact text the owner must type before the wallet is exported (backend guard). */
@@ -49,3 +49,13 @@ export const EXPORT_CONFIRMATION = "EXPORT";
  */
 export const exportWallet = (api: RocketpoolApi, typed: string) =>
   api.snPost<WalletExport>("wallet/export", { typedConfirmation: typed });
+
+/**
+ * The eligibility flag Smartnode names after a `can-x` route:
+ * "node/can-deposit" → "canDeposit", "megapool/can-exit-validator" → "canExitValidator".
+ */
+export function canFlag(route: string): string | null {
+  const last = route.split("/").pop() ?? "";
+  if (!last.startsWith("can-")) return null;
+  return last.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+}

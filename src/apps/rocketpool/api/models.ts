@@ -389,18 +389,29 @@ export interface AvadoStatus {
 /** The loop's verdict on its last pass. */
 export type ReconcileState = "ok" | "waiting" | "attention" | "error";
 
-/** One Rocket Pool key after the last pass (backend `reconcile/run.ts` KeyState). */
+/** The status file version this UI was written for (backend STATUS_VERSION). */
+export const RECONCILE_STATUS_VERSION = 2;
+
+/**
+ * One Rocket Pool key after the last pass (backend `reconcile/run.ts`
+ * KeyState, v2). `unknown`: a state this UI doesn't know (a newer backend);
+ * it counts as "not running".
+ */
 export type ReconcileKeyState =
   | "loaded"
   | "imported"
+  | "loaded-twice"
   | "elsewhere"
   | "awaiting-approval"
+  | "settling"
   | "import-blocked"
+  | "client-update-needed"
   | "missing-keystore"
   | "import-failed"
   | "retry-limit"
   | "deferred"
-  | "no-client";
+  | "no-client"
+  | "unknown";
 
 export type ReconcileFeeState = "ok" | "fixed" | "failed" | "no-address" | "not-loaded";
 
@@ -411,9 +422,19 @@ export interface ReconcileKey {
   /** Minipool address, or the megapool validator id. */
   ref: string;
   state: ReconcileKeyState;
-  /** For "elsewhere": the package that has the key loaded. */
-  loadedIn?: string;
-  feeRecipient: { rule: string; expected: string | null; found?: string | null; state: ReconcileFeeState };
+  /** The state as the backend wrote it (differs from `state` only for `unknown`). */
+  rawState: string;
+  /** Packages the key is loaded in after the pass. */
+  loadedIn: string[];
+  /** For "settling": when the key may be loaded. */
+  settlesAt?: string;
+  feeRecipient: {
+    rule: string;
+    expected: string | null;
+    /** Worst result over the clients the key is loaded in. */
+    state: ReconcileFeeState;
+    clients: Array<{ package: string; found?: string | null; state: ReconcileFeeState; error?: string }>;
+  };
   error?: string;
 }
 
@@ -424,13 +445,26 @@ export interface ReconcileClient {
   package: string;
 }
 
+/** An installed consensus client as the pass saw it (v2 `clients[]`). */
+export interface ReconcileClientReport extends ReconcileClient {
+  version: string | null;
+  chosen: boolean;
+  /** Its key list was read. */
+  checked: boolean;
+  error?: string;
+  rocketPoolKeys: number;
+  feeRecipients: { ok: number; fixed: number; failed: number };
+}
+
 /**
  * The key/fee-recipient loop's status (`/tmp/reconcile-status.json`, backend
- * `reconcile/run.ts` ReconcileStatus, version 1), after `parseReconcileStatus`:
+ * `reconcile/run.ts` ReconcileStatus, version 2), after `parseReconcileStatus`:
  * every field present, with safe defaults for anything missing or malformed.
  */
 export interface ReconcileStatus {
   version: number;
+  /** Written by a newer backend than this UI knows: some of it may not be shown. */
+  newerThanUi: boolean;
   state: ReconcileState;
   /** One plain-language line, e.g. "Validator keys in sync with Teku: 3/3." */
   message: string;
@@ -445,9 +479,14 @@ export interface ReconcileStatus {
   configuredClient: string | null;
   /** How the client was chosen, in plain language (`why`). */
   clientChoice: { source: "setting" | "only-installed" | "none"; why: string } | null;
-  /** Keys missing in the client that are only loaded after the owner approves them (96 hex, no 0x). */
+  /** Keys missing everywhere that are only loaded after the owner approves them (96 hex, no 0x). */
   awaitingApproval: string[];
-  otherClients: Array<ReconcileClient & { checked: boolean; error?: string }>;
+  /** Why approved keys can't be loaded right now; show next to the approval prompt. */
+  importBlockedReasons: string[];
+  /** Keys loaded in two installed clients at once: slashing danger. */
+  loadedTwice: Array<{ pubkey: string; packages: string[] }>;
+  /** Every installed known client, the chosen one included. */
+  clients: ReconcileClientReport[];
   unknownValidatorPackages: string[];
   keys: { total: number; inSync: number; imported: number; summary: string };
   feeRecipients: { total: number; ok: number; fixed: number; failed: number };

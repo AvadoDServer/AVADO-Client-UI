@@ -5,52 +5,86 @@ import { DemoSnError } from "../../api/fixtures";
 import { createMockRocketpoolApi, type MockRocketpoolApi, type RocketpoolMockOptions } from "../../api/mock";
 import type { CanResponse, SnEnvelope } from "../../api/models";
 import { RocketpoolApiProvider } from "../../api/RocketpoolApiProvider";
+import { PENDING_STORAGE_KEY, PendingTxProvider, PendingTxStore } from "../pending";
 import { TransactionFlow, type TransactionFlowProps } from "../TransactionFlow";
 
 type Props = Partial<TransactionFlowProps<CanResponse>>;
 
-function setup(mock: RocketpoolMockOptions | MockRocketpoolApi = {}, props: Props = {}) {
+/**
+ * A page with a button that opens the flow, and a switch that mounts or
+ * unmounts it (like navigating away and back). `store` lets a test keep the
+ * pending record across a simulated reload.
+ */
+function setup(mock: RocketpoolMockOptions | MockRocketpoolApi = {}, props: Props = {}, store?: PendingTxStore) {
   const api = "calls" in mock ? mock : createMockRocketpoolApi({ scenario: "minipool", ...mock });
   const onDone = vi.fn();
   const onClose = vi.fn();
-  function Harness() {
+  let setParams!: (p: Record<string, string>) => void;
+  function Page() {
     const [open, setOpen] = useState(true);
+    const [mounted, setMounted] = useState(true);
+    const [params, _setParams] = useState<Record<string, string> | undefined>(undefined);
+    setParams = _setParams;
     return (
-      <TransactionFlow
-        open={open}
-        title="Distribute your fee distributor"
-        summary="Sends the ETH in your fee distributor: your share to your withdrawal address."
-        tx={{ canRoute: "node/can-distribute", route: "node/distribute" }}
-        confirmLabel="Distribute"
-        armDelayMs={0}
-        onDone={onDone}
-        onClose={() => {
-          onClose();
-          setOpen(false);
-        }}
-        {...props}
-      />
+      <>
+        <button onClick={() => setOpen(true)}>Open again</button>
+        <button onClick={() => setMounted((m) => !m)}>Toggle page</button>
+        {mounted && (
+          <TransactionFlow
+            open={open}
+            title="Distribute your fee distributor"
+            summary="Sends the ETH in your fee distributor: your share to your withdrawal address."
+            tx={{ canRoute: "node/can-distribute", route: "node/distribute", ...(params ? { params } : {}) }}
+            confirmLabel="Distribute"
+            armDelayMs={0}
+            onDone={onDone}
+            onClose={() => {
+              onClose();
+              setOpen(false);
+            }}
+            {...props}
+          />
+        )}
+      </>
     );
   }
-  render(
+  const utils = render(
     <RocketpoolApiProvider api={api}>
-      <Harness />
+      <PendingTxProvider store={store}>
+        <Page />
+      </PendingTxProvider>
     </RocketpoolApiProvider>,
   );
   const posts = () => api.calls.filter((c) => c.method === "POST");
-  return { api, onDone, onClose, posts, dialog: () => screen.getByRole("dialog") };
+  const waits = () => api.calls.filter((c) => c.path === "/api/sn/wait");
+  return { api, onDone, onClose, posts, waits, setParams: (p: Record<string, string>) => act(() => setParams(p)), ...utils };
 }
 
 const confirmButton = () => screen.getByRole("button", { name: "Distribute" });
+const reopen = () => userEvent.click(screen.getByRole("button", { name: "Open again" }));
+const togglePage = () => userEvent.click(screen.getByRole("button", { name: "Toggle page" }));
+
+/** snPost that waits until released (a slow node). */
+function slowPosts(api: MockRocketpoolApi) {
+  const releases: Array<() => void> = [];
+  const realPost = api.snPost.bind(api);
+  api.snPost = async <T extends SnEnvelope>(route: string, body?: Record<string, string | number | boolean>) => {
+    await new Promise<void>((r) => releases.push(r));
+    return realPost<T>(route, body);
+  };
+  return async () => {
+    await act(async () => releases.shift()?.());
+  };
+}
 
 describe("TransactionFlow", () => {
   it("checks, shows the plain summary and the fee, sends only on confirm, waits, and links the explorer", async () => {
     const { api, onDone, posts } = setup({}, { tx: { canRoute: "minipool/can-refund", route: "minipool/refund", params: { address: "0xabc" } } });
     expect(screen.getByText(/Checking with Rocket Pool/)).toBeInTheDocument();
     const fee = await screen.findByTestId("tx-fee");
-    // 145,000 gas × (0.85 + 1) gwei; at most 217,500 × (2 × 0.85 + 1) gwei
-    expect(within(fee).getByText("about 0.000268 ETH")).toBeInTheDocument();
-    expect(within(fee).getByText("0.000587 ETH")).toBeInTheDocument();
+    // 145,000 gas × (0.85 + 1) gwei = 0.00026825 ETH; at most 217,500 × (2 × 0.85 + 1) gwei = 0.00058725 ETH (costs round up)
+    expect(within(fee).getByText("about 0.000269 ETH")).toBeInTheDocument();
+    expect(within(fee).getByText("0.000588 ETH")).toBeInTheDocument();
     // The numbers behind it: the same ones go into the request.
     const row = (label: string) => within(fee).getByText(label).nextElementSibling?.textContent;
     expect(row("Current base fee")).toBe("0.85 gwei");
@@ -76,6 +110,8 @@ describe("TransactionFlow", () => {
     const hash = api.calls[3].params.txHash as string;
     expect(screen.getByRole("link", { name: /View the transaction on Etherscan/ })).toHaveAttribute("href", `https://etherscan.io/tx/${hash}`);
     expect(onDone).toHaveBeenCalledWith(hash);
+    // Focus moved to the outcome, not left on a button that is gone.
+    expect(screen.getByText("Transaction confirmed").closest("[tabindex='-1']")).toHaveFocus();
   });
 
   it("shows the waiting state with the explorer link while the tx is being mined", async () => {
@@ -83,7 +119,6 @@ describe("TransactionFlow", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
     expect(await screen.findByText(/Sent. Waiting for it to be included/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Etherscan/ })).toHaveAttribute("href", expect.stringMatching(/^https:\/\/etherscan\.io\/tx\/0x[0-9a-f]{64}$/));
-    // It can be closed; the transaction continues.
     expect(screen.getByRole("button", { name: "Close" })).toBeEnabled();
   });
 
@@ -95,37 +130,32 @@ describe("TransactionFlow", () => {
       fireEvent.click(button);
       fireEvent.click(button);
     });
-    await userEvent.dblClick(button);
     await screen.findByText(/Sent. Waiting/);
     expect(posts()).toHaveLength(1);
   });
 
-  it("keeps confirm disabled for a moment after the summary appears", async () => {
+  it("keeps confirm disabled for a moment after the summary appears, and says why", async () => {
     const { posts } = setup({}, { armDelayMs: 300 });
     const button = await screen.findByRole("button", { name: "Distribute" });
     expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription("Confirm becomes available in a moment.");
     fireEvent.click(button);
     expect(posts()).toHaveLength(0);
     await waitFor(() => expect(confirmButton()).toBeEnabled(), { timeout: 2000 });
   });
 
   it("can't be closed while the request is on its way", async () => {
-    let release!: () => void;
     const api = createMockRocketpoolApi({ scenario: "minipool", waitMs: 60_000 });
-    const realPost = api.snPost.bind(api);
-    api.snPost = async <T extends SnEnvelope>(route: string, body?: Record<string, string | number | boolean>) => {
-      await new Promise<void>((r) => (release = r));
-      return realPost<T>(route, body);
-    };
+    const release = slowPosts(api);
     const { onClose } = setup(api);
     await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(await screen.findByText("Sending…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Close dialog" })).not.toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     fireEvent.click(screen.getByTestId("modal-backdrop"));
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByText("Sending…")).toBeInTheDocument();
-    await act(async () => release());
+    await release();
     expect(await screen.findByText(/Sent. Waiting/)).toBeInTheDocument();
   });
 
@@ -133,6 +163,7 @@ describe("TransactionFlow", () => {
     const { posts } = setup({}, { requireText: "EXIT", tone: "danger", confirmLabel: "Exit validator" });
     const button = await screen.findByRole("button", { name: "Exit validator" });
     expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription("Type EXIT above to enable Exit validator.");
     await userEvent.type(screen.getByLabelText(/to confirm/), "exit");
     expect(button).toBeDisabled();
     await userEvent.clear(screen.getByLabelText(/to confirm/));
@@ -143,15 +174,162 @@ describe("TransactionFlow", () => {
     expect(posts()).toHaveLength(1);
   });
 
-  it("stops when Rocket Pool says no (a canX: false flag), or with the page's own reason", async () => {
-    const first = setup({ reads: { "node/can-distribute": { status: "success", error: "", canDistribute: false, gasLimits: { estimated: 0, safe: 0 } } } });
+  describe("C1: never a second send for the same action", () => {
+    it("closing and reopening during the send shows the send, not a new Confirm", async () => {
+      const api = createMockRocketpoolApi({ scenario: "minipool", waitMs: 60_000 });
+      const release = slowPosts(api);
+      const { posts } = setup(api);
+      await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
+      await screen.findByText("Sending…");
+      // The parent closes it anyway (e.g. its own state changed) and the owner reopens it.
+      await togglePage();
+      await togglePage();
+      expect(await screen.findByText("Sending…")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Distribute" })).not.toBeInTheDocument();
+      await release();
+      expect(await screen.findByText(/Sent. Waiting/)).toBeInTheDocument(); // the answer was recorded although the first dialog is gone
+      expect(posts()).toHaveLength(1);
+    });
+
+    it("leaving the page while waiting and coming back shows the same pending tx", async () => {
+      const { posts, waits } = setup({ waitMs: 60_000 });
+      await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
+      await screen.findByText(/Sent. Waiting/);
+      await togglePage();
+      await togglePage();
+      expect(await screen.findByText(/Sent. Waiting/)).toBeInTheDocument();
+      expect(screen.getByText(/started earlier/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Distribute" })).not.toBeInTheDocument();
+      expect(posts()).toHaveLength(1);
+      expect(waits()).toHaveLength(1); // still the one wait
+    });
+
+    it("an unclear send stays locked after closing, and after a reload", async () => {
+      const api = createMockRocketpoolApi({ scenario: "minipool", failures: { "node/distribute": "unreachable" } });
+      const first = setup(api);
+      await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
+      expect(await screen.findByText("We don't know if it was sent")).toBeInTheDocument();
+      expect(screen.getByText(/Don't try again yet/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Check again" })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Close" }));
+      await reopen();
+      expect(screen.getByText("We don't know if it was sent")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Distribute" })).not.toBeInTheDocument();
+      first.unmount();
+
+      // Reload: a new app on the same browser storage.
+      expect(localStorage.getItem(PENDING_STORAGE_KEY)).toContain('"state":"unknown"');
+      const again = setup(createMockRocketpoolApi({ scenario: "minipool" }));
+      expect(await screen.findByText("We don't know if it was sent")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Distribute" })).not.toBeInTheDocument();
+      expect(again.api.calls.filter((c) => c.path.endsWith("can-distribute"))).toHaveLength(0);
+    });
+
+    it("a reload during the wait resumes following the same hash", async () => {
+      const first = setup({ waitMs: 60_000 });
+      await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
+      await screen.findByText(/Sent. Waiting/);
+      const hash = first.waits()[0].params.txHash;
+      first.unmount();
+
+      const again = setup({ waitMs: 5 });
+      expect(await screen.findByText("Transaction confirmed")).toBeInTheDocument();
+      expect(again.waits().map((c) => c.params.txHash)).toEqual([hash]);
+      expect(again.posts()).toHaveLength(0);
+    });
+
+    it("the same action from a second dialog shows the pending one", async () => {
+      const api = createMockRocketpoolApi({ scenario: "minipool", waitMs: 60_000 });
+      const store = new PendingTxStore({ api, storage: null });
+      function Two() {
+        return (
+          <>
+            {(["First", "Second"] as const).map((name) => (
+              <TransactionFlow
+                key={name}
+                open
+                title={name}
+                summary={name}
+                tx={{ canRoute: "node/can-distribute", route: "node/distribute" }}
+                confirmLabel={`Confirm ${name}`}
+                armDelayMs={0}
+                onClose={() => {}}
+              />
+            ))}
+          </>
+        );
+      }
+      render(
+        <RocketpoolApiProvider api={api}>
+          <PendingTxProvider store={store}>
+            <Two />
+          </PendingTxProvider>
+        </RocketpoolApiProvider>,
+      );
+      const first = await screen.findByRole("button", { name: "Confirm First" });
+      await screen.findByRole("button", { name: "Confirm Second" });
+      await userEvent.click(first);
+      await screen.findAllByText(/Sent. Waiting/);
+      // The second dialog had a ready Confirm; pressing it now must not send.
+      const second = screen.queryByRole("button", { name: "Confirm Second" });
+      if (second) await userEvent.click(second);
+      expect(api.calls.filter((c) => c.method === "POST")).toHaveLength(1);
+    });
+
+    it("calls onDone when the tx is mined, even if the dialog was closed meanwhile", async () => {
+      const { onDone } = setup({ waitMs: 50 });
+      await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
+      await screen.findByText(/Sent. Waiting/);
+      await userEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    });
+  });
+
+  it("I1: sends exactly the parameters that were checked, not later ones", async () => {
+    const { posts, setParams, api } = setup({}, {});
+    setParams({ amountWei: "1" });
+    await reopen(); // no-op while open; the check already ran with no params
+    await screen.findByRole("button", { name: "Distribute" });
+    // Re-check with amount 1, then the page changes the amount before confirm.
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await reopen();
+    await screen.findByRole("button", { name: "Distribute" });
+    expect(api.calls.filter((c) => c.path.endsWith("can-distribute")).at(-1)?.params).toEqual({ amountWei: "1" });
+    setParams({ amountWei: "999" });
+    await userEvent.click(confirmButton());
+    await screen.findByText("Transaction confirmed");
+    expect(posts()[0].params).toMatchObject({ amountWei: "1" });
+  });
+
+  it("I2: a summary older than a minute is checked again before sending", async () => {
+    const { posts, api } = setup({}, { maxQuoteAgeMs: 50 });
+    await screen.findByRole("button", { name: "Distribute" });
+    await act(() => new Promise((r) => setTimeout(r, 80)));
+    await userEvent.click(confirmButton());
+    expect(await screen.findByText(/more than a minute old, so it was checked again/)).toBeInTheDocument();
+    expect(posts()).toHaveLength(0);
+    expect(api.calls.filter((c) => c.path.endsWith("can-distribute"))).toHaveLength(2);
+    await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
+    await screen.findByText("Transaction confirmed");
+    expect(posts()).toHaveLength(1);
+  });
+
+  it("I4: a deposit is judged by canDeposit only (canUseCredit false is fine)", async () => {
+    setup(
+      { reads: { "node/can-deposit": { status: "success", error: "", canDeposit: true, canUseCredit: false, gasLimits: { estimated: 1_500_000, safe: 2_250_000 } } } },
+      { tx: { canRoute: "node/can-deposit", route: "node/deposit", params: { amountWei: "4000000000000000000" } } },
+    );
+    expect(await screen.findByTestId("tx-fee")).toBeInTheDocument();
+  });
+
+  it("stops when the route's own flag is false, with Smartnode's reason in plain words", async () => {
+    const first = setup({
+      reads: { "node/can-deposit": { status: "success", error: "", canDeposit: false, insufficientBalance: true, gasLimits: { estimated: 0, safe: 0 } } },
+    }, { tx: { canRoute: "node/can-deposit", route: "node/deposit" } });
     expect(await screen.findByText("This can't be done right now")).toBeInTheDocument();
-    expect(screen.getByText("Rocket Pool says this can't be done right now.")).toBeInTheDocument();
+    expect(screen.getByText("The node wallet doesn't have enough ETH for this.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Distribute" })).not.toBeInTheDocument();
     expect(first.posts()).toHaveLength(0);
-    first.onClose.mockReset();
-    await userEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(first.onClose).toHaveBeenCalled();
   });
 
   it("uses the page's own reason and details from the check", async () => {
@@ -184,7 +362,7 @@ describe("TransactionFlow", () => {
     expect(api.calls.filter((c) => c.path === "/api/sn/node/can-distribute")).toHaveLength(2);
   });
 
-  it("a refused send says nothing was sent, and allows a fresh check and one more send", async () => {
+  it("M1: a Smartnode refusal was most likely not sent; a backend refusal certainly not", async () => {
     const api = createMockRocketpoolApi({
       scenario: "minipool",
       failures: { "node/distribute": new DemoSnError(500, "Insufficient ETH balance to pay for the transaction") },
@@ -193,86 +371,20 @@ describe("TransactionFlow", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
     expect(await screen.findByText("Not sent")).toBeInTheDocument();
     expect(screen.getByText("Insufficient ETH balance to pay for the transaction.")).toBeInTheDocument();
-    expect(screen.getByText("Nothing was sent and no fee was paid.")).toBeInTheDocument();
+    expect(screen.getByText("It was most likely not sent, and no fee was paid for it.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Check again" }));
     await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
     await screen.findByText("Not sent");
     expect(posts()).toHaveLength(2);
   });
 
-  it("an unclear send is never offered again: only Close", async () => {
-    const { posts } = setup({ failures: { "node/distribute": "timeout" } });
+  it("M1: a request the backend refused was certainly not sent", async () => {
+    setup({ failures: { "node/distribute": new DemoSnError(403, "Missing X-Avado-Request header") } });
     await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
-    expect(await screen.findByText("We don't know if it was sent")).toBeInTheDocument();
-    expect(screen.getByText(/Don't try again yet/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Distribute" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Check again" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
-    expect(posts()).toHaveLength(1);
+    expect(await screen.findByText("Nothing was sent and no fee was paid.")).toBeInTheDocument();
   });
 
-  it("reopening after an unclear send shows it again instead of offering a second send", async () => {
-    function Reopen({ api }: { api: MockRocketpoolApi }) {
-      const [open, setOpen] = useState(true);
-      return (
-        <RocketpoolApiProvider api={api}>
-          <button onClick={() => setOpen(true)}>Open again</button>
-          <TransactionFlow
-            open={open}
-            title="Distribute"
-            summary="Sends it."
-            tx={{ canRoute: "node/can-distribute", route: "node/distribute" }}
-            confirmLabel="Distribute"
-            armDelayMs={0}
-            onClose={() => setOpen(false)}
-          />
-        </RocketpoolApiProvider>
-      );
-    }
-    const api = createMockRocketpoolApi({ scenario: "minipool", failures: { "node/distribute": "unreachable" } });
-    render(<Reopen api={api} />);
-    await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
-    await screen.findByText("We don't know if it was sent");
-    await userEvent.click(screen.getByRole("button", { name: "Close" }));
-    await userEvent.click(screen.getByRole("button", { name: "Open again" }));
-    expect(screen.getByText("We don't know if it was sent")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Distribute" })).not.toBeInTheDocument();
-    expect(api.calls.filter((c) => c.path.endsWith("can-distribute"))).toHaveLength(1);
-    expect(api.calls.filter((c) => c.method === "POST")).toHaveLength(1);
-  });
-
-  it("reopening while a sent tx is pending follows the same hash again", async () => {
-    function Reopen({ api }: { api: MockRocketpoolApi }) {
-      const [open, setOpen] = useState(true);
-      return (
-        <RocketpoolApiProvider api={api}>
-          <button onClick={() => setOpen(true)}>Open again</button>
-          <TransactionFlow
-            open={open}
-            title="Distribute"
-            summary="Sends it."
-            tx={{ canRoute: "node/can-distribute", route: "node/distribute" }}
-            confirmLabel="Distribute"
-            armDelayMs={0}
-            onClose={() => setOpen(false)}
-          />
-        </RocketpoolApiProvider>
-      );
-    }
-    const api = createMockRocketpoolApi({ scenario: "minipool", waitMs: 60_000 });
-    render(<Reopen api={api} />);
-    await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
-    await screen.findByText(/Sent. Waiting/);
-    await userEvent.click(screen.getByRole("button", { name: "Close" }));
-    await userEvent.click(screen.getByRole("button", { name: "Open again" }));
-    expect(screen.getByText(/Sent. Waiting/)).toBeInTheDocument();
-    const waits = api.calls.filter((c) => c.path === "/api/sn/wait").map((c) => c.params.txHash);
-    expect(waits).toHaveLength(2);
-    expect(waits[1]).toBe(waits[0]);
-    expect(api.calls.filter((c) => c.method === "POST")).toHaveLength(1);
-  });
-
-  it("an answer without a tx hash is treated as unclear too", async () => {
+  it("an answer without a tx hash is treated as unclear", async () => {
     const api = createMockRocketpoolApi({ scenario: "minipool" });
     api.snPost = async <T extends SnEnvelope>() => ({ status: "success", error: "" }) as T;
     setup(api);
@@ -289,18 +401,24 @@ describe("TransactionFlow", () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 
-  it("losing track while waiting re-checks the same tx, never sends again", async () => {
+  it("I6: losing track while waiting re-checks the same tx with one wait at a time, never sends again", async () => {
     const api = createMockRocketpoolApi({ scenario: "minipool", failures: { wait: "timeout" } });
-    const { posts } = setup(api);
+    const signals: AbortSignal[] = [];
+    const snGet = api.snGet.bind(api);
+    api.snGet = ((route: string, params?: Record<string, string>, opts?: { signal?: AbortSignal }) => {
+      if (route === "wait" && opts?.signal) signals.push(opts.signal);
+      return snGet(route, params, opts);
+    }) as typeof api.snGet;
+    const { posts, waits } = setup(api);
     await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
     expect(await screen.findByText("Sent, but the result isn't known yet")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Check the transaction again" }));
-    await waitFor(() => expect(api.calls.filter((c) => c.path === "/api/sn/wait")).toHaveLength(2));
+    await waitFor(() => expect(waits()).toHaveLength(2));
     expect(await screen.findByText("Sent, but the result isn't known yet")).toBeInTheDocument();
-    const waits = api.calls.filter((c) => c.path === "/api/sn/wait").map((c) => c.params.txHash);
-    expect(waits[0]).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(waits[1]).toBe(waits[0]);
+    const hashes = waits().map((c) => c.params.txHash);
+    expect(hashes[1]).toBe(hashes[0]);
     expect(posts()).toHaveLength(1);
+    expect(signals.every((s) => s instanceof AbortSignal)).toBe(true);
   });
 
   it("reads the hash from the route's own field", async () => {
@@ -311,5 +429,15 @@ describe("TransactionFlow", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
     await screen.findByText("Transaction confirmed");
     expect(api.calls.at(-1)?.path).toBe("/api/sn/wait");
+  });
+
+  it("after a finished tx, opening again starts a fresh check", async () => {
+    const { posts } = setup();
+    await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
+    await screen.findByText("Transaction confirmed");
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+    await reopen();
+    expect(await screen.findByRole("button", { name: "Distribute" })).toBeInTheDocument();
+    expect(posts()).toHaveLength(1);
   });
 });

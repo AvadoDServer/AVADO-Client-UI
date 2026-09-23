@@ -1,5 +1,6 @@
 import { RpApiError } from "./errors";
-import type { ApproveKeysResult, AvadoStatus, LogsView, ReconcileView, SnEnvelope } from "./models";
+import { parseAvadoStatus } from "./avado";
+import type { ApproveKeysResult, LogsView, ReconcileView, SnEnvelope } from "./models";
 import type { CallOptions, RocketpoolApi, SnParams } from "./types";
 
 /** The package backend's routes, on the UI's own origin. */
@@ -48,11 +49,13 @@ interface RequestSpec {
   timeoutMs: number;
   /** Smartnode envelope: a 200 with `status: "error"` is an error too. */
   envelope: boolean;
+  signal?: AbortSignal;
 }
 
 /** Adapters for the package backend (same origin as the UI). */
 export function createRealRocketpoolApi(fetchImpl: typeof fetch = (...args) => fetch(...args)): RocketpoolApi {
-  async function request<T>({ method, path, body, timeoutMs, envelope }: RequestSpec): Promise<T> {
+  async function request<T>({ method, path, body, timeoutMs, envelope, signal }: RequestSpec): Promise<T> {
+    if (signal?.aborted) throw new RpApiError({ kind: "aborted", path });
     const headers: Record<string, string> = { Accept: "application/json" };
     let payload: string | undefined;
     if (method === "POST") {
@@ -67,6 +70,8 @@ export function createRealRocketpoolApi(fetchImpl: typeof fetch = (...args) => f
       timedOut = true;
       controller.abort();
     }, timeoutMs);
+    const onAbort = () => controller.abort();
+    signal?.addEventListener("abort", onAbort);
 
     let res: Response;
     let text: string;
@@ -82,9 +87,11 @@ export function createRealRocketpoolApi(fetchImpl: typeof fetch = (...args) => f
       });
       text = await res.text();
     } catch (cause) {
-      throw new RpApiError({ kind: timedOut ? "timeout" : "unreachable", path, cause });
+      const kind = timedOut ? "timeout" : signal?.aborted ? "aborted" : "unreachable";
+      throw new RpApiError({ kind, path, cause });
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
     }
 
     let data: unknown;
@@ -112,7 +119,12 @@ export function createRealRocketpoolApi(fetchImpl: typeof fetch = (...args) => f
   };
 
   return {
-    avadoStatus: () => request<AvadoStatus>({ method: "GET", path: AVADO_STATUS_PATH, timeoutMs: READ_TIMEOUT_MS, envelope: false }),
+    async avadoStatus() {
+      const raw = await request<unknown>({ method: "GET", path: AVADO_STATUS_PATH, timeoutMs: READ_TIMEOUT_MS, envelope: false });
+      const status = parseAvadoStatus(raw);
+      if (!status) throw new RpApiError({ kind: "invalid", path: AVADO_STATUS_PATH, detail: "Not a status answer" });
+      return status;
+    },
 
     reconcile: () => request<ReconcileView>({ method: "GET", path: AVADO_RECONCILE_PATH, timeoutMs: READ_TIMEOUT_MS, envelope: false }),
 
@@ -145,6 +157,7 @@ export function createRealRocketpoolApi(fetchImpl: typeof fetch = (...args) => f
         path: query ? `${path}?${query}` : path,
         timeoutMs: opts.timeoutMs ?? (LONG_ROUTES.has(route) ? LONG_TIMEOUT_MS : READ_TIMEOUT_MS),
         envelope: true,
+        signal: opts.signal,
       });
     },
 
@@ -155,6 +168,7 @@ export function createRealRocketpoolApi(fetchImpl: typeof fetch = (...args) => f
         body,
         timeoutMs: opts.timeoutMs ?? (LONG_ROUTES.has(route) ? LONG_TIMEOUT_MS : WRITE_TIMEOUT_MS),
         envelope: true,
+        signal: opts.signal,
       });
     },
   };

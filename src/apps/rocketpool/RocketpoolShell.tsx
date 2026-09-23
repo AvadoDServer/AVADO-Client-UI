@@ -1,14 +1,24 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Outlet } from "react-router-dom";
 import { ShellFrame } from "../../components/shell/ShellFrame";
 import { useMode } from "../../settings/ModeProvider";
 import { APP_TITLE, RocketpoolIdentity } from "./identity";
 import { visibleRpNavItems } from "./nav";
 import { AppStatusProvider, useAppStatus } from "./status/AppStatus";
+import { findPendingProblems } from "./status/problems";
+import { usePendingTxs } from "./tx/pending";
 
 function Frame() {
   const { isAdvanced } = useMode();
-  const { problems } = useAppStatus();
+  const { problems: statusProblems } = useAppStatus();
+  const pending = usePendingTxs();
+  const problems = useMemo(() => {
+    const all = [...statusProblems, ...findPendingProblems(pending.list())];
+    const order = { danger: 0, warning: 1, accent: 2 } as const;
+    return all.sort((a, b) => order[a.tone] - order[b.tone]);
+    // pending.getVersion() changes whenever the store does
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusProblems, pending, pending.getVersion()]);
   return (
     <ShellFrame
       brand={<RocketpoolIdentity />}

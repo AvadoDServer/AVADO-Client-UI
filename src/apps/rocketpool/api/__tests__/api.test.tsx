@@ -164,6 +164,37 @@ describe("real Rocket Pool API", () => {
     }
   });
 
+  it("reads the status defensively: cautious defaults for missing fields, invalid for a non-object", async () => {
+    const f = createFetchMock()
+      .once("GET", "/api/avado/status", { json: { daemon: "broken", backups: [{ name: 5 }, { name: "b", kind: "odd" }], daemonErrors: ["x", 3] } })
+      .once("GET", "/api/avado/status", { json: [1, 2] });
+    const api = createRealRocketpoolApi(f.fetch);
+    expect(await api.avadoStatus()).toMatchObject({
+      daemon: { state: "UNKNOWN" },
+      apiReachable: false,
+      apiTokenPresent: false,
+      networkSupported: true,
+      walletFilePresent: true,
+      passwordFilePresent: true,
+      legacyMnemonicPresent: false,
+      startupError: null,
+      daemonErrors: ["x"],
+      backups: [{ name: "b", createdAt: "", kind: "upgrade" }],
+    });
+    expect((await caught(api.avadoStatus())).kind).toBe("invalid");
+  });
+
+  it("a caller can cancel a request (a wait no longer needed)", async () => {
+    const f = createFetchMock().on("GET", `/api/sn/wait?txHash=${HASH}`, "hang");
+    const api = createRealRocketpoolApi(f.fetch);
+    const controller = new AbortController();
+    const p = waitForTx(api, HASH, { signal: controller.signal });
+    controller.abort();
+    expect((await caught(p)).kind).toBe("aborted");
+    expect((await caught(waitForTx(api, HASH, { signal: controller.signal }))).kind).toBe("aborted"); // already aborted: no request
+    expect(f.calls).toHaveLength(1);
+  });
+
   it("typed helpers: gas price, wait (hash checked first), wallet export with the typed confirmation", async () => {
     const f = createFetchMock()
       .on("GET", "/api/sn/service/get-gas-price-from-latest-block", ok({ gasPrice: 850000000 }))

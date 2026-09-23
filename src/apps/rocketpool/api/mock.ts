@@ -16,6 +16,9 @@ import { RpApiError } from "./errors";
 import { DemoSnError, SCENARIOS, demoHex, isScenarioName, type MockScenario, type MockScenarioName } from "./fixtures";
 import { APPROVE_CONFIRMATION, type ApproveKeysResult, type AvadoStatus, type LogsView, type ReconcileView, type SnEnvelope } from "./models";
 import { normalizePubkey } from "./reconcile";
+import { canFlag } from "./sn";
+
+export { canFlag };
 import {
   AVADO_LOGS_PATH,
   AVADO_RECONCILE_APPROVE_PATH,
@@ -25,7 +28,7 @@ import {
   SN_PREFIX,
   assertRoute,
 } from "./real";
-import type { RocketpoolApi, SnParams } from "./types";
+import type { CallOptions, RocketpoolApi, SnParams } from "./types";
 
 export type MockFailure = DemoSnError | "unreachable" | "timeout";
 
@@ -76,9 +79,15 @@ function withApproved(view: ReconcileView, approved: ReadonlySet<string>): Recon
   const keys = s.keys as { total: number; inSync: number; imported: number; summary: string };
   const inSync = keys.inSync + loaded.length;
   const stillWaiting = waiting.filter((k) => !approved.has(k));
+  const chosen = (s.client as { package?: string } | null)?.package;
   const validators = (s.validators as Array<Record<string, unknown>>).map((v) =>
     loaded.includes(v.pubkey as string)
-      ? { ...v, state: "imported", feeRecipient: { ...(v.feeRecipient as object), state: "fixed" } }
+      ? {
+          ...v,
+          state: "imported",
+          loadedIn: chosen ? [chosen] : [],
+          feeRecipient: { ...(v.feeRecipient as object), state: "fixed", clients: chosen ? [{ package: chosen, found: null, state: "fixed" }] : [] },
+        }
       : v,
   );
   const clientName = (s.client as { name?: string } | null)?.name ?? "the consensus client";
@@ -97,15 +106,22 @@ function withApproved(view: ReconcileView, approved: ReadonlySet<string>): Recon
   };
 }
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
-
-/** "node/can-distribute" → "canDistribute"; "megapool/can-exit-validator" → "canExitValidator". */
-export function canFlag(route: string): string | null {
-  const last = route.split("/").pop() ?? "";
-  if (!last.startsWith("can-")) return null;
-  return last.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+/** Resolves after `ms`, or rejects as `aborted` when the signal fires first. */
+function sleep(ms: number, signal?: AbortSignal, path = ""): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(new RpApiError({ kind: "aborted", path }));
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(new RpApiError({ kind: "aborted", path }));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 /** The field a write route names its tx hash with. */
 export function txHashField(route: string): string {
@@ -138,8 +154,8 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
   /** Keys the owner approved in this mock: the next status shows them loaded. */
   const approved = new Set<string>();
 
-  const delay = async (ms = latencyMs) => {
-    if (ms > 0) await sleep(ms);
+  const delay = async (ms = latencyMs, signal?: AbortSignal, path?: string) => {
+    if (ms > 0 || signal?.aborted) await sleep(ms, signal, path);
   };
 
   async function enter(method: "GET" | "POST", path: string, params: Record<string, unknown> = {}) {
@@ -203,14 +219,14 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
       return { available: true, lines: scenario.logLines.slice(-tail) } as LogsView;
     },
 
-    async snGet<T extends SnEnvelope>(route: string, params: SnParams = {}) {
+    async snGet<T extends SnEnvelope>(route: string, params: SnParams = {}, opts: CallOptions = {}) {
       assertRoute(route);
       const path = `${SN_PREFIX}${route}`;
       await enter("GET", path, params);
       daemonCheck(route, path);
 
       if (route === "wait") {
-        await delay(waitMs);
+        await delay(waitMs, opts.signal, path);
         if (txOutcome === "revert") fail(path, new DemoSnError(500, TX_FAILED));
         return { status: "success", error: "" } as T;
       }

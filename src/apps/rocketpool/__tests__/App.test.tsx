@@ -109,9 +109,21 @@ describe("Rocket Pool app", () => {
     renderAt("/", { backendDown: true });
     const status = screen.getByTestId("service-status");
     expect(within(status).getByText("Checking")).toBeInTheDocument();
-    expect(await within(status).findByText("Not reachable")).toBeInTheDocument();
+    // One failed poll is not enough; the second (3 s later) is.
+    expect(await within(status).findByText("Not reachable", {}, { timeout: 6000 })).toBeInTheDocument();
     expect(within(status).queryByText("Demo data")).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Problems" })).toHaveTextContent("The Rocket Pool package is not answering");
+  });
+
+  it("after a reload, a transaction whose send was cut off shows on every page and links back", async () => {
+    localStorage.setItem(
+      "avado-rocketpool.pending-tx.v1",
+      JSON.stringify([{ key: "node/distribute?[]", title: "Distribute your rewards", route: "node/distribute", params: {}, page: "/rewards", state: "sending", createdAt: 1, updatedAt: 1 }]),
+    );
+    renderAt("/wallet", { scenario: "minipool" });
+    const problems = await screen.findByRole("region", { name: "Problems" });
+    expect(within(problems).getByText("Check your transaction: Distribute your rewards")).toBeInTheDocument();
+    expect(within(problems).getByRole("link", { name: "Open" })).toHaveAttribute("href", "/rewards");
   });
 
   it("shows no client status strip", async () => {

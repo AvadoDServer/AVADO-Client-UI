@@ -9,13 +9,16 @@ import HomePage from "./pages/HomePage";
 import NotFound from "./pages/NotFound";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import { RocketpoolShell } from "./RocketpoolShell";
+import { PendingTxProvider } from "./tx/pending";
 
-/** Theme, mode and API context around the Rocket Pool app. */
+/** Theme, mode, API and pending-transaction context around the Rocket Pool app. */
 export function Providers({ children, api }: { children: ReactNode; api?: RocketpoolApi }) {
   return (
     <ThemeProvider>
       <ModeProvider>
-        <RocketpoolApiProvider api={api}>{children}</RocketpoolApiProvider>
+        <RocketpoolApiProvider api={api}>
+          <PendingTxProvider>{children}</PendingTxProvider>
+        </RocketpoolApiProvider>
       </ModeProvider>
     </ThemeProvider>
   );

@@ -8,9 +8,9 @@ import { normalizePubkey, parseReconcileStatus, reconcileStatusOf } from "../rec
 
 const PK = "ab".repeat(48);
 
-/** A status as the backend loop writes it (reconcile/run.ts, version 1). */
+/** A status as the backend loop writes it (reconcile/run.ts, STATUS_VERSION 2). */
 const LOOP_STATUS = {
-  version: 1,
+  version: 2,
   state: "attention",
   message: "Validator keys in sync with Teku: 1/3. 2 validator keys are not loaded and wait for your approval.",
   startedAt: "2026-09-23T10:00:00.000Z",
@@ -22,10 +22,24 @@ const LOOP_STATUS = {
   configuredClient: "teku",
   clientChoice: { source: "setting", why: 'The Rocket Pool package setting CONSENSUSCLIENT is "teku".' },
   awaitingApproval: [PK, `0x${"CD".repeat(48)}`],
-  otherClients: [{ id: "prysm", name: "Prysm", package: "eth2validator.avado.dnp.dappnode.eth", checked: false, error: "not reachable" }],
+  importBlockedReasons: ["The keys in Prysm (eth2validator.avado.dnp.dappnode.eth) could not be checked."],
+  loadedTwice: [],
+  clients: [
+    {
+      id: "teku",
+      name: "Teku",
+      package: "teku.avado.dnp.dappnode.eth",
+      version: "0.0.76",
+      chosen: true,
+      checked: true,
+      rocketPoolKeys: 1,
+      feeRecipients: { ok: 0, fixed: 1, failed: 0 },
+    },
+    { id: "prysm", name: "Prysm", package: "eth2validator.avado.dnp.dappnode.eth", version: null, chosen: false, checked: false, error: "not reachable", rocketPoolKeys: 0, feeRecipients: { ok: 0, fixed: 0, failed: 0 } },
+  ],
   unknownValidatorPackages: [],
   keys: { total: 3, inSync: 1, imported: 0, summary: "1/3" },
-  feeRecipients: { total: 1, ok: 1, fixed: 0, failed: 0 },
+  feeRecipients: { total: 1, ok: 0, fixed: 1, failed: 0 },
   fee: null,
   validators: [
     {
@@ -33,17 +47,25 @@ const LOOP_STATUS = {
       kind: "minipool",
       ref: "0x1234567890abcdef1234567890abcdef12345678",
       state: "loaded",
-      feeRecipient: { rule: "fee-distributor", expected: "0x1234567890abcdef1234567890abcdef12345678", found: null, state: "fixed" },
+      loadedIn: ["teku.avado.dnp.dappnode.eth"],
+      feeRecipient: {
+        rule: "fee-distributor",
+        expected: "0x1234567890abcdef1234567890abcdef12345678",
+        state: "fixed",
+        clients: [{ package: "teku.avado.dnp.dappnode.eth", found: null, state: "fixed" }],
+      },
     },
-    { pubkey: PK, kind: "megapool", ref: 3, state: "awaiting-approval", feeRecipient: { rule: "megapool", expected: null, state: "not-loaded" } },
-    { pubkey: "zz", kind: "megapool", ref: 4, state: "loaded", feeRecipient: {} },
+    { pubkey: PK, kind: "megapool", ref: 3, state: "settling", loadedIn: [], settlesAt: "2026-09-23T10:20:00.000Z", feeRecipient: { rule: "megapool", expected: null, state: "not-loaded", clients: [] } },
+    { pubkey: "zz", kind: "megapool", ref: 4, state: "loaded", loadedIn: [], feeRecipient: {} },
   ],
   errors: [],
 };
 
 describe("key check status", () => {
-  it("reads the loop's status, normalising pubkeys and dropping entries it can't trust", () => {
+  it("reads the loop's v2 status, normalising pubkeys and dropping entries without a valid key", () => {
     const s = parseReconcileStatus(LOOP_STATUS)!;
+    expect(s.version).toBe(2);
+    expect(s.newerThanUi).toBe(false);
     expect(s.state).toBe("attention");
     expect(s.message).toMatch(/wait for your approval/);
     expect(s.finishedAt).toBe("2026-09-23T10:00:02.140Z");
@@ -51,17 +73,62 @@ describe("key check status", () => {
     expect(s.client).toEqual({ id: "teku", name: "Teku", package: "teku.avado.dnp.dappnode.eth" });
     expect(s.clientChoice).toEqual({ source: "setting", why: 'The Rocket Pool package setting CONSENSUSCLIENT is "teku".' });
     expect(s.awaitingApproval).toEqual([PK, "cd".repeat(48)]);
-    expect(s.otherClients).toEqual([{ id: "prysm", name: "Prysm", package: "eth2validator.avado.dnp.dappnode.eth", checked: false, error: "not reachable" }]);
+    expect(s.importBlockedReasons).toEqual(["The keys in Prysm (eth2validator.avado.dnp.dappnode.eth) could not be checked."]);
+    expect(s.clients.map((c) => [c.name, c.chosen, c.checked, c.version, c.error])).toEqual([
+      ["Teku", true, true, "0.0.76", undefined],
+      ["Prysm", false, false, null, "not reachable"],
+    ]);
     expect(s.keys).toEqual({ total: 3, inSync: 1, imported: 0, summary: "1/3" });
-    expect(s.validators.map((v) => [v.state, v.ref, v.feeRecipient.state])).toEqual([
-      ["loaded", "0x1234567890abcdef1234567890abcdef12345678", "fixed"],
-      ["awaiting-approval", "3", "not-loaded"],
+    expect(s.validators.map((v) => [v.state, v.ref, v.loadedIn, v.feeRecipient.state])).toEqual([
+      ["loaded", "0x1234567890abcdef1234567890abcdef12345678", ["teku.avado.dnp.dappnode.eth"], "fixed"],
+      ["settling", "3", [], "not-loaded"],
     ]); // the invalid pubkey "zz" is dropped
+    expect(s.validators[1].settlesAt).toBe("2026-09-23T10:20:00.000Z");
+    expect(s.validators[0].feeRecipient.clients).toEqual([{ package: "teku.avado.dnp.dappnode.eth", found: null, state: "fixed" }]);
+    expect(s.loadedTwice).toEqual([]);
+  });
+
+  it("never drops danger: unknown key states are kept, a key in two clients is loaded twice", () => {
+    const s = parseReconcileStatus({
+      ...LOOP_STATUS,
+      loadedTwice: [{ pubkey: `0x${"11".repeat(48)}`, packages: ["nimbus.avado.dnp.dappnode.eth", "teku.avado.dnp.dappnode.eth"] }],
+      validators: [
+        { pubkey: "22".repeat(48), state: "quarantined", loadedIn: [], feeRecipient: {} },
+        { pubkey: "33".repeat(48), state: "loaded", loadedIn: ["nimbus.avado.dnp.dappnode.eth", "teku.avado.dnp.dappnode.eth"], feeRecipient: {} },
+        { pubkey: "44".repeat(48), state: "elsewhere", loadedIn: "eth2validator.avado.dnp.dappnode.eth", feeRecipient: {} }, // v1: a string
+      ],
+    })!;
+    expect(s.validators.map((v) => [v.state, v.rawState])).toEqual([
+      ["unknown", "quarantined"],
+      ["loaded-twice", "loaded"],
+      ["elsewhere", "elsewhere"],
+    ]);
+    expect(s.validators[2].loadedIn).toEqual(["eth2validator.avado.dnp.dappnode.eth"]);
+    expect(s.loadedTwice.map((t) => t.pubkey)).toEqual(["11".repeat(48), "33".repeat(48)]);
+  });
+
+  it("reads a newer version with an unknown overall state as needing attention; a v1 file still reads", () => {
+    const newer = parseReconcileStatus({ ...LOOP_STATUS, version: 3, state: "degraded" })!;
+    expect(newer).toMatchObject({ version: 3, newerThanUi: true, state: "attention" });
+    expect(parseReconcileStatus({ ...LOOP_STATUS, version: 2, state: "degraded" })).toBeUndefined();
+    const v1 = parseReconcileStatus({ version: 1, state: "ok", otherClients: [{ id: "prysm", name: "Prysm", package: "eth2validator.avado.dnp.dappnode.eth", checked: true }] })!;
+    expect(v1.clients.map((c) => [c.name, c.chosen, c.checked])).toEqual([["Prysm", false, true]]);
   });
 
   it("gives safe defaults for a partial file, and nothing for something that isn't a status", () => {
     const s = parseReconcileStatus({ state: "waiting", keys: { total: -1, inSync: 5 }, awaitingApproval: ["nope", 7], client: {} })!;
-    expect(s).toMatchObject({ state: "waiting", message: "", client: null, clientChoice: null, awaitingApproval: [], errors: [], validators: [] });
+    expect(s).toMatchObject({
+      state: "waiting",
+      message: "",
+      client: null,
+      clientChoice: null,
+      awaitingApproval: [],
+      importBlockedReasons: [],
+      loadedTwice: [],
+      clients: [],
+      errors: [],
+      validators: [],
+    });
     expect(s.keys).toEqual({ total: 0, inSync: 0, imported: 0, summary: "0/0" });
     expect(parseReconcileStatus({ state: "sideways" })).toBeUndefined();
     expect(parseReconcileStatus("text")).toBeUndefined();
@@ -79,7 +146,10 @@ describe("key check status", () => {
 
   it("every demo node's status parses", () => {
     for (const s of Object.values(SCENARIOS)) expect(reconcileStatusOf(s.reconcile)).toBeDefined();
-    expect(reconcileStatusOf(SCENARIOS.mixed.reconcile)!.awaitingApproval).toEqual([DEMO.megaPubkey2]);
+    const mixed = reconcileStatusOf(SCENARIOS.mixed.reconcile)!;
+    expect(mixed.version).toBe(2);
+    expect(mixed.awaitingApproval).toEqual([DEMO.megaPubkey2]);
+    expect(mixed.clients.map((c) => [c.name, c.chosen])).toEqual([["Teku", true]]);
   });
 });
 

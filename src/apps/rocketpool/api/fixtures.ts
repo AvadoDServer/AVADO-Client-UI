@@ -388,9 +388,18 @@ const NORMAL_LOG = [
 const NIMBUS = { id: "nimbus", name: "Nimbus", package: "nimbus.avado.dnp.dappnode.eth" };
 const TEKU = { id: "teku", name: "Teku", package: "teku.avado.dnp.dappnode.eth" };
 
-type DemoKeyState = "loaded" | "imported" | "elsewhere" | "awaiting-approval" | "import-blocked" | "missing-keystore";
+type DemoKeyState =
+  | "loaded"
+  | "imported"
+  | "loaded-twice"
+  | "elsewhere"
+  | "awaiting-approval"
+  | "settling"
+  | "import-blocked"
+  | "client-update-needed"
+  | "missing-keystore";
 
-/** One validator entry of the status file. */
+/** One validator entry of the status file (v2). `loadedIn` defaults to Nimbus for loaded keys. */
 export function demoKey(
   pubkeyHex: string,
   kind: "minipool" | "megapool",
@@ -399,40 +408,55 @@ export function demoKey(
   rule: string,
   expected: string,
   fee: "ok" | "fixed" = "ok",
+  loadedIn?: string[],
 ) {
-  const loaded = state === "loaded" || state === "imported";
+  const loaded = state === "loaded" || state === "imported" || state === "loaded-twice" || state === "elsewhere";
+  const where = loadedIn ?? (loaded ? ["nimbus.avado.dnp.dappnode.eth"] : []);
   return {
     pubkey: pubkeyHex,
     kind,
     ref,
     state,
-    feeRecipient: loaded ? { rule, expected, found: fee === "fixed" ? ZERO_ADDRESS : expected, state: fee } : { rule, expected, state: "not-loaded" },
+    loadedIn: where,
+    ...(state === "settling" ? { settlesAt: "2026-09-23T10:20:00Z" } : {}),
+    feeRecipient: {
+      rule,
+      expected,
+      state: loaded ? fee : "not-loaded",
+      clients: where.map((p) => ({ package: p, found: fee === "fixed" ? ZERO_ADDRESS : expected, state: fee })),
+    },
   };
 }
 
-/** A `GET /api/avado/reconcile` answer with a status built like the loop's. */
+
+/** A `GET /api/avado/reconcile` answer with a status built like the loop's (status file version 2). */
 export function reconcileView(o: {
   state: "ok" | "waiting" | "attention" | "error";
   client: { id: string; name: string; package: string } | null;
   keys: ReturnType<typeof demoKey>[];
   message?: string;
   errors?: string[];
+  importBlockedReasons?: string[];
 }): ReconcileView {
-  const inSync = o.keys.filter((k) => k.state === "loaded" || k.state === "imported").length;
+  const chosen = o.client?.package ?? null;
+  const inSync = o.keys.filter((k) => chosen !== null && k.loadedIn.includes(chosen)).length;
   const awaiting = o.keys.filter((k) => k.state === "awaiting-approval").map((k) => k.pubkey);
+  const twice = o.keys.filter((k) => k.loadedIn.length > 1).map((k) => ({ pubkey: k.pubkey, packages: k.loadedIn }));
   const fees = o.keys.map((k) => k.feeRecipient.state);
   const summary = `${inSync}/${o.keys.length}`;
   const name = o.client?.name ?? "";
+  const packages = [...new Set([...(chosen ? [chosen] : []), ...o.keys.flatMap((k) => k.loadedIn)])];
   const message =
     o.message ??
     `Validator keys in sync with ${name}: ${summary}.` +
       (awaiting.length ? ` ${awaiting.length} validator key${awaiting.length === 1 ? " is" : "s are"} not loaded and wait${awaiting.length === 1 ? "s" : ""} for your approval.` : "");
+  const title = (p: string) => ({ "nimbus.avado.dnp.dappnode.eth": "Nimbus", "teku.avado.dnp.dappnode.eth": "Teku", "eth2validator.avado.dnp.dappnode.eth": "Prysm", "lighthouse.avado.dnp.dappnode.eth": "Lighthouse" })[p] ?? p;
   return {
     available: true,
     runRequested: false,
     updatedAt: NOW,
     status: {
-      version: 1,
+      version: 2,
       state: o.state,
       message,
       startedAt: "2026-09-23T09:59:58Z",
@@ -446,7 +470,22 @@ export function reconcileView(o: {
         ? { source: "setting", why: `The Rocket Pool package setting CONSENSUSCLIENT is "${o.client.id}".` }
         : null,
       awaitingApproval: awaiting,
-      otherClients: [],
+      importBlockedReasons: o.importBlockedReasons ?? [],
+      loadedTwice: twice,
+      clients: packages.map((p) => ({
+        id: title(p).toLowerCase(),
+        name: title(p),
+        package: p,
+        version: "0.0.80",
+        chosen: p === chosen,
+        checked: true,
+        rocketPoolKeys: o.keys.filter((k) => k.loadedIn.includes(p)).length,
+        feeRecipients: {
+          ok: o.keys.filter((k) => k.loadedIn.includes(p) && k.feeRecipient.state === "ok").length,
+          fixed: o.keys.filter((k) => k.loadedIn.includes(p) && k.feeRecipient.state === "fixed").length,
+          failed: 0,
+        },
+      })),
       unknownValidatorPackages: [],
       keys: { total: o.keys.length, inSync, imported: 0, summary },
       feeRecipients: {
@@ -469,6 +508,7 @@ export function reconcileView(o: {
     },
   };
 }
+
 
 /* ------------------------------------------------------------------ */
 
@@ -518,8 +558,8 @@ const mixedNode: MockScenario = {
     state: "attention",
     client: TEKU,
     keys: [
-      demoKey(DEMO.pubkeyC, "minipool", DEMO.minipoolC, "loaded", "fee-distributor", DEMO.feeDistributor, "fixed"),
-      demoKey(DEMO.megaPubkey1, "megapool", "0", "loaded", "megapool", DEMO.megapool),
+      demoKey(DEMO.pubkeyC, "minipool", DEMO.minipoolC, "loaded", "fee-distributor", DEMO.feeDistributor, "fixed", [TEKU.package]),
+      demoKey(DEMO.megaPubkey1, "megapool", "0", "loaded", "megapool", DEMO.megapool, "ok", [TEKU.package]),
       demoKey(DEMO.megaPubkey2, "megapool", "1", "awaiting-approval", "megapool", DEMO.megapool),
     ],
   }),

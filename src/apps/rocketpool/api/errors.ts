@@ -9,8 +9,9 @@
  *   backend's messages such as the wallet-exists refusal).
  * - `smartnode`: HTTP 200 but the envelope says `status: "error"`.
  * - `invalid`: an answer that isn't the JSON the API promises.
+ * - `aborted`: the page cancelled the request itself (e.g. a wait no longer needed).
  */
-export type RpErrorKind = "unreachable" | "timeout" | "http" | "smartnode" | "invalid";
+export type RpErrorKind = "unreachable" | "timeout" | "http" | "smartnode" | "invalid" | "aborted";
 
 export interface RpApiErrorInit {
   kind: RpErrorKind;
@@ -48,11 +49,23 @@ export const isRpApiError = (e: unknown): e is RpApiError => e instanceof RpApiE
  */
 export function isOutcomeUnknown(e: unknown): boolean {
   if (!isRpApiError(e)) return true;
-  if (e.kind === "unreachable" || e.kind === "timeout" || e.kind === "invalid") return true;
+  if (e.kind === "unreachable" || e.kind === "timeout" || e.kind === "invalid" || e.kind === "aborted") return true;
   // 504: the backend's time limit towards the daemon ran out; 499/502 on a
   // write can also come after the daemon received it.
   return e.kind === "http" && (e.status === 504 || e.status === 502 || e.status === 499);
 }
+
+/** Statuses at which the backend refuses before anything reaches the daemon. */
+const REFUSED_BEFORE_DAEMON = new Set([400, 403, 404, 405, 409, 413, 415, 421, 429, 503]);
+
+/**
+ * For a write: true only when the backend itself refused it (bad request,
+ * CSRF, wallet guard, busy, daemon token missing), so it certainly never
+ * reached the daemon. A Smartnode error (500, or a 200 with status "error")
+ * means it was most likely not sent, but not certainly.
+ */
+export const isDefinitelyNotSent = (e: unknown): boolean =>
+  isRpApiError(e) && e.kind === "http" && e.status !== undefined && REFUSED_BEFORE_DAEMON.has(e.status);
 
 /**
  * For `wait`: true only when Smartnode says the transaction was mined and
@@ -72,6 +85,8 @@ export function plainError(e: unknown): string {
       return "The Rocket Pool package did not answer in time.";
     case "invalid":
       return "The Rocket Pool package gave an answer this page does not understand.";
+    case "aborted":
+      return "Cancelled.";
     case "smartnode":
       return e.detail ? tidy(e.detail) : "Rocket Pool refused the request.";
     case "http":

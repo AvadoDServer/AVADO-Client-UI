@@ -6,6 +6,8 @@ export type SnParams = Record<string, string | number | boolean>;
 export interface CallOptions {
   /** Override the time limit for this call (ms). */
   timeoutMs?: number;
+  /** Cancel the request (it then rejects with an `aborted` RpApiError). */
+  signal?: AbortSignal;
 }
 
 /**

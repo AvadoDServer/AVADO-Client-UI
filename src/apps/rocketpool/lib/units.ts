@@ -32,21 +32,28 @@ export interface FormatOptions {
   decimals?: number;
   /** Group thousands with commas (default true). */
   grouping?: boolean;
+  /**
+   * "floor" (default): towards zero, for what the owner holds, so a balance is
+   * never overstated. "ceil": away from zero, for costs and caps, so a fee
+   * is never understated.
+   */
+  rounding?: "floor" | "ceil";
 }
 
 /**
- * "1,234.5678": rounded half up to `maxDecimals`, trailing zeros dropped.
- * A non-zero amount too small to show reads "< 0.0001" rather than "0".
+ * "1,234.5678": cut to `maxDecimals` (rounded down, or up with
+ * `rounding: "ceil"`), trailing zeros dropped. A non-zero amount too small to
+ * show reads "< 0.0001" rather than "0".
  */
 export function formatUnits(value: BigNumberish, opts: FormatOptions = {}): string {
-  const { maxDecimals = 4, decimals = 18, grouping = true } = opts;
+  const { maxDecimals = 4, decimals = 18, grouping = true, rounding = "floor" } = opts;
   const raw = toBigInt(value);
   if (raw === null) return "—";
   const negative = raw < 0n;
   const abs = negative ? -raw : raw;
   const places = Math.max(0, Math.min(maxDecimals, decimals));
   const step = 10n ** BigInt(decimals - places);
-  const rounded = (abs + step / 2n) / step; // in units of 10^-places
+  const rounded = rounding === "ceil" ? (abs + step - 1n) / step : abs / step; // in units of 10^-places
   if (rounded === 0n && abs !== 0n) {
     const smallest = places === 0 ? "1" : `0.${"0".repeat(places - 1)}1`;
     return `${negative ? "> -" : "< "}${smallest}`;
@@ -68,8 +75,9 @@ export const formatEth = (wei: BigNumberish | null | undefined, maxDecimals = 4)
 export const formatRpl = (amount: BigNumberish | null | undefined, maxDecimals = 2): string =>
   amount === null || amount === undefined || toBigInt(amount) === null ? "—" : `${formatUnits(amount, { maxDecimals })} RPL`;
 
-/** A gas cost: small amounts, so more digits (0.000315 ETH). */
-export const formatGasCost = (wei: BigNumberish): string => formatEth(wei, 6);
+/** A gas cost: small amounts, so more digits (0.000315 ETH), rounded up so it is never understated. */
+export const formatGasCost = (wei: BigNumberish): string =>
+  toBigInt(wei) === null ? "—" : `${formatUnits(wei, { maxDecimals: 6, rounding: "ceil" })} ETH`;
 
 /**
  * Exact gwei as a decimal string ("12.5", "0.000000001"), for the `maxFee` /
@@ -81,12 +89,12 @@ export function weiToGweiString(wei: bigint): string {
   return frac ? `${whole}.${frac}` : whole.toString();
 }
 
-/** "12.5 gwei", rounded to 2 decimals (a small non-zero price keeps 3 significant digits). */
+/** "12.5 gwei" (a price, so rounded up), 2 decimals; a small non-zero price keeps more digits. */
 export function formatGwei(wei: BigNumberish): string {
   const v = toBigInt(wei);
   if (v === null) return "—";
-  if (v > 0n && v < WEI_PER_GWEI / 100n) return `${formatUnits(v, { decimals: 9, maxDecimals: 6 })} gwei`;
-  return `${formatUnits(v, { decimals: 9, maxDecimals: 2 })} gwei`;
+  const maxDecimals = v > 0n && v < WEI_PER_GWEI / 100n ? 6 : 2;
+  return `${formatUnits(v, { decimals: 9, maxDecimals, rounding: "ceil" })} gwei`;
 }
 
 /**
