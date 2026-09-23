@@ -356,10 +356,11 @@ export function findNodeProblems(node: NodeStatus | null | undefined): RpProblem
  * for any whose outcome is unclear, one for any still on their way. They show
  * on every page, also after a reload, until the transaction is settled.
  */
-export function findPendingProblems(list: PendingTx[]): RpProblem[] {
+export function findPendingProblems(list: PendingTx[], isOverdue: (key: string) => boolean = () => false): RpProblem[] {
   const out: RpProblem[] = [];
-  const unclear = list.filter((e) => e.state === "unknown" || e.state === "lost");
-  const moving = list.filter((e) => e.state === "sending" || e.state === "sent");
+  // Not mined for an hour counts as unclear: the owner has to decide.
+  const unclear = list.filter((e) => e.state === "unknown" || e.state === "lost" || (e.state === "sent" && isOverdue(e.key)));
+  const moving = list.filter((e) => (e.state === "sending" || e.state === "sent") && !unclear.includes(e));
   const link = (e: PendingTx) => {
     const href = e.txHash ? txUrl(e.txHash) : null;
     return href ? { label: "View on Etherscan", href } : { label: "Open", to: e.page };

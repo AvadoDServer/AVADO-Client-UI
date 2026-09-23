@@ -118,7 +118,7 @@ describe("Rocket Pool app", () => {
   it("after a reload, a transaction whose send was cut off shows on every page and links back", async () => {
     localStorage.setItem(
       "avado-rocketpool.pending-tx.v1",
-      JSON.stringify([{ key: "node/distribute?[]", title: "Distribute your rewards", route: "node/distribute", params: {}, page: "/rewards", state: "sending", createdAt: 1, updatedAt: 1 }]),
+      JSON.stringify([{ key: "node/distribute", title: "Distribute your rewards", route: "node/distribute", params: {}, page: "/rewards", state: "sending", createdAt: 1, updatedAt: 1 }]),
     );
     renderAt("/wallet", { scenario: "minipool" });
     const problems = await screen.findByRole("region", { name: "Problems" });

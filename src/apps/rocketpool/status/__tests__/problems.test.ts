@@ -258,5 +258,7 @@ describe("pending transaction banners", () => {
     expect(p[0].title).toBe("2 transactions need checking");
     expect(p[0].details).toEqual(["Distribute your rewards", "Stake RPL"]);
     expect(findPendingProblems([entry({ state: "done" }), entry({ key: "f", state: "failed" })])).toEqual([]);
+    // Not mined for an hour: needs checking, not "on its way".
+    expect(findPendingProblems([entry({ txHash: HASH })], () => true).map((x) => x.id)).toEqual(["tx-unclear"]);
   });
 });

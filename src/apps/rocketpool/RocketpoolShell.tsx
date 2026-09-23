@@ -13,7 +13,7 @@ function Frame() {
   const { problems: statusProblems } = useAppStatus();
   const pending = usePendingTxs();
   const problems = useMemo(() => {
-    const all = [...statusProblems, ...findPendingProblems(pending.list())];
+    const all = [...statusProblems, ...findPendingProblems(pending.list(), (k) => pending.isOverdue(k))];
     const order = { danger: 0, warning: 1, accent: 2 } as const;
     return all.sort((a, b) => order[a.tone] - order[b.tone]);
     // pending.getVersion() changes whenever the store does

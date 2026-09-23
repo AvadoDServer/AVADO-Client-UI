@@ -253,7 +253,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
     if (pending.isBlocking(k)) {
       run.current += 1;
       setPhase({ k: "tracked" });
-      pending.follow(k); // no-op when already followed
+      if (!pending.isOverdue(k)) pending.follow(k); // no-op when already followed; an overdue tx waits for the owner
     } else {
       void check();
     }
@@ -340,11 +340,12 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
   // An unclear entry becomes dismissable after the age limit: re-render now and then while one is shown.
   const [, tick] = useState(0);
   useEffect(() => {
-    if (!open || (entryState !== "unknown" && entryState !== "lost")) return;
+    if (!open || (entryState !== "unknown" && entryState !== "lost" && entryState !== "sent")) return;
     const t = setInterval(() => tick((n) => n + 1), 30_000);
     return () => clearInterval(t);
   }, [open, entryState]);
-  const dismissable = showEntry && pending.canDismiss(key) && (entryState === "unknown" || entryState === "lost");
+  const overdue = showEntry && pending.isOverdue(key);
+  const dismissable = showEntry && pending.canDismiss(key) && (overdue || entryState === "unknown" || entryState === "lost");
 
   let footer: ReactNode;
   if (showEntry) {
@@ -361,7 +362,12 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
             I've checked: stop tracking it
           </Button>
         )}
-        {entryState === "lost" && (
+        {overdue && (
+          <Button variant="primary" pill onClick={() => pending.keepWaiting(key)}>
+            Keep waiting
+          </Button>
+        )}
+        {entryState === "lost" && !overdue && (
           <Button variant="secondary" pill onClick={() => pending.follow(key, { restart: true })}>
             Check the transaction again
           </Button>
@@ -414,7 +420,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
       <div className="text-sm text-fg-muted">{summary}</div>
 
       {showEntry && entry ? (
-        <EntryNote entry={entry} noteRef={noteRef} startedElsewhere={!!startedElsewhere} />
+        <EntryNote entry={entry} noteRef={noteRef} startedElsewhere={!!startedElsewhere} overdue={overdue} />
       ) : (
         <>
           {phase.k === "checking" && (
@@ -518,10 +524,37 @@ function FeeBox({ quote }: { quote: GasQuote }) {
 
 const MINUTES = Math.round(DISMISS_AFTER_MS / 60_000);
 
-function EntryNote({ entry, noteRef, startedElsewhere }: { entry: PendingTx; noteRef: React.Ref<HTMLDivElement>; startedElsewhere: boolean }) {
+function EntryNote({
+  entry,
+  noteRef,
+  startedElsewhere,
+  overdue,
+}: {
+  entry: PendingTx;
+  noteRef: React.Ref<HTMLDivElement>;
+  startedElsewhere: boolean;
+  overdue: boolean;
+}) {
   const earlier = startedElsewhere && entry.state !== "done" && entry.state !== "failed" && (
     <p>This was started earlier. It can't be started again until it has finished.</p>
   );
+  if (overdue) {
+    return (
+      <Note tone="warning" title="This transaction hasn't been mined for an hour" noteRef={noteRef}>
+        <p>
+          It may be stuck (for example because the network fee rose above its limit) or dropped by the network. Check it on
+          Etherscan.
+        </p>
+        <TxLink hash={entry.txHash} />
+        <p>
+          <strong>Keep waiting</strong> follows it for another hour. <strong>Stop tracking it</strong> only after Etherscan
+          shows it was dropped or went through: if it is still pending and you start the same action again, both can go
+          through.
+        </p>
+        {earlier}
+      </Note>
+    );
+  }
   switch (entry.state) {
     case "sending":
       return (

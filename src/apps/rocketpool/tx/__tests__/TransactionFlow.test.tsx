@@ -285,6 +285,82 @@ describe("TransactionFlow", () => {
     });
   });
 
+  describe("I7: a new salt or amount is still the same action", () => {
+    const deposit = (salt: string, amountWei = "4000000000000000000") => ({
+      canRoute: "node/can-deposit",
+      route: "node/deposit",
+      params: { amountWei, salt, count: 1, submit: true },
+    });
+    const canDeposit = { "node/can-deposit": { status: "success", error: "", canDeposit: true, gasLimits: { estimated: 1_500_000, safe: 2_250_000 } } };
+
+    for (const [name, mock] of [
+      ["while it is pending", { reads: canDeposit, waitMs: 60_000 }],
+      ["while its outcome is unclear", { reads: canDeposit, failures: { "node/deposit": "unreachable" as const } }],
+    ] as const) {
+      it(name, async () => {
+        const api = createMockRocketpoolApi({ scenario: "minipool", ...mock });
+        const { posts } = setup(api, { tx: deposit("111"), confirmLabel: "Deposit" });
+        await userEvent.click(await screen.findByRole("button", { name: "Deposit" }));
+        await screen.findByText(/Sent. Waiting|We don't know if it was sent/);
+        await togglePage();
+        render(
+          <RocketpoolApiProvider api={api}>
+            <PendingTxProvider>
+              <TransactionFlow open title="Deposit again" summary="" tx={deposit("222", "8000000000000000000")} confirmLabel="Deposit 2" armDelayMs={0} onClose={() => {}} />
+            </PendingTxProvider>
+          </RocketpoolApiProvider>,
+        );
+        expect(await screen.findByText(/started earlier/)).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Deposit 2" })).not.toBeInTheDocument();
+        expect(api.calls.filter((c) => c.path.endsWith("can-deposit"))).toHaveLength(1);
+        expect(posts()).toHaveLength(1);
+      });
+    }
+  });
+
+  it("M11: a tx not mined for an hour offers keep waiting or stop tracking, with a warning", async () => {
+    const now = Date.now();
+    localStorage.setItem(
+      PENDING_STORAGE_KEY,
+      JSON.stringify([
+        {
+          key: "node/distribute",
+          title: "Distribute",
+          route: "node/distribute",
+          params: {},
+          page: "/",
+          state: "sent",
+          txHash: `0x${"ab".repeat(32)}`,
+          createdAt: now - 2 * 3_600_000,
+          updatedAt: now - 2 * 3_600_000,
+          waitingSince: now - 2 * 3_600_000,
+        },
+      ]),
+    );
+    const { waits, posts } = setup({ waitMs: 60_000 });
+    expect(await screen.findByText("This transaction hasn't been mined for an hour")).toBeInTheDocument();
+    expect(screen.getByText(/only after Etherscan shows it was dropped or went through/)).toBeInTheDocument();
+    expect(waits()).toHaveLength(0); // not waited on again by itself
+    await userEvent.click(screen.getByRole("button", { name: "Keep waiting" }));
+    expect(await screen.findByText(/Sent. Waiting/)).toBeInTheDocument();
+    expect(waits()).toHaveLength(1);
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("M11: stopping tracking an overdue tx starts a fresh check", async () => {
+    const now = Date.now();
+    localStorage.setItem(
+      PENDING_STORAGE_KEY,
+      JSON.stringify([
+        { key: "node/distribute", title: "Distribute", route: "node/distribute", params: {}, page: "/", state: "lost", txHash: `0x${"ab".repeat(32)}`, createdAt: now - 7_200_000, updatedAt: now - 7_200_000, waitingSince: now - 7_200_000 },
+      ]),
+    );
+    setup();
+    await userEvent.click(await screen.findByRole("button", { name: "I've checked: stop tracking it" }));
+    expect(await screen.findByRole("button", { name: "Distribute" })).toBeInTheDocument();
+    expect(localStorage.getItem(PENDING_STORAGE_KEY)).toBeNull();
+  });
+
   it("I1: sends exactly the parameters that were checked, not later ones", async () => {
     const { posts, setParams, api } = setup({}, {});
     setParams({ amountWei: "1" });
