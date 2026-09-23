@@ -19,8 +19,18 @@ class FakeSocket implements WebSocketLike {
   send(data: string) {
     this.sent.push(JSON.parse(data));
   }
+  /** When true, close() only starts closing; the test calls finishClose() later (like a real close handshake). */
+  deferClose = false;
   close() {
-    if (this.readyState === 3) return;
+    if (this.readyState >= 2) return;
+    if (this.deferClose) {
+      this.readyState = 2;
+      return;
+    }
+    this.readyState = 3;
+    this.onclose?.({});
+  }
+  finishClose() {
     this.readyState = 3;
     this.onclose?.({});
   }
@@ -105,17 +115,74 @@ describe("WampClient", () => {
     expect(await b).toBe("B");
   });
 
-  it("a WAMP ERROR rejects that call with a 'rejected' ApiError", async () => {
+  it("a WAMP ERROR from the callee rejects that call with a 'rejected' ApiError", async () => {
     const client = make();
-    const p = client.call("nope").catch((e) => e);
+    const p = client.call("x").catch((e) => e);
     const ws = FakeSocket.all[0];
     ws.welcome();
     await Promise.resolve();
-    ws.deliver([8, 48, ws.lastCall()[1], {}, "wamp.error.no_such_procedure", ["no callee registered for procedure <nope>"]]);
+    ws.deliver([8, 48, ws.lastCall()[1], {}, "wamp.error.invalid_argument", ["bad kwargs"]]);
     const err = (await p) as ApiError;
     expect(err).toBeInstanceOf(ApiError);
-    expect(err).toMatchObject({ kind: "rejected", service: "dappmanager", path: "nope" });
-    expect(err.detail).toMatch(/no_such_procedure/);
+    expect(err).toMatchObject({ kind: "rejected", service: "dappmanager", path: "x" });
+    expect(err.detail).toMatch(/invalid_argument: bad kwargs/);
+  });
+
+  it.each(["wamp.error.no_such_procedure", "wamp.error.canceled", "wamp.error.timeout"])(
+    "%s (e.g. the DAPPMANAGER is restarting) is 'unreachable', not a refusal",
+    async (uri) => {
+      const client = make();
+      const p = client.call("listPackages.dappmanager.dnp.dappnode.eth").catch((e) => e);
+      const ws = FakeSocket.all[0];
+      ws.welcome();
+      await Promise.resolve();
+      ws.deliver([8, 48, ws.lastCall()[1], {}, uri, []]);
+      const err = (await p) as ApiError;
+      expect(err).toMatchObject({ kind: "unreachable", service: "dappmanager" });
+      expect(err.detail).toContain(uri);
+    },
+  );
+
+  it("an old socket closing late does not reject the calls of a newer session", async () => {
+    const client = make();
+    const first = client.call("x").catch((e) => e);
+    const old = FakeSocket.all[0];
+    old.deferClose = true;
+    old.welcome();
+    await Promise.resolve();
+    client.close(); // old socket is still closing
+    expect(await first).toMatchObject({ kind: "unreachable" });
+
+    const second = client.call("y");
+    const ws = FakeSocket.all[1];
+    ws.welcome();
+    await Promise.resolve();
+    old.finishClose(); // the old close event arrives now
+    ws.deliver([50, ws.lastCall()[1], {}, ["ok"]]);
+    expect(await second).toBe("ok");
+  });
+
+  it("a connect time-out followed by a retry: the timed-out socket's late close is ignored", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = make({ connectTimeoutMs: 500 });
+      const first = client.call("x").catch((e) => e);
+      const old = FakeSocket.all[0];
+      old.deferClose = true;
+      old.open();
+      await vi.advanceTimersByTimeAsync(501);
+      expect(await first).toMatchObject({ kind: "timeout" });
+
+      const second = client.call("y");
+      const ws = FakeSocket.all[1];
+      ws.welcome();
+      await Promise.resolve();
+      old.finishClose();
+      ws.deliver([50, ws.lastCall()[1], {}, ["ok"]]);
+      expect(await second).toBe("ok");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("an ABORT during HELLO rejects with 'rejected'", async () => {

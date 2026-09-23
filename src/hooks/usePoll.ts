@@ -24,7 +24,10 @@ export interface PollResult<T> {
   error: unknown;
   /** True until the first answer (success or error) for the current key. */
   loading: boolean;
-  /** Poll now (also while hidden) and restart the interval. */
+  /**
+   * Poll now (also while hidden) and restart the interval. If a poll is in
+   * flight, poll again once it ends; resolves when that fresh poll is done.
+   */
   refresh: () => Promise<void>;
 }
 
@@ -112,7 +115,19 @@ export function usePoll<T>(fn: () => Promise<T>, intervalMs: number, options: Us
       })();
       return inFlight;
     };
-    runRef.current = run;
+    // refresh() usually follows a change (a key imported, a fee recipient
+    // set). A poll already in flight may have read the old state, so after
+    // it ends poll once more; concurrent refreshes share that one re-run.
+    let rerun: Promise<void> | null = null;
+    const refreshNow = (): Promise<void> => {
+      if (!inFlight) return run();
+      rerun ??= inFlight.then(() => {
+        rerun = null;
+        return cancelled ? undefined : run();
+      });
+      return rerun;
+    };
+    runRef.current = refreshNow;
 
     const onVisibility = () => {
       if (document.hidden) return clear();
@@ -130,7 +145,7 @@ export function usePoll<T>(fn: () => Promise<T>, intervalMs: number, options: Us
       cancelled = true;
       clear();
       document.removeEventListener("visibilitychange", onVisibility);
-      if (runRef.current === run) runRef.current = null;
+      if (runRef.current === refreshNow) runRef.current = null;
     };
   }, [enabled, key, intervalMs, maxBackoffMs]);
 

@@ -130,7 +130,10 @@ export interface MockOptions {
   beaconValidators?: ValidatorState[];
   /** Fee-recipient overrides by pubkey. */
   feeRecipients?: Record<string, string>;
+  /** Installed packages (running unless listed in `stoppedPackages`). */
   packages?: string[];
+  /** Installed packages that are stopped. */
+  stoppedPackages?: string[];
   health?: NodeHealth;
   syncing?: SyncingStatus;
   peers?: Peer[];
@@ -194,6 +197,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
     beacon: new Map((opts.beaconValidators ?? MOCK_BEACON_VALIDATORS).map((v) => [v.validator.pubkey, clone(v)])),
     feeRecipients: { ...(opts.feeRecipients ?? { [MOCK_PUBKEYS.active02]: MOCK_OVERRIDE_FEE_RECIPIENT }) } as Record<string, string>,
     packages: [...(opts.packages ?? MOCK_PACKAGES)],
+    stoppedPackages: [...(opts.stoppedPackages ?? [])],
     health: opts.health ?? ("ready" as NodeHealth),
     syncing: opts.syncing ?? { head_slot: "12634567", sync_distance: "0", is_syncing: false, is_optimistic: false, el_offline: false },
     peers: opts.peers ?? mockPeers(),
@@ -366,6 +370,10 @@ export function createMockApi(opts: MockOptions = {}): Api {
     async listPackages() {
       await wait();
       return [...state.packages];
+    },
+    async listPackageStates() {
+      await wait();
+      return state.packages.map((name) => ({ name, running: !state.stoppedPackages.includes(name) }));
     },
     async logs(_pkg, tail) {
       await wait();

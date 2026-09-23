@@ -116,6 +116,14 @@ describe("mock API", () => {
     expect((await api.dappmanager.logs("nimbus.avado.dnp.dappnode.eth", 20)).split("\n")).toHaveLength(20);
   });
 
+  it("lists stopped packages as installed, with running false", async () => {
+    const api = createMockApi({ stoppedPackages: ["ethchain-geth.public.dappnode.eth"] });
+    expect(await api.dappmanager.listPackages()).toContain("ethchain-geth.public.dappnode.eth");
+    const states = await api.dappmanager.listPackageStates();
+    expect(states.find((p) => p.name === "ethchain-geth.public.dappnode.eth")).toEqual({ name: "ethchain-geth.public.dappnode.eth", running: false });
+    expect(states.find((p) => p.name === "mevboost.avado.dnp.dappnode.eth")?.running).toBe(true);
+  });
+
   it("accepts overrides for other scenarios", async () => {
     const api = createMockApi({ keystores: [], packages: [], health: "syncing" });
     expect(await api.keymanager.listKeystores()).toEqual([]);

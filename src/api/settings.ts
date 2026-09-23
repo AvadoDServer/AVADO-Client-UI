@@ -3,6 +3,12 @@
  * whatever it is sent and restarts the client, so a partial POST would erase
  * fields. Always save through `saveSettingsMerged`.
  *
+ * A `timeout` on the save does not mean nothing was written: the backend
+ * writes the file first and then restarts the client, which can outlast the
+ * time limit. Tell the user it was saved and the client is restarting, and
+ * re-GET the settings afterwards (the start script may also rewrite
+ * `execution_engine`/`ee_endpoint`) rather than trusting the returned object.
+ *
  * Page pattern:
  *   const initial = { ...defaults, ...await backend.getSettings() }; // defaults shown, not written
  *   ...user edits `form`...

@@ -23,6 +23,14 @@ const ERROR = 8;
 const CALL = 48;
 const RESULT = 50;
 
+/**
+ * Router errors that mean "nobody can answer right now", not "the callee
+ * refused": while the DAPPMANAGER restarts (e.g. a core update) its
+ * procedures are unregistered and the router answers `no_such_procedure`.
+ * These become `unreachable`, so `isClientUnavailable()` holds.
+ */
+const UNAVAILABLE_ERRORS = new Set(["wamp.error.no_such_procedure", "wamp.error.canceled", "wamp.error.timeout"]);
+
 export interface WebSocketLike {
   readonly readyState: number;
   send(data: string): void;
@@ -144,11 +152,12 @@ export class WampClient {
         /* onclose follows and does the work */
       };
       ws.onclose = () => {
-        if (this.ws === ws) {
-          this.ws = null;
-          this.session = null;
-        }
         fail(this.error("unreachable", url, "connection closed"));
+        // A socket we already replaced (close(), connect time-out) may close
+        // late; its close must not touch the newer session or its calls.
+        if (this.ws !== ws) return;
+        this.ws = null;
+        this.session = null;
         this.rejectAll("connection closed");
       };
       ws.onmessage = (ev) => {
@@ -196,9 +205,10 @@ export class WampClient {
             if (!p) return;
             this.pending.delete(msg[2] as number);
             clearTimeout(p.timer);
+            const uri = String(msg[4]);
             const args = msg[5] as unknown[] | undefined;
             const text = Array.isArray(args) && typeof args[0] === "string" ? `: ${args[0]}` : "";
-            p.reject(this.error("rejected", p.procedure, `${String(msg[4])}${text}`));
+            p.reject(this.error(UNAVAILABLE_ERRORS.has(uri) ? "unreachable" : "rejected", p.procedure, `${uri}${text}`));
             break;
           }
         }

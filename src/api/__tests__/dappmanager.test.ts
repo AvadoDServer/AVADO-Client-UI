@@ -18,6 +18,9 @@ const PACKAGES = [
   { name: "nimbus.avado.dnp.dappnode.eth", running: true, state: "running" },
   { name: "ethchain-geth.public.dappnode.eth", running: true, state: "running" },
   { name: "mevboost.avado.dnp.dappnode.eth", running: false, state: "exited" },
+  // A package with two containers: one running, one exited.
+  { name: "multi.avado.dnp.dappnode.eth", running: false, state: "exited" },
+  { name: "multi.avado.dnp.dappnode.eth", running: true, state: "running" },
 ];
 
 describe("createDappManager", () => {
@@ -26,12 +29,26 @@ describe("createDappManager", () => {
     expect(WAMP_REALM).toBe("dappnode_admin");
   });
 
-  it("listPackages calls listPackages.dappmanager.dnp.dappnode.eth, JSON.parses the envelope and returns running package names", async () => {
-    const wamp = fakeCaller(() => JSON.stringify({ success: true, message: "Listing 3 packages", result: PACKAGES }));
+  it("listPackages calls listPackages.dappmanager.dnp.dappnode.eth, JSON.parses the envelope and returns every installed name once, stopped ones included", async () => {
+    const wamp = fakeCaller(() => JSON.stringify({ success: true, message: "Listing 5 packages", result: PACKAGES }));
     const names = await createDappManager({ wamp }).listPackages();
     expect(wamp.calls[0].procedure).toBe("listPackages.dappmanager.dnp.dappnode.eth");
-    // Same rule as the old wizards: only running packages count.
-    expect(names).toEqual(["nimbus.avado.dnp.dappnode.eth", "ethchain-geth.public.dappnode.eth"]);
+    expect(names).toEqual([
+      "nimbus.avado.dnp.dappnode.eth",
+      "ethchain-geth.public.dappnode.eth",
+      "mevboost.avado.dnp.dappnode.eth",
+      "multi.avado.dnp.dappnode.eth",
+    ]);
+  });
+
+  it("listPackageStates reports running per name; a package runs if any of its containers runs", async () => {
+    const wamp = fakeCaller(() => JSON.stringify({ success: true, result: PACKAGES }));
+    expect(await createDappManager({ wamp }).listPackageStates()).toEqual([
+      { name: "nimbus.avado.dnp.dappnode.eth", running: true },
+      { name: "ethchain-geth.public.dappnode.eth", running: true },
+      { name: "mevboost.avado.dnp.dappnode.eth", running: false },
+      { name: "multi.avado.dnp.dappnode.eth", running: true },
+    ]);
   });
 
   it("logs calls logPackage with {id, options:{tail}} and returns the text", async () => {

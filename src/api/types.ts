@@ -56,7 +56,11 @@ export type ServiceAction = "start" | "stop" | "restart";
 
 export interface PackageBackend {
   getSettings(): Promise<Settings>;
-  /** Full-object write: the backend overwrites settings.json and restarts the client. */
+  /**
+   * Full-object write: the backend overwrites settings.json and restarts the
+   * client. Use `saveSettingsMerged` (settings.ts). A timeout here usually
+   * means "saved, still restarting", not "not saved".
+   */
   saveSettings(s: Settings): Promise<void>;
   getDefaultSettings(): Promise<Settings>;
   service(action: ServiceAction): Promise<void>;
@@ -201,9 +205,22 @@ export interface KeymanagerApi {
 // DAPPMANAGER over WAMP
 // ---------------------------------------------------------------------------
 
+export interface PackageState {
+  name: string;
+  /** False when the package is installed but stopped (its container has exited). */
+  running: boolean;
+}
+
+/**
+ * Callers must never treat a failed `listPackages`/`listPackageStates` as
+ * "not installed": an error (e.g. while the DAPPMANAGER restarts) means
+ * "unknown". Show nothing, or "can't check right now".
+ */
 export interface DappManager {
-  /** Names of the installed packages (e.g. "mevboost.avado.dnp.dappnode.eth"). */
+  /** Names of all installed packages, running or stopped (e.g. "mevboost.avado.dnp.dappnode.eth"). */
   listPackages(): Promise<string[]>;
+  /** Every installed package with whether it is running, one entry per name. */
+  listPackageStates(): Promise<PackageState[]>;
   /** The last `tail` log lines of a package, ANSI colours included. */
   logs(pkg: string, tail: number): Promise<string>;
 }

@@ -3,10 +3,14 @@
  * Each procedure returns a JSON *string* holding `{success, message, result}`;
  * the old wizards `JSON.parse`d it and used `result` only when
  * `success === true`, and so do we.
+ *
+ * Callers must never read a failed listPackages as "not installed": while the
+ * DAPPMANAGER restarts the router answers `no_such_procedure`, which surfaces
+ * as an `unreachable` ApiError (see wamp.ts).
  */
 import { ApiError } from "./errors";
 import { WampClient, type WampOptions } from "./wamp";
-import type { DappManager } from "./types";
+import type { DappManager, PackageState } from "./types";
 
 export const WAMP_URL = "ws://wamp.my.ava.do:8080/ws";
 export const WAMP_REALM = "dappnode_admin";
@@ -52,23 +56,29 @@ export interface DappManagerOptions {
 export function createDappManager(opts: DappManagerOptions = {}): DappManager & { close(): void } {
   const wamp = opts.wamp ?? new WampClient({ url: WAMP_URL, realm: WAMP_REALM, WebSocket: opts.WebSocket });
 
+  const listPackageStates = async (): Promise<PackageState[]> => {
+    // listPackages runs `docker system df`, which can be slow on a busy box.
+    const result = unwrapEnvelope(await wamp.call(LIST_PACKAGES, undefined, undefined, 60_000), LIST_PACKAGES);
+    if (!Array.isArray(result)) {
+      throw new ApiError({ kind: "invalid", service: "dappmanager", path: LIST_PACKAGES, detail: "result is not a list" });
+    }
+    // The DAPPMANAGER lists containers (stopped ones too, `running: false`);
+    // a package with several containers counts as running if any runs.
+    const byName = new Map<string, boolean>();
+    for (const p of result as Array<{ name?: unknown; running?: unknown }>) {
+      if (typeof p?.name !== "string") continue;
+      byName.set(p.name, (byName.get(p.name) ?? false) || Boolean(p.running));
+    }
+    return [...byName].map(([name, running]) => ({ name, running }));
+  };
+
   return {
-    /**
-     * Names of the packages that are running now. Like the old wizards, a
-     * stopped package doesn't count: a stopped execution client or MEV-Boost
-     * can't serve this client either.
-     */
+    /** Every installed package, running or stopped. An error means "unknown", never "not installed". */
     async listPackages() {
-      // listPackages runs `docker system df`, which can be slow on a busy box.
-      const result = unwrapEnvelope(await wamp.call(LIST_PACKAGES, undefined, undefined, 60_000), LIST_PACKAGES);
-      if (!Array.isArray(result)) {
-        throw new ApiError({ kind: "invalid", service: "dappmanager", path: LIST_PACKAGES, detail: "result is not a list" });
-      }
-      return result
-        .filter((p): p is { name: string; running?: unknown } => typeof p?.name === "string")
-        .filter((p) => Boolean(p.running))
-        .map((p) => p.name);
+      return (await listPackageStates()).map((p) => p.name);
     },
+
+    listPackageStates,
 
     async logs(pkg, tail) {
       const result = unwrapEnvelope(await wamp.call(LOG_PACKAGE, [], { id: pkg, options: { tail } }), LOG_PACKAGE);

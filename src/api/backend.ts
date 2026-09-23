@@ -8,8 +8,8 @@
  *    holds the settings JSON (`res.send(200, JSON.stringify(settings))`).
  *  - text answers ("stopped", "restarted") are plain text on deno and JSON
  *    strings on the monitor.
- *  - Prysm's monitor answers a failed start/stop with HTTP 200 and the body
- *    "failed"; the others use HTTP 500.
+ *  - Both monitors (Teku and Prysm) answer a failed start/stop with HTTP 200
+ *    and the body "failed"; deno uses HTTP 500. Any "failed" body throws.
  * Settings writes are full-object overwrites that restart the client, so
  * callers should use `saveSettingsMerged` (settings.ts), not `saveSettings`.
  */

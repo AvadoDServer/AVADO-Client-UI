@@ -9,6 +9,8 @@ export type ApiService = "backend" | "beacon" | "keymanager" | "dappmanager";
 /**
  * - `unreachable`: no answer from the package backend (:9999) or the WAMP
  *   router at all: network error, DNS, CORS, connection refused or closed.
+ *   Also the DAPPMANAGER being away (restarting): the router answers
+ *   `wamp.error.no_such_procedure`, `canceled` or `timeout`.
  * - `upstream`: the package backend answered, but the client behind its
  *   `/rest` or `/keymanager` proxy did not (for example Nimbus is starting or
  *   stopped). The proxies report this as a 5xx without a beacon/keymanager
@@ -17,8 +19,8 @@ export type ApiService = "backend" | "beacon" | "keymanager" | "dappmanager";
  *   the service routes, a "failed" body).
  * - `timeout`: no answer within the time limit.
  * - `invalid`: an answer arrived but its shape is not what the API promises.
- * - `rejected`: DAPPMANAGER returned `success: false`, or the WAMP router
- *   refused the call or the session.
+ * - `rejected`: DAPPMANAGER returned `success: false`, the callee raised a
+ *   WAMP error, or the router refused the session (ABORT, CHALLENGE).
  */
 export type ApiErrorKind = "unreachable" | "upstream" | "http" | "timeout" | "invalid" | "rejected";
 

@@ -151,6 +151,28 @@ describe("usePoll", () => {
     expect(fn).toHaveBeenCalledTimes(3);
   });
 
+  it("refresh() during a poll fetches again after it, so a mutation's result is not lost", async () => {
+    const releases: Array<(v: number) => void> = [];
+    const fn = vi.fn(() => new Promise<number>((r) => releases.push(r)));
+    const { result } = renderHook(() => usePoll(fn, 1000));
+    expect(fn).toHaveBeenCalledTimes(1); // poll 1 in flight (started before the mutation)
+
+    let refreshed = false;
+    let p1!: Promise<void>, p2!: Promise<void>;
+    act(() => {
+      p1 = result.current.refresh().then(() => void (refreshed = true));
+      p2 = result.current.refresh(); // a second refresh joins the same re-run
+    });
+    await act(async () => releases[0](1)); // poll 1 ends with pre-mutation data
+    expect(fn).toHaveBeenCalledTimes(2); // re-run started at once
+    expect(refreshed).toBe(false);
+    await act(async () => releases[1](2));
+    await act(() => Promise.all([p1, p2]).then(() => undefined));
+    expect(refreshed).toBe(true);
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toBe(2);
+  });
+
   it("does nothing while disabled, and starts when enabled", async () => {
     const fn = vi.fn(async () => 1);
     const { result, rerender } = renderHook(({ enabled }) => usePoll(fn, 1000, { enabled }), { initialProps: { enabled: false } });
