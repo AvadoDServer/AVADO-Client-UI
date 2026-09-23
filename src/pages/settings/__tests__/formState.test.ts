@@ -128,7 +128,7 @@ describe("isValidCheckpointUrl", () => {
 });
 
 describe("validateForm", () => {
-  const valid: SettingsFormState = {
+  const baseline: SettingsFormState = {
     feeRecipient: "0x1111111111111111111111111111111111111111",
     graffiti: "Avado",
     executionEngine: "ethchain-geth.public.dappnode.eth",
@@ -137,34 +137,60 @@ describe("validateForm", () => {
     checkpointUrl: "",
   };
 
-  it("a fully valid simple-mode form has no errors", () => {
-    expect(validateForm(valid, { advanced: false })).toEqual({});
+  it("a fully valid, unedited form has no errors", () => {
+    expect(validateForm(baseline, baseline)).toEqual({});
   });
 
-  it("requires a fee recipient", () => {
-    expect(validateForm({ ...valid, feeRecipient: "" }, { advanced: false })).toHaveProperty("feeRecipient");
+  it("requires a fee recipient, whether or not it was edited (an always-visible field)", () => {
+    const blank = { ...baseline, feeRecipient: "" };
+    expect(validateForm(blank, blank)).toHaveProperty("feeRecipient");
   });
 
   it("rejects a malformed fee recipient", () => {
-    expect(validateForm({ ...valid, feeRecipient: "0xnotanaddress" }, { advanced: false })).toHaveProperty("feeRecipient");
+    expect(validateForm({ ...baseline, feeRecipient: "0xnotanaddress" }, baseline)).toHaveProperty("feeRecipient");
   });
 
   it("rejects graffiti over 32 bytes", () => {
-    const errors = validateForm({ ...valid, graffiti: "x".repeat(33) }, { advanced: false });
+    const errors = validateForm({ ...baseline, graffiti: "x".repeat(33) }, baseline);
     expect(errors.graffiti).toMatch(/33 bytes/);
   });
 
-  it("peer limit and checkpoint URL are not validated (or required) in Simple mode", () => {
-    expect(validateForm({ ...valid, peerLimit: "not a number", checkpointUrl: "not a url" }, { advanced: false })).toEqual({});
+  // Important 2 (ruling): a field missing from an old settings.json (reads as "" via
+  // toFormState, matching baseline) must not block Save until the owner edits it.
+  it("an untouched, missing peer limit (equal to baseline) is never an error", () => {
+    const blank = { ...baseline, peerLimit: "" };
+    expect(validateForm(blank, blank)).toEqual({});
   });
 
-  it("peer limit and checkpoint URL are validated in Advanced mode", () => {
-    const errors = validateForm({ ...valid, peerLimit: "0", checkpointUrl: "not a url" }, { advanced: true });
-    expect(errors.peerLimit).toBeDefined();
-    expect(errors.checkpointUrl).toBeDefined();
+  it("an untouched checkpoint URL is never an error either, even if the saved value looks bogus", () => {
+    // Defensive: a hand-edited file could already have a malformed value; leaving it alone must not block Save.
+    const bogus = { ...baseline, checkpointUrl: "not a url" };
+    expect(validateForm(bogus, bogus)).toEqual({});
   });
 
-  it("an empty checkpoint URL is valid in Advanced mode (it's optional)", () => {
-    expect(validateForm({ ...valid, checkpointUrl: "" }, { advanced: true })).toEqual({});
+  it("editing the peer limit to something invalid is an error", () => {
+    expect(validateForm({ ...baseline, peerLimit: "0" }, baseline).peerLimit).toBeDefined();
+    expect(validateForm({ ...baseline, peerLimit: "not a number" }, baseline).peerLimit).toBeDefined();
+  });
+
+  it("editing the checkpoint URL to something invalid is an error", () => {
+    expect(validateForm({ ...baseline, checkpointUrl: "not a url" }, baseline).checkpointUrl).toBeDefined();
+  });
+
+  it("editing the peer limit to a valid value has no error", () => {
+    expect(validateForm({ ...baseline, peerLimit: "150" }, baseline)).toEqual({});
+  });
+
+  it("editing the checkpoint URL then clearing it back to empty is valid (it's optional)", () => {
+    const editedBaseline = { ...baseline, checkpointUrl: "https://sync-mainnet.beaconcha.in" };
+    expect(validateForm({ ...editedBaseline, checkpointUrl: "" }, editedBaseline)).toEqual({});
+  });
+
+  // Critical 1: validity must agree with what buildPatch would actually send, regardless of
+  // which mode is currently rendering the field — see SettingsPage's mode-exit reset, which
+  // guarantees peerLimit/checkpointUrl can only differ from baseline while genuinely being edited.
+  it("validation doesn't take a mode flag — it only cares whether the field differs from baseline", () => {
+    expect(validateForm({ ...baseline, peerLimit: "abc" }, baseline)).toHaveProperty("peerLimit");
+    expect(validateForm({ ...baseline, peerLimit: "abc" }, { ...baseline, peerLimit: "abc" })).toEqual({});
   });
 });

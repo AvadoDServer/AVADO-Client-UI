@@ -81,10 +81,26 @@ export interface SettingsFormErrors {
 }
 
 /**
- * Peer limit and checkpoint URL are Advanced-only fields: they aren't
- * rendered (or editable) in Simple mode, so they don't block Save there.
+ * Validation is keyed off whether a field was actually edited (differs from
+ * `baseline`), not off which mode currently renders it:
+ *
+ *  - Fee recipient and graffiti are always on-screen, so they're always
+ *    validated. An old file with the fee recipient still blank (as shipped
+ *    in defaultsettings-mainnet.json) keeps blocking Save until it's set —
+ *    a deliberate, previously-ruled decision: an owner who only wants to
+ *    change something else must still supply one.
+ *  - Peer limit and checkpoint URL are Advanced-only. An old settings.json
+ *    missing one reads as `""` (see `toFormState`) and must not block Save
+ *    until the owner actually edits it — an untouched, missing field shows
+ *    the default as a hint only and is never written. Comparing against
+ *    `baseline` instead of gating on the *current* mode also closes the gap
+ *    where switching from Advanced to Simple mid-edit used to make an
+ *    invalid value invisible but still patchable: `SettingsPage` resets
+ *    these two fields back to `baseline` the moment Advanced mode is left,
+ *    so by the time they're compared here they can only differ from
+ *    `baseline` while they're on-screen and were genuinely just edited.
  */
-export function validateForm(form: SettingsFormState, opts: { advanced: boolean }): SettingsFormErrors {
+export function validateForm(form: SettingsFormState, baseline: SettingsFormState): SettingsFormErrors {
   const errors: SettingsFormErrors = {};
 
   if (form.feeRecipient.trim() === "") {
@@ -98,9 +114,11 @@ export function validateForm(form: SettingsFormState, opts: { advanced: boolean 
     errors.graffiti = `Graffiti is ${bytes} bytes; the limit is ${GRAFFITI_MAX_BYTES} bytes.`;
   }
 
-  if (opts.advanced) {
-    if (!isPositiveInteger(form.peerLimit)) errors.peerLimit = "Enter a positive whole number.";
-    if (!isValidCheckpointUrl(form.checkpointUrl)) errors.checkpointUrl = "Enter a valid URL.";
+  if (form.peerLimit !== baseline.peerLimit && !isPositiveInteger(form.peerLimit)) {
+    errors.peerLimit = "Enter a positive whole number.";
+  }
+  if (form.checkpointUrl !== baseline.checkpointUrl && !isValidCheckpointUrl(form.checkpointUrl)) {
+    errors.checkpointUrl = "Enter a valid URL.";
   }
 
   return errors;

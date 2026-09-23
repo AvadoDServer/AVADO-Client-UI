@@ -5,8 +5,18 @@ import { createMockApi, MOCK_DEFAULT_FEE_RECIPIENT, MOCK_DEFAULT_SETTINGS, MOCK_
 import type { Api, PackageBackend, Settings } from "../../../api/types";
 import { ClientConfigProvider } from "../../../config/ClientConfigProvider";
 import { normalizeClientConfig, type ClientConfig } from "../../../config/clientConfig";
-import { MODE_STORAGE_KEY, ModeProvider } from "../../../settings/ModeProvider";
+import { MODE_STORAGE_KEY, ModeProvider, useMode } from "../../../settings/ModeProvider";
 import SettingsPage from "../SettingsPage";
+
+/** Lets a test flip Simple/Advanced mode mid-session, the way the shared footer's toggle would. */
+function ModeToggleButton() {
+  const { mode, setMode } = useMode();
+  return (
+    <button type="button" onClick={() => setMode(mode === "advanced" ? "simple" : "advanced")}>
+      Toggle mode
+    </button>
+  );
+}
 
 function renderPage(api: Api, config: Partial<ClientConfig> = {}, { advanced = false }: { advanced?: boolean } = {}) {
   if (advanced) localStorage.setItem(MODE_STORAGE_KEY, "advanced");
@@ -14,6 +24,7 @@ function renderPage(api: Api, config: Partial<ClientConfig> = {}, { advanced = f
     <ClientConfigProvider config={normalizeClientConfig(config)}>
       <ApiProvider api={api}>
         <ModeProvider>
+          <ModeToggleButton />
           <SettingsPage />
         </ModeProvider>
       </ApiProvider>
@@ -166,6 +177,130 @@ describe("SettingsPage — validation", () => {
     expect(await screen.findByText("Enter a valid URL.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
   });
+
+  // Important 2 (ruling): a field missing from an old settings.json, and untouched by the
+  // owner, must not block Save — the default is shown as a hint only and is never written.
+  it("an old settings.json missing the peer limit doesn't block Save until the owner edits it", async () => {
+    const user = userEvent.setup();
+    const OLD_SETTINGS: Settings = {
+      network: "mainnet",
+      validators_graffiti: "Avado",
+      validators_proposer_default_fee_recipient: "0x1111111111111111111111111111111111111111",
+      // No p2p_peer_upper_bound at all.
+    };
+    const api = createMockApi({ settings: OLD_SETTINGS, packages: MOCK_PACKAGES });
+    renderPage(api, { client: "nimbus", network: "mainnet" }, { advanced: true });
+    await waitForLoaded();
+
+    // Shown as a hint, not pre-filled, and not an error.
+    expect(screen.getByLabelText("Peer limit")).toHaveValue("");
+    expect(screen.queryByText("Enter a positive whole number.")).not.toBeInTheDocument();
+    expect(screen.getByText(/The default is 100/)).toBeInTheDocument();
+
+    // Editing something else entirely must not be blocked by the untouched, missing peer limit.
+    const graffiti = screen.getByLabelText("Graffiti");
+    await user.clear(graffiti);
+    await user.type(graffiti, "Changed");
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await screen.findByText(/Settings saved/);
+
+    const saved = await api.backend.getSettings();
+    expect(saved.validators_graffiti).toBe("Changed");
+    expect(saved).not.toHaveProperty("p2p_peer_upper_bound"); // never written — the owner never touched it
+  });
+});
+
+// Critical 1: validation and the save patch must agree regardless of which mode is currently
+// rendering a field. Leaving Advanced mode must discard any edit to the fields it hides, so an
+// invalid peer limit can never reach settings.json by switching to Simple mode mid-edit.
+describe("SettingsPage — switching mode mid-edit can never leak an invalid Advanced field into a save", () => {
+  it("discards an invalid, unsaved peer-limit edit the instant Advanced mode is left, and it's never saved", async () => {
+    const user = userEvent.setup();
+    const api = createMockApi({ packages: MOCK_PACKAGES }); // MOCK_SETTINGS.p2p_peer_upper_bound === 100
+    renderPage(api, { client: "nimbus", network: "mainnet" }, { advanced: true });
+    await waitForLoaded();
+
+    const peerLimit = screen.getByLabelText("Peer limit");
+    await user.clear(peerLimit);
+    await user.type(peerLimit, "not-a-number");
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
+    // Leave Advanced mode with the invalid edit still sitting in the (now hidden) field.
+    await user.click(screen.getByRole("button", { name: "Toggle mode" }));
+    expect(screen.queryByLabelText("Peer limit")).not.toBeInTheDocument();
+    // The edit was discarded, not just hidden: nothing is dirty, so Save is disabled for that
+    // reason — not stuck disabled forever by an invisible, unresolvable error.
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    expect(screen.queryByText(/Fix the highlighted fields/)).not.toBeInTheDocument();
+
+    // Re-entering Advanced mode shows the field back at its last-saved value, not the invalid one.
+    await user.click(screen.getByRole("button", { name: "Toggle mode" }));
+    expect(screen.getByLabelText("Peer limit")).toHaveValue(String(MOCK_SETTINGS.p2p_peer_upper_bound));
+
+    // The box never received the invalid value at any point in this sequence.
+    expect(await api.backend.getSettings()).toEqual(MOCK_SETTINGS);
+  });
+
+  it("leaving Advanced mode discards any pending peer-limit/checkpoint-URL edit — valid or not — so a hidden field never silently carries unsaved state", async () => {
+    const user = userEvent.setup();
+    const api = createMockApi({ packages: MOCK_PACKAGES });
+    renderPage(api, { client: "nimbus", network: "mainnet" }, { advanced: true });
+    await waitForLoaded();
+
+    const peerLimit = screen.getByLabelText("Peer limit");
+    await user.clear(peerLimit);
+    await user.type(peerLimit, "150"); // a perfectly valid, but not yet saved, edit
+
+    await user.click(screen.getByRole("button", { name: "Toggle mode" })); // -> Simple
+    await user.click(screen.getByRole("button", { name: "Toggle mode" })); // -> Advanced
+
+    expect(screen.getByLabelText("Peer limit")).toHaveValue(String(MOCK_SETTINGS.p2p_peer_upper_bound));
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
+    // Editing it again while Advanced stays open still works and saves normally.
+    await user.clear(screen.getByLabelText("Peer limit"));
+    await user.type(screen.getByLabelText("Peer limit"), "150");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await screen.findByText(/Settings saved/);
+    expect((await api.backend.getSettings()).p2p_peer_upper_bound).toBe(150);
+  });
+});
+
+// Important 1: a validation-blocked Save must be explained near the buttons, not only on the
+// (possibly off-screen) field itself.
+describe("SettingsPage — inline message when Save is blocked by validation", () => {
+  it("names the fields to fix next to Save/Revert, and a link focuses the named field", async () => {
+    const user = userEvent.setup();
+    const api = createMockApi({
+      settings: { ...MOCK_SETTINGS, validators_proposer_default_fee_recipient: "" },
+      packages: MOCK_PACKAGES,
+    });
+    renderPage(api, { client: "nimbus", network: "mainnet" });
+    await waitForLoaded();
+
+    expect(screen.getByText(/Fix the highlighted fields to save/)).toBeInTheDocument();
+    const link = screen.getByRole("button", { name: "Default fee recipient" });
+
+    await user.click(link);
+    expect(screen.getByLabelText("Default fee recipient")).toHaveFocus();
+  });
+
+  it("the message and its links disappear once every listed field is fixed", async () => {
+    const user = userEvent.setup();
+    const api = createMockApi({
+      settings: { ...MOCK_SETTINGS, validators_proposer_default_fee_recipient: "" },
+      packages: MOCK_PACKAGES,
+    });
+    renderPage(api, { client: "nimbus", network: "mainnet" });
+    await waitForLoaded();
+
+    const feeRecipient = screen.getByLabelText("Default fee recipient");
+    await user.type(feeRecipient, MOCK_DEFAULT_FEE_RECIPIENT);
+
+    expect(screen.queryByText(/Fix the highlighted fields to save/)).not.toBeInTheDocument();
+  });
 });
 
 describe("SettingsPage — execution client picker", () => {
@@ -214,17 +349,40 @@ describe("SettingsPage — execution client picker", () => {
 });
 
 describe("SettingsPage — MEV-Boost", () => {
-  it("is disabled with a link to install it when the MEV-Boost package is not installed", async () => {
-    const api = createMockApi({ settings: MOCK_SETTINGS, packages: ["ethchain-geth.public.dappnode.eth"] });
+  it("cannot be turned on when the MEV-Boost package is not installed and it's currently off", async () => {
+    const api = createMockApi({ settings: { ...MOCK_SETTINGS, mev_boost: false }, packages: ["ethchain-geth.public.dappnode.eth"] });
     renderPage(api, { client: "nimbus", network: "mainnet" });
     await waitForLoaded();
 
     const toggle = screen.getByRole("checkbox", { name: /Enable MEV-Boost/ });
+    expect(toggle).not.toBeChecked();
     expect(toggle).toBeDisabled();
     expect(screen.getByRole("link", { name: "Install the MEV-Boost package" })).toHaveAttribute(
       "href",
       "http://my.ava.do/#/installer",
     );
+  });
+
+  // Minor fix: losing the package must not strand an already-on toggle — turning it off stays
+  // possible even without the package installed; only turning it on requires it.
+  it("can still be turned off when the package is no longer installed but it's currently on", async () => {
+    const user = userEvent.setup();
+    const api = createMockApi({ settings: { ...MOCK_SETTINGS, mev_boost: true }, packages: ["ethchain-geth.public.dappnode.eth"] });
+    renderPage(api, { client: "nimbus", network: "mainnet" });
+    await waitForLoaded();
+
+    const toggle = screen.getByRole("checkbox", { name: /Enable MEV-Boost/ });
+    expect(toggle).toBeChecked();
+    expect(toggle).toBeEnabled();
+    expect(screen.getByText(/no longer installed/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Install the MEV-Boost package" })).not.toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).not.toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await screen.findByText(/Settings saved/);
+    expect((await api.backend.getSettings()).mev_boost).toBe(false);
   });
 
   it("can be toggled and saved when the MEV-Boost package is installed", async () => {
