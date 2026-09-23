@@ -2,6 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { AppRoutes, Providers, ROUTER_FUTURE } from "../../../App";
+import { ApiError } from "../../../api/errors";
 import { createMockApi, MOCK_SETTINGS, type MockOptions } from "../../../api/mock";
 import type { Api } from "../../../api/types";
 import type { ClientConfig, ClientConfigResult } from "../../../config/clientConfig";
@@ -199,6 +200,17 @@ describe("Status strip", () => {
     expect(within(strip()).getByRole("link", { name: "check Advanced" })).toHaveAttribute("href", "/advanced");
   });
 
+  it("says it can't connect, not 'starting or stopped', when nothing on the box answers", async () => {
+    const api = createMockApi({ latencyMs: 0 });
+    const down = (path: string, service: "beacon" | "backend") => new ApiError({ kind: "unreachable", service, path });
+    vi.spyOn(api.beacon, "health").mockRejectedValue(down("/eth/v1/node/health", "beacon"));
+    vi.spyOn(api.backend, "serviceStatus").mockRejectedValue(down("/service/status", "backend"));
+    renderApp({ api });
+    expect(await within(strip()).findByText("Can't connect")).toBeInTheDocument();
+    expect(strip()).toHaveTextContent("Can't reach Nimbus on your AVADO.");
+    expect(strip()).not.toHaveTextContent("starting, or it is stopped");
+  });
+
   it("the hint sits outside the description list (valid <dl>)", async () => {
     renderApp({ mock: { health: "not_ready" } });
     await within(strip()).findByText("Starting");
@@ -271,6 +283,10 @@ describe("Problem banners", () => {
     });
     const link = await screen.findByRole("link", { name: "Open Geth" });
     expect(link).toHaveAttribute("href", "http://my.ava.do/#/packages/ethchain-geth.public.dappnode.eth");
+    // The strip doesn't say all is well while the node reports el_offline.
+    const nodeStrip = () => screen.getByRole("region", { name: "Node status" });
+    expect(await within(nodeStrip()).findByText("Synced, execution client offline")).toBeInTheDocument();
+    expect(within(nodeStrip()).queryByText("Synced")).toBeNull();
   });
 
   it("an installed but stopped execution client (listPackageStates) is stopped, not missing", async () => {

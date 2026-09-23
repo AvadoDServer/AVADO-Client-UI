@@ -1,3 +1,4 @@
+import { isApiError } from "../../api/errors";
 import type { BeaconApi, NodeHealth, ProcessInfo, SyncingStatus } from "../../api/types";
 import type { ClientName } from "../../config/clientConfig";
 import type { StatusTone } from "../ui";
@@ -17,6 +18,12 @@ export interface NodeStatus {
   elOffline?: boolean;
   /** When not ready: what supervisord says about the client process, if known. */
   service?: ServiceState;
+  /**
+   * When not ready: nothing answered at all — neither the package backend's
+   * `/rest` proxy nor its `/service/status`. The box is off or off the
+   * network, the package is down, or the browser can't reach it.
+   */
+  unreachable?: boolean;
 }
 
 export type ServiceState = "stopped" | "starting";
@@ -55,21 +62,29 @@ const settled = <T,>(r: PromiseSettledResult<T>): T | undefined => (r.status ===
  */
 export async function fetchNodeStatus(beacon: BeaconApi, advanced: boolean, probe?: ServiceProbe): Promise<NodeStatus> {
   let health: NodeHealth;
+  // The health call accepts any HTTP answer (a proxy 500 while the client is
+  // down is "not_ready"), so it only throws when the package backend itself
+  // gave no answer.
+  let backendSilent = false;
   try {
     health = await beacon.health();
-  } catch {
+  } catch (e) {
     health = "not_ready";
+    backendSilent = isApiError(e) && (e.kind === "unreachable" || e.kind === "timeout");
   }
   if (health === "not_ready") {
     const status: NodeStatus = { health };
+    let probeFailed = !probe;
     if (probe) {
       try {
         const service = clientServiceState(await probe.serviceStatus(), probe.client);
         if (service) status.service = service;
       } catch {
         /* backend unreachable: say nothing about the process */
+        probeFailed = true;
       }
     }
+    if (backendSilent && probeFailed) status.unreachable = true;
     return status;
   }
 
@@ -108,10 +123,15 @@ export function syncPercent(s: SyncingStatus): string {
   return pct.toFixed(2);
 }
 
-/** Health in plain words (spec §4): Synced, Syncing n%, Not ready (Stopped or Starting when known). */
+/**
+ * Health in plain words (spec §4): Synced, Syncing n%, Not ready (Stopped or
+ * Starting when known, Can't connect when nothing answers). Synced with the
+ * execution client offline is a warning: validators can't do their duties.
+ */
 export function describeHealth(status: NodeStatus | undefined): { tone: StatusTone; label: string } {
   if (!status) return { tone: "neutral", label: "Checking" };
   if (status.health === "not_ready") {
+    if (status.unreachable) return { tone: "danger", label: "Can't connect" };
     if (status.service === "stopped") return { tone: "danger", label: "Stopped" };
     if (status.service === "starting") return { tone: "warning", label: "Starting" };
     return { tone: "danger", label: "Not ready" };
@@ -120,5 +140,6 @@ export function describeHealth(status: NodeStatus | undefined): { tone: StatusTo
   if (status.health === "syncing" || s?.is_syncing) {
     return { tone: "warning", label: s ? `Syncing ${syncPercent(s)}%` : "Syncing" };
   }
+  if (status.elOffline) return { tone: "warning", label: "Synced, execution client offline" };
   return { tone: "success", label: "Synced" };
 }

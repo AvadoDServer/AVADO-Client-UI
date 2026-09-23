@@ -1,3 +1,4 @@
+import { ApiError } from "../../../api/errors";
 import { createMockApi } from "../../../api/mock";
 import type { BeaconApi, SyncingStatus } from "../../../api/types";
 import type { ProcessInfo } from "../../../api/types";
@@ -41,6 +42,15 @@ describe("describeHealth", () => {
   });
   it("says Synced when ready and not syncing", () => {
     expect(describeHealth({ health: "ready", syncing: syncing(100, 0) })).toEqual({ tone: "success", label: "Synced" });
+  });
+  it("does not say a plain green Synced while the execution client is offline", () => {
+    expect(describeHealth({ health: "ready", syncing: { ...syncing(100, 0), el_offline: true }, elOffline: true })).toEqual({
+      tone: "warning",
+      label: "Synced, execution client offline",
+    });
+  });
+  it("says Can't connect when nothing on the box answers", () => {
+    expect(describeHealth({ health: "not_ready", unreachable: true })).toEqual({ tone: "danger", label: "Can't connect" });
   });
   it("trusts is_syncing over a ready health answer", () => {
     expect(describeHealth({ health: "ready", syncing: syncing(50, 50) }).label).toBe("Syncing 50.00%");
@@ -111,6 +121,37 @@ describe("fetchNodeStatus", () => {
   it("treats a failing health call as not ready", async () => {
     const beacon = { health: () => Promise.reject(new Error("down")) } as unknown as BeaconApi;
     expect(await fetchNodeStatus(beacon, false)).toEqual({ health: "not_ready" });
+  });
+
+  it("marks el_offline from /eth/v1/node/syncing", async () => {
+    const api = createMockApi({ latencyMs: 0, syncing: { ...syncing(100, 0), el_offline: true } });
+    expect(await fetchNodeStatus(api.beacon, false)).toMatchObject({ health: "ready", elOffline: true });
+  });
+
+  describe("nothing reachable", () => {
+    const unreachable = (path: string) => new ApiError({ kind: "unreachable", service: "beacon", path });
+    const deadBeacon = { health: () => Promise.reject(unreachable("/eth/v1/node/health")) } as unknown as BeaconApi;
+
+    it("is unreachable when the backend gives no answer to health nor to the service probe", async () => {
+      const probe = { client: "nimbus" as const, serviceStatus: () => Promise.reject(new ApiError({ kind: "unreachable", service: "backend" })) };
+      expect(await fetchNodeStatus(deadBeacon, false, probe)).toEqual({ health: "not_ready", unreachable: true });
+    });
+
+    it("a timeout counts as no answer too", async () => {
+      const beacon = { health: () => Promise.reject(new ApiError({ kind: "timeout", service: "beacon" })) } as unknown as BeaconApi;
+      expect(await fetchNodeStatus(beacon, false)).toEqual({ health: "not_ready", unreachable: true });
+    });
+
+    it("is not unreachable when supervisord answers", async () => {
+      const probe = { client: "nimbus" as const, serviceStatus: async () => [proc("nimbus", "STOPPED")] };
+      expect(await fetchNodeStatus(deadBeacon, false, probe)).toEqual({ health: "not_ready", service: "stopped" });
+    });
+
+    it("is not unreachable when the proxy answered (client down behind it)", async () => {
+      const api = createMockApi({ latencyMs: 0, health: "not_ready" });
+      const probe = { client: "nimbus" as const, serviceStatus: () => Promise.reject(new Error("down")) };
+      expect((await fetchNodeStatus(api.beacon, false, probe)).unreachable).toBeUndefined();
+    });
   });
 
   it("keeps what it got when one of the calls fails", async () => {

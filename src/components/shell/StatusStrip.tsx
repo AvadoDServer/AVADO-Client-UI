@@ -63,7 +63,12 @@ export function StatusStrip({ status, loading }: { status: NodeStatus | undefine
       </dl>
       {status?.health === "not_ready" && (
         <p className="min-w-0 text-fg-muted" data-testid="not-ready-hint">
-          {status.service === "stopped" ? (
+          {status.unreachable ? (
+            <>
+              Can&apos;t reach {name} on your AVADO. Check that the box is on and connected to your network, and that the{" "}
+              {name} package is running.
+            </>
+          ) : status.service === "stopped" ? (
             <>
               {name} is stopped. {advancedLink("Start it in Advanced")}
             </>
