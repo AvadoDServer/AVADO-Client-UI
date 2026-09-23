@@ -234,7 +234,7 @@ export default function SettingsPage() {
   if (loadError) {
     return (
       <div className="flex flex-col gap-6">
-        <h1 className="font-display text-3xl font-bold tracking-tight text-fg">Settings</h1>
+        <h1 className="font-display text-4xl font-bold tracking-tight text-fg">Settings</h1>
         <Card>
           <CardTitle>Settings could not be loaded</CardTitle>
           <CardDescription>{loadError}</CardDescription>
@@ -246,7 +246,7 @@ export default function SettingsPage() {
   if (!form || !baseline) {
     return (
       <div className="flex flex-col gap-6">
-        <h1 className="font-display text-3xl font-bold tracking-tight text-fg">Settings</h1>
+        <h1 className="font-display text-4xl font-bold tracking-tight text-fg">Settings</h1>
         <Card className="flex flex-col gap-3">
           <Skeleton className="h-5 w-40" />
           <Skeleton className="h-11 w-full" />
@@ -259,7 +259,7 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="font-display text-3xl font-bold tracking-tight text-fg">Settings</h1>
+        <h1 className="font-display text-4xl font-bold tracking-tight text-fg">Settings</h1>
         {dirty && <Badge variant="warning">Unsaved changes</Badge>}
       </div>
 

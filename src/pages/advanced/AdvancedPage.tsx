@@ -1,7 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "../../api/ApiProvider";
 import type { ServiceAction } from "../../api/types";
-import { Button, Card, CardDescription, CardHeader, CardTitle, ConfirmDialog, StatusPill, Table, TBody, TD, TH, THead, TR } from "../../components/ui";
+import {
+  Button,
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  ConfirmDialog,
+  StatusPill,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from "../../components/ui";
 import { useClientConfig } from "../../config/ClientConfigProvider";
 import { logsToHtml } from "./logsToHtml";
 import { POLL_MS, usePoll } from "../../hooks/usePoll";
@@ -11,7 +25,11 @@ import { processDetail, processStatus } from "./serviceStatus";
 // (the polls stop when it unmounts) and the tab is visible.
 const LOG_TAIL_LINES = 200;
 
-const ACTION_LABEL: Record<ServiceAction, string> = { start: "Start", stop: "Stop", restart: "Restart" };
+const ACTION_LABEL: Record<ServiceAction, string> = {
+  start: "Start",
+  stop: "Stop",
+  restart: "Restart",
+};
 
 function errorMessage(e: unknown, fallback: string): string {
   return e instanceof Error && e.message ? e.message : fallback;
@@ -37,13 +55,25 @@ export default function AdvancedPage() {
 
   const status = usePoll(() => api.backend.serviceStatus(), POLL_MS.service);
   const processes = status.data ?? null;
-  const statusError = status.error === undefined ? null : errorMessage(status.error, "Could not load the process status.");
+  const statusError =
+    status.error === undefined
+      ? null
+      : errorMessage(status.error, "Could not load the process status.");
 
-  const logsPoll = usePoll(() => api.dappmanager.logs(config.packageName, LOG_TAIL_LINES), POLL_MS.logs, { key: config.packageName });
+  const logsPoll = usePoll(
+    () => api.dappmanager.logs(config.packageName, LOG_TAIL_LINES),
+    POLL_MS.logs,
+    { key: config.packageName },
+  );
   const logs = logsPoll.data;
-  const logsError = logsPoll.error === undefined ? null : errorMessage(logsPoll.error, "Could not load the logs.");
+  const logsError =
+    logsPoll.error === undefined
+      ? null
+      : errorMessage(logsPoll.error, "Could not load the logs.");
 
-  const [pendingAction, setPendingAction] = useState<ServiceAction | null>(null);
+  const [pendingAction, setPendingAction] = useState<ServiceAction | null>(
+    null,
+  );
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmStopOpen, setConfirmStopOpen] = useState(false);
 
@@ -57,7 +87,8 @@ export default function AdvancedPage() {
         await api.backend.service(action);
         await refreshStatus();
       } catch (e) {
-        if (mountedRef.current) setActionError(errorMessage(e, `Could not ${action} the service.`));
+        if (mountedRef.current)
+          setActionError(errorMessage(e, `Could not ${action} the service.`));
       } finally {
         if (mountedRef.current) setPendingAction(null);
       }
@@ -79,12 +110,22 @@ export default function AdvancedPage() {
   const onTerminalScroll = () => {
     const el = terminalRef.current;
     if (!el) return;
-    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+    stickToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 32;
   };
   // Loading (no answer yet), failed before any answer, empty, or lines.
   const logsPlaceholder =
-    logs === undefined ? (logsPoll.loading ? "Loading logs…" : "No logs to show.") : logs.trim() === "" ? "No log output yet." : null;
-  const logsHtml = useMemo(() => (logs && logs.trim() !== "" ? logsToHtml(logs) : ""), [logs]);
+    logs === undefined
+      ? logsPoll.loading
+        ? "Loading logs…"
+        : "No logs to show."
+      : logs.trim() === ""
+        ? "No log output yet."
+        : null;
+  const logsHtml = useMemo(
+    () => (logs && logs.trim() !== "" ? logsToHtml(logs) : ""),
+    [logs],
+  );
   useEffect(() => {
     const el = terminalRef.current;
     if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight;
@@ -95,15 +136,21 @@ export default function AdvancedPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-fg">Advanced</h1>
-        <p className="mt-1 text-sm text-fg-muted">Service control, process status and live logs.</p>
+        <h1 className="font-display text-4xl font-bold tracking-tight text-fg">
+          Advanced
+        </h1>
+        <p className="mt-1 text-sm text-fg-muted">
+          Service control, process status and live logs.
+        </p>
       </div>
 
       <Card>
         <CardHeader>
           <div>
             <CardTitle>Service</CardTitle>
-            <CardDescription>Start, stop or restart the client service.</CardDescription>
+            <CardDescription>
+              Start, stop or restart the client service.
+            </CardDescription>
           </div>
         </CardHeader>
         <div className="flex flex-wrap gap-3">
@@ -123,7 +170,12 @@ export default function AdvancedPage() {
           >
             {ACTION_LABEL.restart}
           </Button>
-          <Button variant="danger" onClick={requestStop} loading={pendingAction === "stop"} disabled={pendingAction !== null}>
+          <Button
+            variant="danger"
+            onClick={requestStop}
+            loading={pendingAction === "stop"}
+            disabled={pendingAction !== null}
+          >
             {ACTION_LABEL.stop}
           </Button>
         </div>
@@ -135,20 +187,22 @@ export default function AdvancedPage() {
       </Card>
 
       <Card padding="none">
-        <div className="px-5 pt-5">
+        <div className="px-5 pb-3 pt-5">
           <CardTitle>Process status</CardTitle>
         </div>
-        <div className="p-5">
-          {statusError ? (
-            <p role="alert" className="text-sm text-danger-text">
-              {statusError}
-            </p>
-          ) : processes === null ? (
-            <p className="text-sm text-fg-muted">Loading process status…</p>
-          ) : processes.length === 0 ? (
-            <p className="text-sm text-fg-muted">No processes reported.</p>
-          ) : null}
-        </div>
+        {(statusError || !processes || processes.length === 0) && (
+          <div className="px-5 pb-5">
+            {statusError ? (
+              <p role="alert" className="text-sm text-danger-text">
+                {statusError}
+              </p>
+            ) : processes === null ? (
+              <p className="text-sm text-fg-muted">Loading process status…</p>
+            ) : processes.length === 0 ? (
+              <p className="text-sm text-fg-muted">No processes reported.</p>
+            ) : null}
+          </div>
+        )}
         {processes && processes.length > 0 && (
           <Table>
             <THead>
@@ -165,7 +219,9 @@ export default function AdvancedPage() {
                   <TD>
                     <StatusPill status={processStatus(p.statename)} />
                   </TD>
-                  <TD className="font-mono text-xs text-fg-muted">{processDetail(p)}</TD>
+                  <TD className="font-mono text-xs text-fg-muted">
+                    {processDetail(p)}
+                  </TD>
                 </TR>
               ))}
             </TBody>
@@ -177,7 +233,10 @@ export default function AdvancedPage() {
         <CardHeader>
           <div>
             <CardTitle>Logs</CardTitle>
-            <CardDescription>The last {LOG_TAIL_LINES} lines, refreshed every 5 seconds while this page is open.</CardDescription>
+            <CardDescription>
+              The last {LOG_TAIL_LINES} lines, refreshed every 5 seconds while
+              this page is open.
+            </CardDescription>
           </div>
         </CardHeader>
         {logsError && (
@@ -214,8 +273,17 @@ export default function AdvancedPage() {
 
       <Card>
         <CardTitle>Admin package page</CardTitle>
-        <CardDescription>Manage backups, environment variables and more from the AVADO Admin.</CardDescription>
-        <Button as="a" href={adminUrl} target="_blank" rel="noopener noreferrer" variant="outline" className="mt-4">
+        <CardDescription>
+          Manage backups, environment variables and more from the AVADO Admin.
+        </CardDescription>
+        <Button
+          as="a"
+          href={adminUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          variant="outline"
+          className="mt-4"
+        >
           Open in Admin
         </Button>
       </Card>
