@@ -6,8 +6,8 @@ import { fakeKeystore, renderWithApi } from "../../validators/__tests__/renderWi
 import AddValidatorsPage from "../AddValidatorsPage";
 
 const keyFile = (name: string, pubkey: string) => new File([fakeKeystore(pubkey)], name, { type: "application/json" });
-const slashingFile = () =>
-  new File([JSON.stringify({ metadata: { interchange_format_version: "5", genesis_validators_root: "0x00" }, data: [] })], "slashing.json", {
+const slashingFile = (name = "slashing.json") =>
+  new File([JSON.stringify({ metadata: { interchange_format_version: "5", genesis_validators_root: "0x00" }, data: [] })], name, {
     type: "application/json",
   });
 
@@ -92,7 +92,8 @@ describe("AddValidatorsPage", () => {
     await userEvent.type(screen.getByLabelText("Keystore password"), "x");
     await userEvent.click(screen.getByRole("button", { name: "Import 2 keys" }));
     expect(await screen.findByText("2 failed.")).toBeInTheDocument();
-    expect(fileRow("a.json").getByText("Not imported: HTTP 502")).toBeInTheDocument();
+    expect(fileRow("a.json").getByText("Not imported")).toBeInTheDocument();
+    expect(fileRow("a.json").getByText("Not imported: HTTP 502")).toHaveClass("break-words");
   });
 
   it("accepts dropped files, sends the slashing protection and skips deposit data", async () => {
@@ -111,6 +112,23 @@ describe("AddValidatorsPage", () => {
     expect(importSpy).toHaveBeenCalledWith(
       expect.objectContaining({ keystores: [expect.any(String)], passwords: ["pw"], slashing_protection: expect.stringContaining("interchange_format_version") }),
     );
+  });
+
+  it("says so when a second slashing-protection file replaces the first", async () => {
+    renderPage();
+    fireEvent.drop(screen.getByTestId("dropzone"), { dataTransfer: { files: [slashingFile()] } });
+    expect(await screen.findByText(/slashing.json is a slashing-protection file, so it was added/)).toBeInTheDocument();
+    fireEvent.drop(screen.getByTestId("dropzone"), { dataTransfer: { files: [slashingFile("old-node.json")] } });
+    expect(await screen.findByText("old-node.json is a slashing-protection file. It replaces slashing.json.")).toBeInTheDocument();
+    expect(screen.getByText("old-node.json")).toBeInTheDocument();
+  });
+
+  it("explains a wrong slashing-protection file in plain words", async () => {
+    renderPage();
+    await userEvent.upload(screen.getByLabelText("Choose slashing-protection file"), keyFile("a.json", PK[0]));
+    const note = await screen.findByText(/a.json isn't a slashing-protection file/);
+    expect(note.textContent).toContain("exported from your old node");
+    expect(note.textContent).not.toMatch(/EIP/);
   });
 
   it("leaves out a second file with the same key", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useApi } from "../../api/ApiProvider";
 import { Button, Input, Modal } from "../../components/ui";
 import type { ValidatorRowData } from "./useValidators";
@@ -32,10 +32,13 @@ export function ExitDialog({ row, onClose, onSubmitted }: ExitDialogProps) {
   const { keymanager, beacon } = useApi();
   const [typed, setTyped] = useState("");
   const [phase, setPhase] = useState<Phase>({ step: "confirm" });
+  // Blocks a second submit before React re-renders with `busy`.
+  const inFlight = useRef(false);
 
   useEffect(() => {
     setTyped("");
     setPhase({ step: "confirm" });
+    inFlight.current = false;
   }, [row?.pubkey]);
 
   if (!row || !row.state) return null;
@@ -46,28 +49,31 @@ export function ExitDialog({ row, onClose, onSubmitted }: ExitDialogProps) {
 
   const exit = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (!matches || busy) return;
+    if (!matches || busy || inFlight.current) return;
+    inFlight.current = true;
+    const fail = (message: string) => {
+      inFlight.current = false;
+      setPhase({ step: "error", message });
+    };
     setPhase({ step: "busy" });
     let signed;
     try {
       signed = await keymanager.signVoluntaryExit(row.pubkey);
     } catch (err) {
-      setPhase({ step: "error", message: `The exit message could not be signed: ${errorText(err)}` });
+      fail(`The exit message could not be signed: ${errorText(err)}`);
       return;
     }
     if (signed.message.validator_index !== index) {
-      setPhase({
-        step: "error",
-        message: `The signed exit is for validator ${signed.message.validator_index}, not ${index}. Nothing was sent.`,
-      });
+      fail(`The signed exit is for validator ${signed.message.validator_index}, not ${index}. Nothing was sent.`);
       return;
     }
     try {
       await beacon.submitVoluntaryExit(signed);
     } catch (err) {
-      setPhase({ step: "error", message: `The beacon node didn't accept the exit: ${errorText(err)}` });
+      fail(`The beacon node didn't accept the exit: ${errorText(err)}`);
       return;
     }
+    inFlight.current = false;
     setPhase({ step: "done" });
     onSubmitted();
   };

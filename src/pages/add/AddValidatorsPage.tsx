@@ -27,7 +27,7 @@ function resultBadge(e: Entry): { variant: BadgeVariant; label: string } | null 
   if (!e.result) return null;
   if (e.result.status === "imported") return { variant: "success", label: "Imported" };
   if (e.result.status === "duplicate") return { variant: "neutral", label: "Already on this node" };
-  return { variant: "danger", label: importErrorText(e.result.message) };
+  return { variant: "danger", label: importErrorText(e.result.message) === "Wrong password" ? "Wrong password" : "Not imported" };
 }
 
 function UploadIcon() {
@@ -83,6 +83,8 @@ export default function AddValidatorsPage() {
   // The latest list, for the async file reader (state may be stale there).
   const entriesRef = useRef<Entry[]>([]);
   entriesRef.current = entries;
+  const slashingRef = useRef<{ name: string; text: string } | null>(null);
+  slashingRef.current = slashing;
   const inputId = useId();
   const slashingInputRef = useRef<HTMLInputElement>(null);
 
@@ -103,8 +105,13 @@ export default function AddValidatorsPage() {
     for (const { f, text } of read) {
       const c = classifyFile(text);
       if (c.kind === "slashing") {
+        const previous = foundSlashing?.name ?? slashingRef.current?.name;
         foundSlashing = { name: f.name, text };
-        newNotes.push(`${f.name} is a slashing-protection file, so it was added as that.`);
+        newNotes.push(
+          previous && previous !== f.name
+            ? `${f.name} is a slashing-protection file. It replaces ${previous}.`
+            : `${f.name} is a slashing-protection file, so it was added as that.`,
+        );
         continue;
       }
       incoming.push({ id: nextId.current++, name: f.name, kind: c.kind, text, pubkey: c.pubkey, reason: c.reason, password: "" });
@@ -152,9 +159,11 @@ export default function AddValidatorsPage() {
     if (!f) return;
     const text = await readFileText(f).catch(() => "");
     if (classifyFile(text).kind !== "slashing") {
-      setNotes([`${f.name} isn't a slashing-protection file (EIP-3076 interchange format).`]);
+      setNotes([`${f.name} isn't a slashing-protection file. It should be the slashing-protection .json exported from your old node.`]);
       return;
     }
+    const previous = slashingRef.current?.name;
+    setNotes(previous && previous !== f.name ? [`${f.name} replaces ${previous} as the slashing-protection file.`] : []);
     setSlashing({ name: f.name, text });
   };
 
@@ -265,8 +274,11 @@ export default function AddValidatorsPage() {
                       <div className="flex min-w-0 flex-col">
                         <span className="break-all text-sm font-medium text-fg">{e.name}</span>
                         <span className="font-mono text-xs text-fg-muted">{e.pubkey ? shortHex(e.pubkey, 8, 6) : e.reason}</span>
+                        {e.result?.status === "error" && importErrorText(e.result.message) !== "Wrong password" && (
+                          <span className="break-words text-xs text-danger-text">{importErrorText(e.result.message)}</span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex shrink-0 items-center gap-2">
                         {badge && (
                           <Badge variant={badge.variant} title={e.result?.message}>
                             {badge.label}

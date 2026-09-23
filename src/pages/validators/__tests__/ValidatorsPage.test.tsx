@@ -1,13 +1,21 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMockApi, MOCK_DEFAULT_FEE_RECIPIENT, MOCK_PUBKEYS } from "../../../api/mock";
 import type { Api } from "../../../api/types";
 import ValidatorsPage from "../ValidatorsPage";
 import { renderWithApi } from "./renderWithApi";
 
-const downloads = vi.hoisted(() => ({ calls: [] as Array<{ name: string; text: string; successShown: boolean }> }));
+const downloads = vi.hoisted(() => ({
+  calls: [] as Array<{ name: string; text: string; successShown: boolean }>,
+  /** How many of the next downloads throw. */
+  failNext: 0,
+}));
 vi.mock("../../../lib/download", () => ({
   downloadText: (name: string, text: string) => {
+    if (downloads.failNext > 0) {
+      downloads.failNext -= 1;
+      throw new Error("Download blocked");
+    }
     downloads.calls.push({
       name,
       text,
@@ -36,6 +44,7 @@ function renderPage(api: Api = createMockApi(), props = {}) {
 
 beforeEach(() => {
   downloads.calls = [];
+  downloads.failNext = 0;
 });
 
 describe("ValidatorsPage", () => {
@@ -183,9 +192,63 @@ describe("ValidatorsPage", () => {
       expect(downloads.calls[0].successShown).toBe(false);
       expect(JSON.parse(downloads.calls[0].text).data[0].pubkey).toBe(MOCK_PUBKEYS.active01);
       expect(screen.getByText(file)).toBeInTheDocument();
+      expect(screen.getByText(/should have saved/)).toBeInTheDocument();
 
       expect((await api.keymanager.listKeystores()).map((k) => k.validating_pubkey)).not.toContain(MOCK_PUBKEYS.active01);
       await waitFor(() => expect(screen.getByRole("table").querySelector(`tr[data-pubkey="${MOCK_PUBKEYS.active01}"]`)).toBeNull());
+    });
+
+    it("keeps the dialog open with Download again, and moves focus to the heading when closed", async () => {
+      renderPage();
+      const t = await table();
+      await userEvent.click(await t.findByRole("button", { name: "Remove Validator 412345" }));
+      await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove validator" }));
+      const done = await screen.findByRole("dialog", { name: "Validator 412345 removed" });
+      // The list refreshes underneath; the dialog stays.
+      await waitFor(() => expect(screen.getByRole("table").querySelector(`tr[data-pubkey="${MOCK_PUBKEYS.active01}"]`)).toBeNull());
+      expect(screen.getByRole("dialog", { name: "Validator 412345 removed" })).toBeInTheDocument();
+      await userEvent.click(within(done).getByRole("button", { name: "Download again" }));
+      expect(downloads.calls).toHaveLength(2);
+      await userEvent.click(within(done).getByRole("button", { name: "I have the file" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Validators", level: 1 })).toHaveFocus());
+    });
+
+    it("warns when the browser didn't save the file and doesn't claim it was saved", async () => {
+      downloads.failNext = 1;
+      renderPage();
+      const t = await table();
+      await userEvent.click(await t.findByRole("button", { name: "Remove Validator 412345" }));
+      await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove validator" }));
+      const done = await screen.findByRole("dialog", { name: "Validator 412345 removed" });
+      expect(within(done).getByRole("alert")).toHaveTextContent("Your browser didn't save the slashing-protection file");
+      expect(within(done).queryByText(/should have saved/)).toBeNull();
+      expect(within(done).queryByText(/was saved/)).toBeNull();
+      // Download again is the primary action; the dialog can't be dismissed by Escape or the close button.
+      expect(within(done).queryByRole("button", { name: "Close dialog" })).toBeNull();
+      expect(within(done).queryByRole("button", { name: "I have the file" })).toBeNull();
+      await userEvent.keyboard("{Escape}");
+      expect(screen.getByRole("dialog", { name: "Validator 412345 removed" })).toBeInTheDocument();
+
+      await userEvent.click(within(done).getByRole("button", { name: "Download again" }));
+      expect(downloads.calls).toHaveLength(1);
+      expect(downloads.calls[0].name).toBe(`slashing-protection-${MOCK_PUBKEYS.active01.slice(2, 10)}.json`);
+      expect(within(done).queryByRole("alert")).toBeNull();
+      expect(within(done).getByText(/should have saved/)).toBeInTheDocument();
+      expect(within(done).getByRole("button", { name: "I have the file" })).toBeInTheDocument();
+    });
+
+    it("can still be closed without the file after a failed download", async () => {
+      downloads.failNext = 5;
+      renderPage();
+      const t = await table();
+      await userEvent.click(await t.findByRole("button", { name: "Remove Validator 412345" }));
+      await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove validator" }));
+      const done = await screen.findByRole("dialog", { name: "Validator 412345 removed" });
+      await userEvent.click(within(done).getByRole("button", { name: "Download again" }));
+      expect(within(done).getByRole("alert")).toBeInTheDocument();
+      await userEvent.click(within(done).getByRole("button", { name: "Close without the file" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     });
 
     it("does not report success when the keymanager fails", async () => {
@@ -234,6 +297,65 @@ describe("ValidatorsPage", () => {
       expect(sign).toHaveBeenCalledWith(MOCK_PUBKEYS.active01);
       expect(submit).toHaveBeenCalledWith(expect.objectContaining({ message: expect.objectContaining({ validator_index: "412345" }) }));
       await waitFor(() => expect(within(rowOf(MOCK_PUBKEYS.active01)).getByText("Exiting")).toBeInTheDocument());
+    });
+
+    it("sends nothing when the signed exit is for another validator", async () => {
+      const api = createMockApi();
+      vi.spyOn(api.keymanager, "signVoluntaryExit").mockResolvedValue({ message: { epoch: "1", validator_index: "999" }, signature: "0x00" });
+      const submit = vi.spyOn(api.beacon, "submitVoluntaryExit");
+      renderPage(api);
+      const t = await table();
+      await userEvent.click(await t.findByRole("button", { name: "Exit Validator 412345" }));
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.type(within(dialog).getByLabelText(/Type the validator index/), "412345");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Exit validator" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent("The signed exit is for validator 999, not 412345. Nothing was sent.");
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it("shows a signing error and submits nothing", async () => {
+      const api = createMockApi();
+      vi.spyOn(api.keymanager, "signVoluntaryExit").mockRejectedValue(new Error("HTTP 500"));
+      const submit = vi.spyOn(api.beacon, "submitVoluntaryExit");
+      renderPage(api);
+      const t = await table();
+      await userEvent.click(await t.findByRole("button", { name: "Exit Validator 412345" }));
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.type(within(dialog).getByLabelText(/Type the validator index/), "412345");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Exit validator" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent("The exit message could not be signed: HTTP 500");
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it("ignores Enter with a wrong index", async () => {
+      const api = createMockApi();
+      const sign = vi.spyOn(api.keymanager, "signVoluntaryExit");
+      renderPage(api);
+      const t = await table();
+      await userEvent.click(await t.findByRole("button", { name: "Exit Validator 412345" }));
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.type(within(dialog).getByLabelText(/Type the validator index/), "412344{Enter}");
+      expect(sign).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog", { name: "Exit validator 412345?" })).toBeInTheDocument();
+    });
+
+    it("signs and submits once even when confirmed twice quickly", async () => {
+      const api = createMockApi();
+      const sign = vi.spyOn(api.keymanager, "signVoluntaryExit");
+      renderPage(api);
+      const t = await table();
+      await userEvent.click(await t.findByRole("button", { name: "Exit Validator 412345" }));
+      const dialog = await screen.findByRole("dialog");
+      const input = within(dialog).getByLabelText(/Type the validator index/);
+      await userEvent.type(input, "412345");
+      const form = input.closest("form")!;
+      // Both in one batch, so React has no chance to re-render with `busy` in between.
+      act(() => {
+        form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+      expect(await screen.findByRole("dialog", { name: "Exit submitted for validator 412345" })).toBeInTheDocument();
+      expect(sign).toHaveBeenCalledTimes(1);
     });
 
     it("warns that a 0x00 validator's balance stays locked", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Card, Skeleton, Spinner, Table, TBody, TH, THead, TR } from "../../components/ui";
 import { useClientConfig } from "../../config/ClientConfigProvider";
 import { clientDisplayName } from "../../lib/clientName";
@@ -20,12 +20,14 @@ function PlusIcon() {
   );
 }
 
-function Header({ count, action }: { count?: number; action?: ReactNode }) {
+const Header = forwardRef<HTMLHeadingElement, { count?: number; action?: ReactNode }>(function Header({ count, action }, ref) {
   return (
     <header className="mb-6 flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="mb-0 font-display text-4xl font-bold tracking-tight text-fg">Validators</h1>
+          <h1 ref={ref} tabIndex={-1} className="mb-0 font-display text-4xl font-bold tracking-tight text-fg focus:outline-none">
+            Validators
+          </h1>
           {typeof count === "number" && count > 0 && (
             <span className="rounded-full bg-fg/[0.06] px-2.5 py-0.5 text-sm font-semibold text-fg-muted">{count}</span>
           )}
@@ -35,7 +37,7 @@ function Header({ count, action }: { count?: number; action?: ReactNode }) {
       {action && <div className="flex shrink-0 flex-wrap gap-2">{action}</div>}
     </header>
   );
-}
+});
 
 const AddButton = ({ size = "md" }: { size?: "md" | "lg" }) => (
   <Button as="a" href="#/add" size={size} leftIcon={<PlusIcon />}>
@@ -103,7 +105,24 @@ export default function ValidatorsPage({ pollMs, retryMs }: ValidatorsPageProps 
   const [dialog, setDialog] = useState<Dialog>(null);
   const followUps = useRef<ReturnType<typeof setTimeout>[]>([]);
 
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
   useEffect(() => () => followUps.current.forEach(clearTimeout), []);
+
+  // When a dialog closes, the Modal returns focus to the button that opened
+  // it. After a remove that button's row is gone, so focus would fall to the
+  // page body: move it to the heading instead.
+  const hadDialog = useRef(false);
+  useEffect(() => {
+    if (dialog) {
+      hadDialog.current = true;
+      return;
+    }
+    if (!hadDialog.current) return;
+    hadDialog.current = false;
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.isConnected) headingRef.current?.focus();
+  }, [dialog]);
 
   const onAction = (action: ValidatorAction, row: ValidatorRowData) => setDialog({ action, row });
   const close = () => setDialog(null);
@@ -177,7 +196,7 @@ export default function ValidatorsPage({ pollMs, retryMs }: ValidatorsPageProps 
 
   return (
     <div className="min-w-0">
-      <Header count={data ? rows.length : undefined} action={data && rows.length > 0 ? <AddButton /> : undefined} />
+      <Header ref={headingRef} count={data ? rows.length : undefined} action={data && rows.length > 0 ? <AddButton /> : undefined} />
       {body}
       <FeeRecipientDialog
         row={dialog?.action === "fee" ? dialog.row : null}
