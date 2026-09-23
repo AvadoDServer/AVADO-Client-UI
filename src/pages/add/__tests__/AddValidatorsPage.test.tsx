@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ApiError } from "../../../api/errors";
 import { createMockApi, fakeHex, MOCK_PUBKEYS } from "../../../api/mock";
 import type { Api } from "../../../api/types";
 import { fakeKeystore, renderWithApi } from "../../validators/__tests__/renderWithApi";
@@ -94,6 +95,37 @@ describe("AddValidatorsPage", () => {
     expect(await screen.findByText("2 failed.")).toBeInTheDocument();
     expect(fileRow("a.json").getByText("Not imported")).toBeInTheDocument();
     expect(fileRow("a.json").getByText("Not imported: HTTP 502")).toHaveClass("break-words");
+  });
+
+  it("on a timeout, marks each file Unknown (not failed) and checks the node's list (final review M4)", async () => {
+    const api = createMockApi({ keystores: [] });
+    const realImport = api.keymanager.importKeystores.bind(api.keymanager);
+    // The node imports a.json, then the request runs past the time limit.
+    vi.spyOn(api.keymanager, "importKeystores").mockImplementation(async (req) => {
+      await realImport({ keystores: [req.keystores[0]], passwords: [req.passwords[0]] });
+      throw new ApiError({ kind: "timeout", service: "keymanager", path: "/eth/v1/keystores" });
+    });
+    const list = vi.spyOn(api.keymanager, "listKeystores");
+    renderPage(api);
+    await pick([keyFile("a.json", PK[0]), keyFile("b.json", PK[1])]);
+    await userEvent.type(screen.getByLabelText("Keystore password"), "secret123");
+    await userEvent.click(screen.getByRole("button", { name: "Import 2 keys" }));
+
+    // The list is read right after the timeout: a.json is on the node, b.json unknown.
+    expect(await fileRow("a.json").findByText("On this node")).toBeInTheDocument();
+    expect(list).toHaveBeenCalled();
+    expect(fileRow("b.json").getByText("Unknown")).toBeInTheDocument();
+    expect(fileRow("b.json").getByText("Unknown — the node may still be importing; refresh the list")).toBeInTheDocument();
+    expect(screen.queryByText(/failed/)).toBeNull();
+    expect(screen.queryByText("Not imported")).toBeNull();
+    expect(screen.getByText(/didn't answer in time/)).toBeInTheDocument();
+
+    // The node finishes b.json; refreshing the list picks it up.
+    await realImport({ keystores: [fakeKeystore(PK[1])], passwords: ["secret123"] });
+    await userEvent.click(screen.getByRole("button", { name: "Refresh the list" }));
+    expect(await fileRow("b.json").findByText("On this node")).toBeInTheDocument();
+    expect(screen.queryByText(/didn't answer in time/)).toBeNull();
+    expect(screen.getByRole("link", { name: "See your validators" })).toBeInTheDocument();
   });
 
   it("accepts dropped files, sends the slashing protection and skips deposit data", async () => {

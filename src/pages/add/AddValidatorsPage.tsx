@@ -1,6 +1,7 @@
 import { useId, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../../api/ApiProvider";
+import { isApiError } from "../../api/errors";
 import type { ImportResult } from "../../api/types";
 import { Badge, Button, Card, CardDescription, CardTitle, Input, cn, type BadgeVariant } from "../../components/ui";
 import { useClientConfig } from "../../config/ClientConfigProvider";
@@ -16,15 +17,24 @@ interface Entry {
   reason?: string;
   password: string;
   result?: ImportResult;
+  /**
+   * The import request timed out: the node may still be importing this key.
+   * Cleared once the key shows up in the node's list (`found`).
+   */
+  unknown?: boolean;
+  /** Seen in the node's key list after a timed-out import. */
+  found?: boolean;
 }
 
 type PasswordMode = "same" | "each";
 
-const isDone = (e: Entry) => e.result?.status === "imported" || e.result?.status === "duplicate";
+const isDone = (e: Entry) => e.found === true || e.result?.status === "imported" || e.result?.status === "duplicate";
 const isPending = (e: Entry) => e.kind === "keystore" && !isDone(e);
 
 function resultBadge(e: Entry): { variant: BadgeVariant; label: string } | null {
   if (e.kind !== "keystore") return { variant: "warning", label: "Skipped" };
+  if (e.found) return { variant: "success", label: "On this node" };
+  if (e.unknown) return { variant: "warning", label: "Unknown" };
   if (!e.result) return null;
   if (e.result.status === "imported") return { variant: "success", label: "Imported" };
   if (e.result.status === "duplicate") return { variant: "neutral", label: "Already on this node" };
@@ -79,6 +89,7 @@ export default function AddValidatorsPage() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState<{ text: string; failed: boolean } | null>(null);
+  const [checking, setChecking] = useState(false);
   const [dragging, setDragging] = useState(false);
   const nextId = useRef(1);
   // The latest list, for the async file reader (state may be stale there).
@@ -190,6 +201,19 @@ export default function AddValidatorsPage() {
         ...(slashing ? { slashing_protection: slashing.text } : {}),
       });
     } catch (err) {
+      if (isApiError(err) && err.kind === "timeout") {
+        // No answer in time doesn't mean nothing was imported: the node may
+        // still be working through the keystores. Say so per file, then look
+        // at the node's key list.
+        const ids = new Set(batch.map((e) => e.id));
+        const next = entriesRef.current.map((e) => (ids.has(e.id) ? { ...e, result: undefined, unknown: true } : e));
+        entriesRef.current = next;
+        setEntries(next);
+        setSummary(null);
+        setBusy(false);
+        await refreshFromNode();
+        return;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       results = batch.map(() => ({ status: "error", message: msg }));
     }
@@ -200,6 +224,24 @@ export default function AddValidatorsPage() {
     setBusy(false);
   };
 
+  /** After a timed-out import: mark the files whose key is on the node now. */
+  const refreshFromNode = async () => {
+    setChecking(true);
+    try {
+      const onNode = new Set((await keymanager.listKeystores()).map((k) => k.validating_pubkey.toLowerCase()));
+      const next = entriesRef.current.map((e) =>
+        e.unknown && e.pubkey && onNode.has(e.pubkey.toLowerCase()) ? { ...e, unknown: false, found: true } : e,
+      );
+      entriesRef.current = next;
+      setEntries(next);
+    } catch {
+      /* the node is still busy or restarting: the files stay "Unknown" */
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const unknownCount = entries.filter((e) => e.unknown).length;
   const keystoreCount = entries.filter((e) => e.kind === "keystore").length;
   const failedWrongPassword = entries.some((e) => e.result?.status === "error" && importErrorText(e.result.message) === "Wrong password");
   const allDone = keystoreCount > 0 && pending.length === 0;
@@ -275,6 +317,11 @@ export default function AddValidatorsPage() {
                       <div className="flex min-w-0 flex-col">
                         <span className="break-all text-sm font-medium text-fg">{e.name}</span>
                         <span className="font-mono text-xs text-fg-muted">{e.pubkey ? shortHex(e.pubkey, 8, 6) : e.reason}</span>
+                        {e.unknown && (
+                          <span className="break-words text-xs text-warning-text">
+                            Unknown — the node may still be importing; refresh the list
+                          </span>
+                        )}
                         {e.result?.status === "error" && importErrorText(e.result.message) !== "Wrong password" && (
                           <span className="break-words text-xs text-danger-text">{importErrorText(e.result.message)}</span>
                         )}
@@ -378,6 +425,17 @@ export default function AddValidatorsPage() {
             </p>
           )}
         </div>
+        {unknownCount > 0 && (
+          <div role="status" className="flex flex-wrap items-center gap-3 text-sm text-warning-text">
+            <p>
+              The node didn&apos;t answer in time. It may still be importing{" "}
+              {unknownCount === 1 ? "this key" : `these ${unknownCount} keys`}; refresh the list in a minute.
+            </p>
+            <Button size="sm" variant="secondary" onClick={() => void refreshFromNode()} loading={checking} disabled={busy}>
+              Refresh the list
+            </Button>
+          </div>
+        )}
         {summary?.failed && (
           <p className="text-sm text-fg-muted">
             The keys that were imported stay imported. Fix the failed files and import again.
