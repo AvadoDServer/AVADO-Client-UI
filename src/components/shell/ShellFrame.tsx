@@ -20,12 +20,12 @@ export interface ShellFrameProps {
   /** Shown above the page, full width (e.g. the client's status strip). */
   strip?: ReactNode;
   /** Problem banners above the page, most serious first. */
-  problems?: Problem[];
+  problems?: Problem<string>[];
   /** The page (usually `<Outlet />`). */
   children: ReactNode;
 }
 
-const NO_PROBLEMS: Problem[] = [];
+const NO_PROBLEMS: Problem<string>[] = [];
 
 /**
  * The layout every app shares: sidebar (a drawer below lg, with a top bar),

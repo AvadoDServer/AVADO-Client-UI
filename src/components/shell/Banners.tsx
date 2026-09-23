@@ -8,7 +8,7 @@ const TONE: Record<ProblemTone, { box: string; title: string }> = {
   accent: { box: "border-accent/25 bg-accent-subtle", title: "text-fg" },
 };
 
-function FixButton({ problem }: { problem: Problem }) {
+function FixButton({ problem }: { problem: Problem<string> }) {
   const { label, to, href } = problem.action;
   const common = { size: "sm" as const, variant: "secondary" as const, className: "flex-shrink-0 self-start sm:self-center" };
   return to ? (
@@ -23,7 +23,7 @@ function FixButton({ problem }: { problem: Problem }) {
 }
 
 /** The problem banners (spec §4), most serious first, each with its fix. */
-export function Banners({ problems }: { problems: Problem[] }) {
+export function Banners({ problems }: { problems: Problem<string>[] }) {
   if (problems.length === 0) return null;
   return (
     <section aria-label="Problems" className="mb-6 flex flex-col gap-3">
