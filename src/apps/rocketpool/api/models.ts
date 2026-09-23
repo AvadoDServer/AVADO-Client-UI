@@ -386,46 +386,100 @@ export interface AvadoStatus {
   legacyMnemonicPresent: boolean;
 }
 
-/**
- * The reconcile loop's status file (`/tmp/reconcile-status.json`, written by
- * the backend's key/fee-recipient loop). The shape the UI reads; every field
- * is optional so an older or partial file never breaks the page.
- */
-export interface ReconcileStatus {
-  /** ISO time of the last finished run. */
-  lastRunAt?: string;
-  /** The consensus client the keys are loaded in; null when none is installed. */
-  client?: { package: string; title: string } | null;
-  keys?: {
-    /** Rocket Pool validator keys this node has. */
-    total: number;
-    /** Of those, loaded in the consensus client. */
-    loaded: number;
-    /** Imported by the last run. */
-    imported?: number;
-    /** Not imported because another AVADO consensus client already has them (no double signing). */
-    inOtherClient?: number;
-  };
-  feeRecipients?: {
-    total: number;
-    /** Keys whose fee recipient is right. */
-    correct: number;
-    /** Corrected by the last run. */
-    fixed?: number;
-  };
-  /** Plain-language problems from the last run. */
-  errors?: string[];
+/** The loop's verdict on its last pass. */
+export type ReconcileState = "ok" | "waiting" | "attention" | "error";
+
+/** One Rocket Pool key after the last pass (backend `reconcile/run.ts` KeyState). */
+export type ReconcileKeyState =
+  | "loaded"
+  | "imported"
+  | "elsewhere"
+  | "awaiting-approval"
+  | "import-blocked"
+  | "missing-keystore"
+  | "import-failed"
+  | "retry-limit"
+  | "deferred"
+  | "no-client";
+
+export type ReconcileFeeState = "ok" | "fixed" | "failed" | "no-address" | "not-loaded";
+
+export interface ReconcileKey {
+  /** 96 hex, no 0x. */
+  pubkey: string;
+  kind: "minipool" | "megapool";
+  /** Minipool address, or the megapool validator id. */
+  ref: string;
+  state: ReconcileKeyState;
+  /** For "elsewhere": the package that has the key loaded. */
+  loadedIn?: string;
+  feeRecipient: { rule: string; expected: string | null; found?: string | null; state: ReconcileFeeState };
+  error?: string;
 }
 
-/** `GET /api/avado/reconcile`. */
+export interface ReconcileClient {
+  id: string;
+  /** "Teku" */
+  name: string;
+  package: string;
+}
+
+/**
+ * The key/fee-recipient loop's status (`/tmp/reconcile-status.json`, backend
+ * `reconcile/run.ts` ReconcileStatus, version 1), after `parseReconcileStatus`:
+ * every field present, with safe defaults for anything missing or malformed.
+ */
+export interface ReconcileStatus {
+  version: number;
+  state: ReconcileState;
+  /** One plain-language line, e.g. "Validator keys in sync with Teku: 3/3." */
+  message: string;
+  startedAt: string | null;
+  /** When the last pass ended: compare with an earlier value to see that a requested run is done. */
+  finishedAt: string | null;
+  trigger: "startup" | "timer" | "request" | null;
+  nextRunAt: string | null;
+  /** The consensus client the keys belong in; null when none could be chosen. */
+  client: ReconcileClient | null;
+  /** CONSENSUSCLIENT as set in the package. */
+  configuredClient: string | null;
+  /** How the client was chosen, in plain language (`why`). */
+  clientChoice: { source: "setting" | "only-installed" | "none"; why: string } | null;
+  /** Keys missing in the client that are only loaded after the owner approves them (96 hex, no 0x). */
+  awaitingApproval: string[];
+  otherClients: Array<ReconcileClient & { checked: boolean; error?: string }>;
+  unknownValidatorPackages: string[];
+  keys: { total: number; inSync: number; imported: number; summary: string };
+  feeRecipients: { total: number; ok: number; fixed: number; failed: number };
+  validators: ReconcileKey[];
+  /** Plain-language problems from the pass. */
+  errors: string[];
+}
+
+/** `GET /api/avado/reconcile`. `status` is raw: read it through `parseReconcileStatus`. */
 export interface ReconcileView {
   /** false until the loop has written a status. */
   available: boolean;
-  /** A run was asked for and hasn't started yet. */
+  /**
+   * A run was asked for and hasn't started yet. It turns false when the run
+   * starts, not when it ends: watch `finishedAt` for the end.
+   */
   runRequested: boolean;
-  status?: ReconcileStatus;
+  status?: unknown;
   updatedAt?: string;
   error?: string;
+}
+
+/** The exact text the owner types to approve loading keys (backend APPROVE_CONFIRMATION). */
+export const APPROVE_CONFIRMATION = "LOAD";
+
+/** `POST /api/avado/reconcile/approve` answer (202). */
+export interface ApproveKeysResult extends SnEnvelope {
+  /** Keys in the request (deduplicated). */
+  approved: number;
+  /** Of those, newly added to the approved list. */
+  added: number;
+  runRequested: boolean;
 }
 
 /** `GET /api/avado/logs?tail=N`. */

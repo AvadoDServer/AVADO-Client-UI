@@ -9,12 +9,22 @@
  *    with a gas estimate.
  *  - Any write that isn't a wallet route answers with a fresh demo tx hash;
  *    `wait` then succeeds after `waitMs`, or fails with `txOutcome: "revert"`.
- *  - Nothing changes state: after a transaction the fixtures read the same.
+ *  - Nothing changes state after a transaction: the fixtures read the same.
+ *    The one exception is approving keys: they then read as loaded.
  */
 import { RpApiError } from "./errors";
 import { DemoSnError, SCENARIOS, demoHex, isScenarioName, type MockScenario, type MockScenarioName } from "./fixtures";
-import type { AvadoStatus, LogsView, ReconcileView, SnEnvelope } from "./models";
-import { AVADO_LOGS_PATH, AVADO_RECONCILE_PATH, AVADO_RECONCILE_RUN_PATH, AVADO_STATUS_PATH, SN_PREFIX, assertRoute } from "./real";
+import { APPROVE_CONFIRMATION, type ApproveKeysResult, type AvadoStatus, type LogsView, type ReconcileView, type SnEnvelope } from "./models";
+import { normalizePubkey } from "./reconcile";
+import {
+  AVADO_LOGS_PATH,
+  AVADO_RECONCILE_APPROVE_PATH,
+  AVADO_RECONCILE_PATH,
+  AVADO_RECONCILE_RUN_PATH,
+  AVADO_STATUS_PATH,
+  SN_PREFIX,
+  assertRoute,
+} from "./real";
 import type { RocketpoolApi, SnParams } from "./types";
 
 export type MockFailure = DemoSnError | "unreachable" | "timeout";
@@ -39,7 +49,7 @@ export interface RocketpoolMockOptions {
 export interface MockCall {
   method: "GET" | "POST";
   path: string;
-  params: SnParams;
+  params: Record<string, unknown>;
 }
 
 export interface MockRocketpoolApi extends RocketpoolApi {
@@ -53,6 +63,39 @@ export const WALLET_EXISTS_MESSAGE =
 const EXPORT_REFUSED = 'Type EXPORT to confirm the wallet export (typedConfirmation must be "EXPORT").';
 const DAEMON_DOWN = "The Rocket Pool daemon is not reachable (it may still be starting).";
 const TX_FAILED = "Transaction failed with status 0";
+const APPROVE_REFUSED =
+  'Type LOAD to confirm that these validators are not running anywhere else (confirm must be "LOAD").';
+
+/** The scenario's key-check status as it reads after the owner approved `approved` (they load on the next run). */
+function withApproved(view: ReconcileView, approved: ReadonlySet<string>): ReconcileView {
+  const s = view.status as Record<string, unknown> | undefined;
+  if (!s || approved.size === 0 || !Array.isArray(s.awaitingApproval)) return view;
+  const waiting = s.awaitingApproval as string[];
+  const loaded = waiting.filter((k) => approved.has(k));
+  if (loaded.length === 0) return view;
+  const keys = s.keys as { total: number; inSync: number; imported: number; summary: string };
+  const inSync = keys.inSync + loaded.length;
+  const stillWaiting = waiting.filter((k) => !approved.has(k));
+  const validators = (s.validators as Array<Record<string, unknown>>).map((v) =>
+    loaded.includes(v.pubkey as string)
+      ? { ...v, state: "imported", feeRecipient: { ...(v.feeRecipient as object), state: "fixed" } }
+      : v,
+  );
+  const clientName = (s.client as { name?: string } | null)?.name ?? "the consensus client";
+  const done = stillWaiting.length === 0 && inSync === keys.total && ((s.errors as string[]) ?? []).length === 0;
+  return {
+    ...view,
+    status: {
+      ...s,
+      state: done ? "ok" : s.state,
+      message: `Validator keys in sync with ${clientName}: ${inSync}/${keys.total}.`,
+      trigger: "request",
+      awaitingApproval: stillWaiting,
+      keys: { ...keys, inSync, imported: loaded.length, summary: `${inSync}/${keys.total}` },
+      validators,
+    },
+  };
+}
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -92,12 +135,14 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
   const scenario = SCENARIOS[options.scenario ?? "mixed"];
   const calls: MockCall[] = [];
   let txCount = 0;
+  /** Keys the owner approved in this mock: the next status shows them loaded. */
+  const approved = new Set<string>();
 
   const delay = async (ms = latencyMs) => {
     if (ms > 0) await sleep(ms);
   };
 
-  async function enter(method: "GET" | "POST", path: string, params: SnParams = {}) {
+  async function enter(method: "GET" | "POST", path: string, params: Record<string, unknown> = {}) {
     calls.push({ method, path, params: { ...params } });
     await delay();
     if (backendDown) throw new RpApiError({ kind: "unreachable", path });
@@ -131,11 +176,26 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
 
     async reconcile() {
       await enter("GET", AVADO_RECONCILE_PATH);
-      return clone(scenario.reconcile) as ReconcileView;
+      return withApproved(clone(scenario.reconcile) as ReconcileView, approved);
     },
 
     async requestReconcile() {
       await enter("POST", AVADO_RECONCILE_RUN_PATH);
+    },
+
+    async approveKeys(pubkeys: string[], confirm: string) {
+      const path = AVADO_RECONCILE_APPROVE_PATH;
+      await enter("POST", path, { pubkeys: [...pubkeys], confirm });
+      // The backend's checks: exact confirmation, 1..1000 valid pubkeys, nothing written otherwise.
+      if (confirm !== APPROVE_CONFIRMATION) fail(path, new DemoSnError(400, APPROVE_REFUSED));
+      const keys = pubkeys.map(normalizePubkey);
+      if (keys.length === 0 || keys.length > 1000 || keys.some((k) => k === null)) {
+        fail(path, new DemoSnError(400, "pubkeys must be a list of 1 to 1000 validator public keys."));
+      }
+      const unique = [...new Set(keys as string[])];
+      const added = unique.filter((k) => !approved.has(k)).length;
+      unique.forEach((k) => approved.add(k));
+      return { status: "success", error: "", approved: unique.length, added, runRequested: true } as ApproveKeysResult;
     },
 
     async logs(tail = 200) {

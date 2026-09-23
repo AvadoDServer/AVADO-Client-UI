@@ -1,4 +1,4 @@
-import type { AvadoStatus, LogsView, ReconcileView, SnEnvelope } from "./models";
+import type { ApproveKeysResult, AvadoStatus, LogsView, ReconcileView, SnEnvelope } from "./models";
 
 /** Flat request parameters: Smartnode reads strings; the backend takes a flat JSON object. */
 export type SnParams = Record<string, string | number | boolean>;
@@ -19,6 +19,13 @@ export interface RocketpoolApi {
   reconcile(): Promise<ReconcileView>;
   /** `POST /api/avado/reconcile/run`: ask the loop to run now. */
   requestReconcile(): Promise<void>;
+  /**
+   * `POST /api/avado/reconcile/approve {pubkeys, confirm}`: the owner allows
+   * these keys to be loaded into the consensus client. `confirm` must be the
+   * text the owner typed; the backend accepts only exactly "LOAD". Call it
+   * only from an explicit owner action.
+   */
+  approveKeys(pubkeys: string[], confirm: string): Promise<ApproveKeysResult>;
   /** `GET /api/avado/logs?tail=N`: redacted daemon log lines. */
   logs(tail?: number): Promise<LogsView>;
   /**

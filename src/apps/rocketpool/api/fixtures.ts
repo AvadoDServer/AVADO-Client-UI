@@ -380,24 +380,110 @@ const NORMAL_LOG = [
   "2026/09/23 09:58:40 Node is in sync.",
 ];
 
+
+/* ------------------------------------------------------------------ */
+/* Key check (backend reconcile loop, status version 1)                 */
+/* ------------------------------------------------------------------ */
+
+const NIMBUS = { id: "nimbus", name: "Nimbus", package: "nimbus.avado.dnp.dappnode.eth" };
+const TEKU = { id: "teku", name: "Teku", package: "teku.avado.dnp.dappnode.eth" };
+
+type DemoKeyState = "loaded" | "imported" | "elsewhere" | "awaiting-approval" | "import-blocked" | "missing-keystore";
+
+/** One validator entry of the status file. */
+export function demoKey(
+  pubkeyHex: string,
+  kind: "minipool" | "megapool",
+  ref: string,
+  state: DemoKeyState,
+  rule: string,
+  expected: string,
+  fee: "ok" | "fixed" = "ok",
+) {
+  const loaded = state === "loaded" || state === "imported";
+  return {
+    pubkey: pubkeyHex,
+    kind,
+    ref,
+    state,
+    feeRecipient: loaded ? { rule, expected, found: fee === "fixed" ? ZERO_ADDRESS : expected, state: fee } : { rule, expected, state: "not-loaded" },
+  };
+}
+
+/** A `GET /api/avado/reconcile` answer with a status built like the loop's. */
+export function reconcileView(o: {
+  state: "ok" | "waiting" | "attention" | "error";
+  client: { id: string; name: string; package: string } | null;
+  keys: ReturnType<typeof demoKey>[];
+  message?: string;
+  errors?: string[];
+}): ReconcileView {
+  const inSync = o.keys.filter((k) => k.state === "loaded" || k.state === "imported").length;
+  const awaiting = o.keys.filter((k) => k.state === "awaiting-approval").map((k) => k.pubkey);
+  const fees = o.keys.map((k) => k.feeRecipient.state);
+  const summary = `${inSync}/${o.keys.length}`;
+  const name = o.client?.name ?? "";
+  const message =
+    o.message ??
+    `Validator keys in sync with ${name}: ${summary}.` +
+      (awaiting.length ? ` ${awaiting.length} validator key${awaiting.length === 1 ? " is" : "s are"} not loaded and wait${awaiting.length === 1 ? "s" : ""} for your approval.` : "");
+  return {
+    available: true,
+    runRequested: false,
+    updatedAt: NOW,
+    status: {
+      version: 1,
+      state: o.state,
+      message,
+      startedAt: "2026-09-23T09:59:58Z",
+      finishedAt: NOW,
+      durationMs: 2140,
+      trigger: "timer",
+      nextRunAt: "2026-09-23T10:05:00Z",
+      client: o.client,
+      configuredClient: o.client?.id ?? null,
+      clientChoice: o.client
+        ? { source: "setting", why: `The Rocket Pool package setting CONSENSUSCLIENT is "${o.client.id}".` }
+        : null,
+      awaitingApproval: awaiting,
+      otherClients: [],
+      unknownValidatorPackages: [],
+      keys: { total: o.keys.length, inSync, imported: 0, summary },
+      feeRecipients: {
+        total: fees.filter((f) => f !== "not-loaded").length,
+        ok: fees.filter((f) => f === "ok").length,
+        fixed: fees.filter((f) => f === "fixed").length,
+        failed: 0,
+      },
+      fee: o.client
+        ? {
+            isInSmoothingPool: o.keys.some((k) => k.feeRecipient.rule === "smoothing-pool"),
+            isInOptOutCooldown: false,
+            smoothingPoolAddress: DEMO.smoothingPool,
+            feeDistributorAddress: DEMO.feeDistributor,
+            megapoolAddress: DEMO.megapool,
+          }
+        : null,
+      validators: o.keys,
+      errors: o.errors ?? [],
+    },
+  };
+}
+
 /* ------------------------------------------------------------------ */
 
 const minipoolNode: MockScenario = {
   name: "minipool",
   title: "Minipool node",
   avado: baseAvado,
-  reconcile: {
-    available: true,
-    runRequested: false,
-    updatedAt: NOW,
-    status: {
-      lastRunAt: NOW,
-      client: { package: "nimbus.avado.dnp.dappnode.eth", title: "Nimbus" },
-      keys: { total: 2, loaded: 2, imported: 0, inOtherClient: 0 },
-      feeRecipients: { total: 2, correct: 2, fixed: 0 },
-      errors: [],
-    },
-  },
+  reconcile: reconcileView({
+    state: "ok",
+    client: NIMBUS,
+    keys: [
+      demoKey(DEMO.pubkeyA, "minipool", DEMO.minipoolA, "loaded", "smoothing-pool", DEMO.smoothingPool),
+      demoKey(DEMO.pubkeyB, "minipool", DEMO.minipoolB, "loaded", "smoothing-pool", DEMO.smoothingPool),
+    ],
+  }),
   reads: {
     ...sharedReads,
     "wallet/status": walletStatus(true),
@@ -428,18 +514,15 @@ const mixedNode: MockScenario = {
   name: "mixed",
   title: "Minipool + megapool node",
   avado: { ...baseAvado, legacyMnemonicPresent: true },
-  reconcile: {
-    available: true,
-    runRequested: false,
-    updatedAt: NOW,
-    status: {
-      lastRunAt: NOW,
-      client: { package: "teku.avado.dnp.dappnode.eth", title: "Teku" },
-      keys: { total: 3, loaded: 2, imported: 0, inOtherClient: 0 },
-      feeRecipients: { total: 3, correct: 3, fixed: 1 },
-      errors: ["The key of megapool validator 2 is not ready yet: it is still in the deposit queue."],
-    },
-  },
+  reconcile: reconcileView({
+    state: "attention",
+    client: TEKU,
+    keys: [
+      demoKey(DEMO.pubkeyC, "minipool", DEMO.minipoolC, "loaded", "fee-distributor", DEMO.feeDistributor, "fixed"),
+      demoKey(DEMO.megaPubkey1, "megapool", "0", "loaded", "megapool", DEMO.megapool),
+      demoKey(DEMO.megaPubkey2, "megapool", "1", "awaiting-approval", "megapool", DEMO.megapool),
+    ],
+  }),
   reads: {
     ...sharedReads,
     "wallet/status": walletStatus(true),
@@ -470,18 +553,7 @@ const freshNode: MockScenario = {
   name: "fresh",
   title: "New node (no wallet)",
   avado: { ...baseAvado, backups: [], walletFilePresent: false, passwordFilePresent: false },
-  reconcile: {
-    available: true,
-    runRequested: false,
-    updatedAt: NOW,
-    status: {
-      lastRunAt: NOW,
-      client: { package: "nimbus.avado.dnp.dappnode.eth", title: "Nimbus" },
-      keys: { total: 0, loaded: 0 },
-      feeRecipients: { total: 0, correct: 0 },
-      errors: [],
-    },
-  },
+  reconcile: reconcileView({ state: "waiting", client: null, keys: [], message: "No Rocket Pool wallet yet." }),
   reads: {
     ...sharedReads,
     "wallet/status": walletStatus(false),
@@ -508,16 +580,13 @@ const daemonFailed: MockScenario = {
       "2026/09/23 09:31:05 error loading config: execution client not reachable",
     ],
   },
-  reconcile: {
-    available: true,
-    runRequested: false,
-    updatedAt: NOW,
-    status: {
-      lastRunAt: NOW,
-      client: { package: "nimbus.avado.dnp.dappnode.eth", title: "Nimbus" },
-      errors: ["Could not read this node's validators: the Rocket Pool service is not running."],
-    },
-  },
+  reconcile: reconcileView({
+    state: "waiting",
+    client: null,
+    keys: [],
+    message: "Waiting for the Rocket Pool daemon.",
+    errors: ["The Rocket Pool daemon is not reachable (it may still be starting)."],
+  }),
   reads: {},
   daemonDown: true,
   logLines: [

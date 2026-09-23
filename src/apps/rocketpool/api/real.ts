@@ -1,11 +1,12 @@
 import { RpApiError } from "./errors";
-import type { AvadoStatus, LogsView, ReconcileView, SnEnvelope } from "./models";
+import type { ApproveKeysResult, AvadoStatus, LogsView, ReconcileView, SnEnvelope } from "./models";
 import type { CallOptions, RocketpoolApi, SnParams } from "./types";
 
 /** The package backend's routes, on the UI's own origin. */
 export const AVADO_STATUS_PATH = "/api/avado/status";
 export const AVADO_RECONCILE_PATH = "/api/avado/reconcile";
 export const AVADO_RECONCILE_RUN_PATH = "/api/avado/reconcile/run";
+export const AVADO_RECONCILE_APPROVE_PATH = "/api/avado/reconcile/approve";
 export const AVADO_LOGS_PATH = "/api/avado/logs";
 export const SN_PREFIX = "/api/sn/";
 
@@ -43,7 +44,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 interface RequestSpec {
   method: "GET" | "POST";
   path: string;
-  body?: SnParams;
+  body?: SnParams | Record<string, unknown>;
   timeoutMs: number;
   /** Smartnode envelope: a 200 with `status: "error"` is an error too. */
   envelope: boolean;
@@ -118,6 +119,15 @@ export function createRealRocketpoolApi(fetchImpl: typeof fetch = (...args) => f
     async requestReconcile() {
       await request<unknown>({ method: "POST", path: AVADO_RECONCILE_RUN_PATH, body: {}, timeoutMs: WRITE_TIMEOUT_MS, envelope: false });
     },
+
+    approveKeys: (pubkeys: string[], confirm: string) =>
+      request<ApproveKeysResult>({
+        method: "POST",
+        path: AVADO_RECONCILE_APPROVE_PATH,
+        body: { pubkeys: [...pubkeys], confirm },
+        timeoutMs: WRITE_TIMEOUT_MS,
+        envelope: true,
+      }),
 
     logs: (tail = 200) =>
       request<LogsView>({

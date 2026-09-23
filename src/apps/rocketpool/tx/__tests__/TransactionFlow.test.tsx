@@ -51,7 +51,12 @@ describe("TransactionFlow", () => {
     // 145,000 gas × (0.85 + 1) gwei; at most 217,500 × (2 × 0.85 + 1) gwei
     expect(within(fee).getByText("about 0.000268 ETH")).toBeInTheDocument();
     expect(within(fee).getByText("0.000587 ETH")).toBeInTheDocument();
-    expect(within(fee).getByText(/0.85 gwei plus a 1 gwei tip/)).toBeInTheDocument();
+    // The numbers behind it: the same ones go into the request.
+    const row = (label: string) => within(fee).getByText(label).nextElementSibling?.textContent;
+    expect(row("Current base fee")).toBe("0.85 gwei");
+    expect(row("Tip for the block builder")).toBe("1 gwei");
+    expect(row("Max fee per gas")).toBe("2.7 gwei");
+    expect(row("Gas limit")).toBe("217,500");
     expect(screen.getByText(/Sends the ETH in your fee distributor/)).toBeInTheDocument();
     expect(screen.getByText("Nothing is sent until you press Distribute.")).toBeInTheDocument();
     expect(posts()).toHaveLength(0);

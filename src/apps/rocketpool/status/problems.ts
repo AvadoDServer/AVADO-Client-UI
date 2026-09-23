@@ -5,7 +5,8 @@
  */
 import { ADMIN_STORE_URL, adminPackageUrl } from "../../../components/shell/links";
 import type { Problem, ProblemTone } from "../../../components/shell/problems";
-import type { AvadoStatus, NodeStatus, ReconcileStatus, ReconcileView } from "../api/models";
+import type { AvadoStatus, NodeStatus, ReconcileKeyState, ReconcileStatus, ReconcileView } from "../api/models";
+import { reconcileStatusOf } from "../api/reconcile";
 import { formatEth, isZeroAddress, sameAddress, toBigInt } from "../lib/units";
 
 export const RP_PACKAGE = "rocketpool.avado.dnp.dappnode.eth";
@@ -21,8 +22,10 @@ export type RpProblemId =
   | "password-missing"
   | "legacy-mnemonic"
   | "no-consensus-client"
+  | "keys-awaiting-approval"
   | "keys-not-loaded"
-  | "fee-recipient-wrong"
+  | "fee-recipient-failed"
+  | "reconcile-failed"
   | "reconcile-errors"
   | "withdrawal-is-hot-wallet"
   | "low-gas-balance";
@@ -38,44 +41,6 @@ const bySeverity = (a: RpProblem, b: RpProblem) => TONE_ORDER[a.tone] - TONE_ORD
 const lastLines = (lines: string[] | undefined, n = 3) => (lines ?? []).filter((l) => l.trim()).slice(-n);
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
-const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined);
-const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-
-/**
- * The reconcile loop's status file, checked field by field: anything missing
- * or of the wrong type is left out, so an older or partial file never breaks
- * the banners.
- */
-export function parseReconcileStatus(raw: unknown): ReconcileStatus | undefined {
-  if (!isObject(raw)) return undefined;
-  const out: ReconcileStatus = {};
-  if (str(raw.lastRunAt)) out.lastRunAt = raw.lastRunAt as string;
-  if (raw.client === null) out.client = null;
-  else if (isObject(raw.client) && str(raw.client.package)) {
-    out.client = { package: raw.client.package as string, title: str(raw.client.title) ?? (raw.client.package as string) };
-  }
-  if (isObject(raw.keys)) {
-    const total = num(raw.keys.total);
-    const loaded = num(raw.keys.loaded);
-    if (total !== undefined && loaded !== undefined) {
-      out.keys = { total, loaded };
-      if (num(raw.keys.imported) !== undefined) out.keys.imported = raw.keys.imported as number;
-      if (num(raw.keys.inOtherClient) !== undefined) out.keys.inOtherClient = raw.keys.inOtherClient as number;
-    }
-  }
-  if (isObject(raw.feeRecipients)) {
-    const total = num(raw.feeRecipients.total);
-    const correct = num(raw.feeRecipients.correct);
-    if (total !== undefined && correct !== undefined) {
-      out.feeRecipients = { total, correct };
-      if (num(raw.feeRecipients.fixed) !== undefined) out.feeRecipients.fixed = raw.feeRecipients.fixed as number;
-    }
-  }
-  if (Array.isArray(raw.errors)) out.errors = raw.errors.filter((e): e is string => typeof e === "string" && e.trim() !== "");
-  return out;
-}
 
 export interface StatusProblemInputs {
   /** The last `/api/avado/status` answer. */
@@ -181,65 +146,109 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
   }
 
   // Validator keys: only meaningful while the daemon runs and a wallet exists.
-  const status = reconcile?.available ? parseReconcileStatus(reconcile.status) : undefined;
+  const status = reconcileStatusOf(reconcile);
   if (status && ready && avado.walletFilePresent) out.push(...reconcileProblems(status));
 
   return out.sort(bySeverity);
 }
 
+/** Where the owner approves loading keys (the approval screen lives on Home). */
+export const KEY_APPROVAL_ROUTE = "/";
+
+/** Key states that mean "should run in the client but doesn't", other than waiting for approval. */
+const NOT_RUNNING: ReadonlySet<ReconcileKeyState> = new Set([
+  "elsewhere",
+  "import-blocked",
+  "missing-keystore",
+  "import-failed",
+  "retry-limit",
+  "deferred",
+  "no-client",
+]);
+
 function reconcileProblems(s: ReconcileStatus): RpProblem[] {
+  // "waiting": no wallet, not registered, daemon starting or syncing; the other banners say so.
+  if (s.state === "waiting") return [];
   const out: RpProblem[] = [];
-  const errors = s.errors ?? [];
-  const keys = s.keys;
-  const clientTitle = s.client?.title ?? "your consensus client";
+  const name = s.client?.name ?? "your consensus client";
+  const details = s.errors.slice(0, 5);
   let errorsShown = false;
 
-  if (s.client === null && (keys?.total ?? 0) > 0) {
+  if (!s.client) {
     out.push({
       id: "no-consensus-client",
       tone: "danger",
-      title: "No consensus client installed",
-      body: "Your Rocket Pool validators need a consensus client (Nimbus, Teku, Lighthouse or Prysm) to run. Install one from the DappStore; the keys are added to it automatically.",
+      title: "No consensus client for your validators",
+      body: `${s.clientChoice?.why || s.message || "Rocket Pool could not find the consensus client to load your validator keys into."} Your validators need an installed consensus client (Nimbus, Teku, Lighthouse or Prysm) to run.`,
       action: { label: "Open the DappStore", href: ADMIN_STORE_URL },
     });
     return out;
   }
 
-  if (keys && keys.loaded < keys.total) {
-    const missing = keys.total - keys.loaded;
-    const elsewhere = keys.inOtherClient ?? 0;
-    errorsShown = errors.length > 0;
+  const awaiting = s.awaitingApproval.length;
+  if (awaiting > 0) {
+    out.push({
+      id: "keys-awaiting-approval",
+      tone: "warning",
+      title: `${plural(awaiting, "validator key")} ${awaiting === 1 ? "needs" : "need"} your approval`,
+      body: `${awaiting === 1 ? "It is" : "They are"} not loaded in ${name} yet. Load ${awaiting === 1 ? "it" : "them"} only if ${
+        awaiting === 1 ? "this validator is" : "these validators are"
+      } not running anywhere else: running a key on two machines gets it slashed.`,
+      action: { label: "Review keys", to: KEY_APPROVAL_ROUTE },
+    });
+  }
+
+  const stuck = s.validators.filter((v) => NOT_RUNNING.has(v.state));
+  const notRunning = s.validators.length > 0 ? stuck.length : Math.max(0, s.keys.total - s.keys.inSync - awaiting);
+  if (notRunning > 0) {
+    const elsewhere = stuck.filter((v) => v.state === "elsewhere");
+    const where = [...new Set(elsewhere.map((v) => v.loadedIn).filter((p): p is string => !!p))];
+    const blocked = stuck.some((v) => v.state === "import-blocked");
+    let body = "Rocket Pool tries again every few minutes. If this stays, check the details on the Advanced page.";
+    if (elsewhere.length > 0) {
+      body = `${plural(elsewhere.length, "key is", "keys are")} loaded in ${where.length ? where.join(", ") : "another consensus client"} instead, so ${
+        elsewhere.length === 1 ? "it was" : "they were"
+      } not added to ${name} as well (that would get ${elsewhere.length === 1 ? "it" : "them"} slashed). If that is the client you use, choose it as Rocket Pool's consensus client.`;
+    } else if (blocked) {
+      body = `Another consensus client on this AVADO could not be checked, so nothing was loaded into ${name}, to be safe from double signing. Start or remove that client.`;
+    }
+    errorsShown = details.length > 0;
     out.push({
       id: "keys-not-loaded",
       tone: "warning",
-      title: `${plural(missing, "validator key")} not running in ${clientTitle}`,
-      body:
-        elsewhere > 0
-          ? `${plural(elsewhere, "key is", "keys are")} already loaded in another consensus client on this AVADO, so ${elsewhere === 1 ? "it was" : "they were"} not added again (that would risk double signing).`
-          : "Rocket Pool adds them automatically every few minutes. If this stays, check the details on the Advanced page.",
-      details: errors.slice(0, 5),
+      title: `${plural(notRunning, "validator key")} not running in ${name}`,
+      body,
+      details,
       action: { label: "See details", to: "/advanced" },
     });
   }
 
-  if (s.feeRecipients && s.feeRecipients.correct < s.feeRecipients.total) {
-    const wrong = s.feeRecipients.total - s.feeRecipients.correct;
+  if (s.feeRecipients.failed > 0) {
     out.push({
-      id: "fee-recipient-wrong",
+      id: "fee-recipient-failed",
       tone: "warning",
-      title: `Wrong fee recipient for ${plural(wrong, "validator")}`,
-      body: `${clientTitle === "your consensus client" ? "Your consensus client" : clientTitle} would send their block rewards to the wrong address. It is corrected automatically every few minutes; if this stays, check the details on the Advanced page.`,
+      title: `Fee recipient could not be set for ${plural(s.feeRecipients.failed, "validator")}`,
+      body: `${name} could send their block rewards to the wrong address. Rocket Pool tries again every few minutes; if this stays, check the details on the Advanced page.`,
       action: { label: "See details", to: "/advanced" },
     });
   }
 
-  if (errors.length > 0 && !errorsShown) {
+  if (s.state === "error") {
+    out.push({
+      id: "reconcile-failed",
+      tone: "warning",
+      title: "The validator key check could not run",
+      body: s.message || `Rocket Pool could not check your validator keys in ${name}.`,
+      details: errorsShown ? [] : details,
+      action: { label: "See details", to: "/advanced" },
+    });
+  } else if (details.length > 0 && !errorsShown) {
     out.push({
       id: "reconcile-errors",
       tone: "warning",
       title: "The validator key check found a problem",
-      body: `Rocket Pool checks every few minutes that your validator keys and fee recipients are right in ${clientTitle}.`,
-      details: errors.slice(0, 5),
+      body: s.message || `Rocket Pool checks every few minutes that your validator keys and fee recipients are right in ${name}.`,
+      details,
       action: { label: "See details", to: "/advanced" },
     });
   }

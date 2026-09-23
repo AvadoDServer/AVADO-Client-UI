@@ -43,6 +43,7 @@ describe("Rocket Pool app", () => {
     // The default demo node (mixed) has two banners.
     const problems = await screen.findByRole("region", { name: "Problems" }, { timeout: 3000 });
     expect(within(problems).getByText("Your recovery phrase is stored in a plain file")).toBeInTheDocument();
+    expect(within(problems).getByText("1 validator key needs your approval")).toBeInTheDocument();
     // No calls to the network in the mock.
     expect(fetchSpy).not.toHaveBeenCalled();
 

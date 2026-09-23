@@ -322,20 +322,38 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
       {(phase.k === "ready" || phase.k === "sending") && (
         <>
           {tx.details && <div className="mt-4 text-sm text-fg">{tx.details(phase.can)}</div>}
-          <dl className="mt-4 rounded-xl border border-border bg-surface p-4 text-sm" data-testid="tx-fee">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <dt className="font-medium text-fg">Network fee</dt>
-              <dd className="font-semibold text-fg">about {formatGasCost(phase.quote.estimatedCostWei)}</dd>
-            </div>
-            <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-fg-muted">
-              <dt>At most</dt>
-              <dd>{formatGasCost(phase.quote.maxCostWei)}</dd>
-            </div>
+          <div className="mt-4 rounded-xl border border-border bg-surface p-4 text-sm" data-testid="tx-fee">
+            <dl>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <dt className="font-medium text-fg">Network fee</dt>
+                <dd className="font-semibold text-fg">about {formatGasCost(phase.quote.estimatedCostWei)}</dd>
+              </div>
+              <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-fg-muted">
+                <dt>At most</dt>
+                <dd>{formatGasCost(phase.quote.maxCostWei)}</dd>
+              </div>
+              <div className="mt-3 flex flex-wrap justify-between gap-x-4 border-t border-border pt-3 text-xs text-fg-muted">
+                <dt>Current base fee</dt>
+                <dd>{formatGwei(phase.quote.baseFeeWei)}</dd>
+              </div>
+              <div className="mt-1 flex flex-wrap justify-between gap-x-4 text-xs text-fg-muted">
+                <dt>Tip for the block builder</dt>
+                <dd>{formatGwei(phase.quote.priorityFeeWei)}</dd>
+              </div>
+              <div className="mt-1 flex flex-wrap justify-between gap-x-4 text-xs text-fg-muted">
+                <dt>Max fee per gas</dt>
+                <dd>{formatGwei(phase.quote.maxFeeWei)}</dd>
+              </div>
+              <div className="mt-1 flex flex-wrap justify-between gap-x-4 text-xs text-fg-muted">
+                <dt>Gas limit</dt>
+                <dd>{phase.quote.gasLimit.toLocaleString("en-US")}</dd>
+              </div>
+            </dl>
             <p className="mt-2 text-xs text-fg-muted">
-              Paid from your node wallet to the Ethereum network, not to AVADO or Rocket Pool. Current base fee{" "}
-              {formatGwei(phase.quote.baseFeeWei)} plus a {formatGwei(phase.quote.priorityFeeWei)} tip.
+              Paid from your node wallet to the Ethereum network, not to AVADO or Rocket Pool. It never costs more than
+              &ldquo;at most&rdquo;: max fee per gas × gas limit.
             </p>
-          </dl>
+          </div>
           {requireText !== undefined && (
             <Input
               className="mt-4"

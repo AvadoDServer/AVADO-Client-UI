@@ -1,6 +1,6 @@
-import { SCENARIOS } from "../../api/fixtures";
+import { DEMO, SCENARIOS, demoKey, reconcileView } from "../../api/fixtures";
 import type { AvadoStatus, NodeStatus, ReconcileView } from "../../api/models";
-import { findNodeProblems, findStatusProblems, parseReconcileStatus } from "../problems";
+import { findNodeProblems, findStatusProblems } from "../problems";
 
 const running = SCENARIOS.minipool.avado;
 const okReconcile = SCENARIOS.minipool.reconcile;
@@ -65,62 +65,94 @@ describe("status banners", () => {
     expect(p[0].action.to).toBe("/wallet");
   });
 
-  it("mixed node: a key not running in Teku, with the loop's explanation, most serious first", () => {
+  it("mixed node: a key waiting for the owner's approval, most serious first", () => {
     const s = SCENARIOS.mixed;
     const p = findStatusProblems({ avado: s.avado, reconcile: s.reconcile });
-    expect(ids(p)).toEqual(["legacy-mnemonic", "keys-not-loaded"]);
-    expect(p[1].title).toBe("1 validator key not running in Teku");
-    expect(p[1].details).toEqual(["The key of megapool validator 2 is not ready yet: it is still in the deposit queue."]);
+    expect(ids(p)).toEqual(["legacy-mnemonic", "keys-awaiting-approval"]);
+    expect(p[1].title).toBe("1 validator key needs your approval");
+    expect(p[1].body).toBe(
+      "It is not loaded in Teku yet. Load it only if this validator is not running anywhere else: running a key on two machines gets it slashed.",
+    );
+    expect(p[1].action).toEqual({ label: "Review keys", to: "/" });
   });
 
-  it("key check: no consensus client, keys in another client, wrong fee recipients, other errors", () => {
-    expect(ids(findStatusProblems({ avado: running, reconcile: reconcile({ client: null, keys: { total: 2, loaded: 0 } }) }))).toEqual([
-      "no-consensus-client",
-    ]);
-    // No keys yet and no client: nothing to warn about.
-    expect(findStatusProblems({ avado: running, reconcile: reconcile({ client: null, keys: { total: 0, loaded: 0 } }) })).toEqual([]);
+  const TEKU = { id: "teku", name: "Teku", package: "teku.avado.dnp.dappnode.eth" };
+  const k = (n: number, state: Parameters<typeof demoKey>[3]) =>
+    ({ ...demoKey(String(n).repeat(96).slice(0, 96), "megapool", String(n), state, "megapool", DEMO.megapool) });
+  const view = (o: Parameters<typeof reconcileView>[0], patch: Record<string, unknown> = {}): ReconcileView => {
+    const v = reconcileView(o);
+    return { ...v, status: { ...(v.status as object), ...patch } };
+  };
 
-    const elsewhere = findStatusProblems({
+  it("plural approval banner", () => {
+    const p = findStatusProblems({ avado: running, reconcile: view({ state: "attention", client: TEKU, keys: [k(1, "awaiting-approval"), k(2, "awaiting-approval")] }) });
+    expect(p.map((x) => x.title)).toEqual(["2 validator keys need your approval"]);
+    expect(p[0].body).toMatch(/^They are not loaded in Teku yet. Load them only if these validators are not running anywhere else/);
+  });
+
+  it("no client: the loop's own explanation of the client choice", () => {
+    const why = 'Rocket Pool is set to use Lighthouse (CONSENSUSCLIENT=lighthouse), but the lighthouse.avado.dnp.dappnode.eth package is not installed.';
+    const p = findStatusProblems({
       avado: running,
-      reconcile: reconcile({ client: { package: "nimbus.avado.dnp.dappnode.eth", title: "Nimbus" }, keys: { total: 3, loaded: 1, inOtherClient: 2 } }),
+      reconcile: view({ state: "error", client: null, keys: [] }, { clientChoice: { source: "none", why } }),
     });
-    expect(elsewhere[0].title).toBe("2 validator keys not running in Nimbus");
-    expect(elsewhere[0].body).toMatch(/2 keys are already loaded in another consensus client.*double signing/);
+    expect(ids(p)).toEqual(["no-consensus-client"]);
+    expect(p[0].body).toContain(why);
+    expect(p[0].action.href).toBe("http://my.ava.do/#/installer");
+  });
 
+  it("keys loaded in another client, or blocked because another client can't be checked", () => {
+    const elsewhere = { ...k(1, "elsewhere"), loadedIn: "eth2validator.avado.dnp.dappnode.eth" };
+    const p = findStatusProblems({ avado: running, reconcile: view({ state: "attention", client: TEKU, keys: [k(0, "loaded"), elsewhere] }) });
+    expect(ids(p)).toEqual(["keys-not-loaded"]);
+    expect(p[0].title).toBe("1 validator key not running in Teku");
+    expect(p[0].body).toMatch(/loaded in eth2validator.avado.dnp.dappnode.eth instead.*slashed/);
+
+    const blocked = findStatusProblems({
+      avado: running,
+      reconcile: view(
+        { state: "attention", client: TEKU, keys: [k(1, "import-blocked"), k(2, "import-blocked")] },
+        { errors: ["Keys were not imported: the keys in Prysm could not be checked."] },
+      ),
+    });
+    expect(blocked[0].title).toBe("2 validator keys not running in Teku");
+    expect(blocked[0].body).toMatch(/could not be checked, so nothing was loaded into Teku/);
+    expect(blocked[0].details).toEqual(["Keys were not imported: the keys in Prysm could not be checked."]);
+    expect(blocked).toHaveLength(1); // the errors are not repeated in a second banner
+  });
+
+  it("fee recipients that could not be set; a pass that could not run; other errors", () => {
     const fee = findStatusProblems({
       avado: running,
-      reconcile: reconcile({ client: { package: "x", title: "Lighthouse" }, feeRecipients: { total: 2, correct: 1 }, errors: ["keymanager said 500"] }),
+      reconcile: view({ state: "attention", client: TEKU, keys: [k(0, "loaded")] }, { feeRecipients: { total: 1, ok: 0, fixed: 0, failed: 1 } }),
     });
-    expect(ids(fee)).toEqual(["fee-recipient-wrong", "reconcile-errors"]);
-    expect(fee[0].title).toBe("Wrong fee recipient for 1 validator");
-    expect(fee[1].details).toEqual(["keymanager said 500"]);
+    expect(fee.map((x) => x.title)).toEqual(["Fee recipient could not be set for 1 validator"]);
+
+    const failed = findStatusProblems({
+      avado: running,
+      reconcile: view(
+        { state: "error", client: TEKU, keys: [], message: "Could not read the validator keys from Teku. Is it running?" },
+        { errors: ["Teku keymanager: connect ECONNREFUSED"] },
+      ),
+    });
+    expect(ids(failed)).toEqual(["reconcile-failed"]);
+    expect(failed[0].body).toBe("Could not read the validator keys from Teku. Is it running?");
+    expect(failed[0].details).toEqual(["Teku keymanager: connect ECONNREFUSED"]);
+
+    const other = findStatusProblems({
+      avado: running,
+      reconcile: view({ state: "attention", client: TEKU, keys: [k(0, "loaded")] }, { errors: ["More keys to import; the next check continues."] }),
+    });
+    expect(ids(other)).toEqual(["reconcile-errors"]);
   });
 
-  it("ignores the key check while the daemon isn't ready, when unavailable, or garbled", () => {
-    const bad = reconcile({ client: null, keys: { total: 2, loaded: 0 } });
-    expect(findStatusProblems({ avado: with_({ apiReachable: false }), reconcile: bad }).map((p) => p.id)).toEqual(["daemon-starting"]);
+  it("says nothing while the loop waits (no wallet, starting, syncing), or while the daemon isn't ready, or for a garbled file", () => {
+    expect(findStatusProblems({ avado: running, reconcile: view({ state: "waiting", client: null, keys: [] }) })).toEqual([]);
+    const bad = view({ state: "attention", client: TEKU, keys: [k(1, "awaiting-approval")] });
+    expect(ids(findStatusProblems({ avado: with_({ apiReachable: false }), reconcile: bad }))).toEqual(["daemon-starting"]);
     expect(findStatusProblems({ avado: running, reconcile: { ...bad, available: false } })).toEqual([]);
     expect(findStatusProblems({ avado: running, reconcile: reconcile("garbage") })).toEqual([]);
-    expect(findStatusProblems({ avado: running, reconcile: reconcile({ keys: { total: "3", loaded: 1 } }) })).toEqual([]);
-  });
-
-  it("parses the status file field by field", () => {
-    expect(parseReconcileStatus(null)).toBeUndefined();
-    expect(
-      parseReconcileStatus({
-        lastRunAt: "2026-09-23T10:00:00Z",
-        client: { package: "teku.avado.dnp.dappnode.eth" },
-        keys: { total: 2, loaded: 2, imported: 1 },
-        feeRecipients: { total: 2, correct: -1 },
-        errors: ["a", 5, ""],
-        extra: true,
-      }),
-    ).toEqual({
-      lastRunAt: "2026-09-23T10:00:00Z",
-      client: { package: "teku.avado.dnp.dappnode.eth", title: "teku.avado.dnp.dappnode.eth" },
-      keys: { total: 2, loaded: 2, imported: 1 },
-      errors: ["a"],
-    });
+    expect(findStatusProblems({ avado: running, reconcile: reconcile({ state: "sideways" }) })).toEqual([]);
   });
 });
 
