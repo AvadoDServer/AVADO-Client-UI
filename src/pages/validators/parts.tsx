@@ -2,6 +2,7 @@
  * Pieces shared by the desktop table row and the phone card, so both show
  * the same words.
  */
+import { Link } from "react-router-dom";
 import { Badge, Button, StatusPill, cn } from "../../components/ui";
 import type { Network } from "../../config/clientConfig";
 import type { ValidatorRowData } from "./useValidators";
@@ -86,9 +87,9 @@ export function ValidatorFeeRecipient({ row, defaultFeeRecipient }: Pick<Validat
   if (info.kind === "unknown") return <span className="text-fg-muted">{info.label}</span>;
   if (info.kind === "none") {
     return (
-      <a href="#/settings" className="text-sm font-medium text-warning-text underline-offset-2 hover:underline">
+      <Link to="/settings?focus=fee-recipient" className="text-sm font-medium text-warning-text underline-offset-2 hover:underline">
         Not set · set a default
-      </a>
+      </Link>
     );
   }
   return (

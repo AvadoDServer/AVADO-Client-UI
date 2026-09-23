@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "../../api/ApiProvider";
-import type { ProcessInfo, ServiceAction } from "../../api/types";
+import type { ServiceAction } from "../../api/types";
 import { Button, Card, CardDescription, CardHeader, CardTitle, ConfirmDialog, StatusPill, Table, TBody, TD, TH, THead, TR } from "../../components/ui";
 import { useClientConfig } from "../../config/ClientConfigProvider";
 import { logsToHtml } from "./logsToHtml";
+import { POLL_MS, usePoll } from "../../hooks/usePoll";
 import { processDetail, processStatus } from "./serviceStatus";
-import { useVisiblePolling } from "./useVisiblePolling";
 
-const POLL_MS = 5000; // spec §3: service status and logs, 5s, only while this view is open
+// Spec §3: service status and logs every 5 s, only while this page is open
+// (the polls stop when it unmounts) and the tab is visible.
 const LOG_TAIL_LINES = 200;
 
 const ACTION_LABEL: Record<ServiceAction, string> = { start: "Start", stop: "Stop", restart: "Restart" };
@@ -34,42 +35,19 @@ export default function AdvancedPage() {
     [],
   );
 
-  const [processes, setProcesses] = useState<ProcessInfo[] | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
+  const status = usePoll(() => api.backend.serviceStatus(), POLL_MS.service);
+  const processes = status.data ?? null;
+  const statusError = status.error === undefined ? null : errorMessage(status.error, "Could not load the process status.");
 
-  const [logs, setLogs] = useState<string | null>(null);
-  const [logsError, setLogsError] = useState<string | null>(null);
+  const logsPoll = usePoll(() => api.dappmanager.logs(config.packageName, LOG_TAIL_LINES), POLL_MS.logs, { key: config.packageName });
+  const logs = logsPoll.data;
+  const logsError = logsPoll.error === undefined ? null : errorMessage(logsPoll.error, "Could not load the logs.");
 
   const [pendingAction, setPendingAction] = useState<ServiceAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmStopOpen, setConfirmStopOpen] = useState(false);
 
-  const refreshStatus = useCallback(async () => {
-    try {
-      const result = await api.backend.serviceStatus();
-      if (!mountedRef.current) return;
-      setProcesses(result);
-      setStatusError(null);
-    } catch (e) {
-      if (!mountedRef.current) return;
-      setStatusError(errorMessage(e, "Could not load the process status."));
-    }
-  }, [api]);
-
-  const refreshLogs = useCallback(async () => {
-    try {
-      const result = await api.dappmanager.logs(config.packageName, LOG_TAIL_LINES);
-      if (!mountedRef.current) return;
-      setLogs(result);
-      setLogsError(null);
-    } catch (e) {
-      if (!mountedRef.current) return;
-      setLogsError(errorMessage(e, "Could not load the logs."));
-    }
-  }, [api, config.packageName]);
-
-  useVisiblePolling(refreshStatus, POLL_MS);
-  useVisiblePolling(refreshLogs, POLL_MS);
+  const refreshStatus = status.refresh;
 
   const runAction = useCallback(
     async (action: ServiceAction) => {
@@ -103,7 +81,10 @@ export default function AdvancedPage() {
     if (!el) return;
     stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
   };
-  const logsHtml = useMemo(() => logsToHtml(logs || "No log output yet."), [logs]);
+  // Loading (no answer yet), failed before any answer, empty, or lines.
+  const logsPlaceholder =
+    logs === undefined ? (logsPoll.loading ? "Loading logs…" : "No logs to show.") : logs.trim() === "" ? "No log output yet." : null;
+  const logsHtml = useMemo(() => (logs && logs.trim() !== "" ? logsToHtml(logs) : ""), [logs]);
   useEffect(() => {
     const el = terminalRef.current;
     if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight;
@@ -217,11 +198,17 @@ export default function AdvancedPage() {
           aria-label="Live logs"
           className="h-96 overflow-auto rounded-lg border border-border bg-bg-inset p-4 focus:outline-none focus-visible:shadow-focus"
         >
-          <pre
-            className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-fg"
-            // logsToHtml HTML-escapes plain text before adding ANSI styling spans (see its own comment).
-            dangerouslySetInnerHTML={{ __html: logsHtml }}
-          />
+          {logsPlaceholder !== null ? (
+            <p className="font-mono text-xs text-fg-muted" aria-live="polite">
+              {logsPlaceholder}
+            </p>
+          ) : (
+            <pre
+              className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-fg"
+              // logsToHtml HTML-escapes plain text before adding ANSI styling spans (see its own comment).
+              dangerouslySetInnerHTML={{ __html: logsHtml }}
+            />
+          )}
         </div>
       </Card>
 

@@ -1,4 +1,5 @@
 import { useId, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useApi } from "../../api/ApiProvider";
 import type { ImportResult } from "../../api/types";
 import { Badge, Button, Card, CardDescription, CardTitle, Input, cn, type BadgeVariant } from "../../components/ui";
@@ -206,9 +207,9 @@ export default function AddValidatorsPage() {
   return (
     <div className="min-w-0">
       <header className="mb-6 flex flex-col gap-1 border-b border-border pb-5">
-        <a href="#/" className="text-sm font-medium">
+        <Link to="/" className="text-sm font-medium">
           ← Validators
-        </a>
+        </Link>
         <h1 className="mb-0 font-display text-4xl font-bold tracking-tight text-fg">Add validators</h1>
         <p className="mb-0 max-w-2xl text-sm text-fg-muted">
           Add the keystore files you made for your deposit. They go straight to this box and never leave it.
@@ -385,9 +386,9 @@ export default function AddValidatorsPage() {
         )}
         {allDone && (
           <p className="text-sm">
-            <a href="#/" className="font-semibold">
+            <Link to="/" className="font-semibold">
               See your validators
-            </a>
+            </Link>
           </p>
         )}
       </form>

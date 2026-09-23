@@ -91,6 +91,36 @@ describe("usePoll", () => {
     expect(backoffDelay(5_000, 5, 10_000)).toBe(10_000);
   });
 
+  it("backoffDelay with retryMs: the first retry waits retryMs, then doubles up to the cap", () => {
+    expect(backoffDelay(60_000, 0, undefined, 10_000)).toBe(60_000);
+    expect(backoffDelay(60_000, 1, undefined, 10_000)).toBe(10_000);
+    expect(backoffDelay(60_000, 2, undefined, 10_000)).toBe(20_000);
+    expect(backoffDelay(60_000, 5, undefined, 10_000)).toBe(160_000);
+    expect(backoffDelay(60_000, 6, undefined, 10_000)).toBe(240_000); // default cap
+    expect(backoffDelay(60_000, 9, 60_000, 10_000)).toBe(60_000);
+  });
+
+  it("retryMs: retries soon after a failure and goes back to the interval after a success", async () => {
+    let fail = true;
+    const fn = vi.fn(async () => {
+      if (fail) throw new Error("starting");
+      return 1;
+    });
+    const { result } = renderHook(() => usePoll(fn, 60_000, { retryMs: 100 }));
+    await flush();
+    expect(result.current.error).toBeInstanceOf(Error);
+    await advance(100);
+    expect(fn).toHaveBeenCalledTimes(2);
+    fail = false;
+    await advance(200);
+    expect(fn).toHaveBeenCalledTimes(3);
+    expect(result.current).toMatchObject({ data: 1, error: undefined });
+    await advance(59_999);
+    expect(fn).toHaveBeenCalledTimes(3);
+    await advance(1);
+    expect(fn).toHaveBeenCalledTimes(4);
+  });
+
   it("pauses while the tab is hidden and resumes when it is shown", async () => {
     const fn = vi.fn(async () => 1);
     renderHook(() => usePoll(fn, 1000));
@@ -123,17 +153,22 @@ describe("usePoll", () => {
     expect(fn).toHaveBeenCalledTimes(2);
   });
 
-  it("a tab opened hidden loads only once it is shown", async () => {
+  it("a tab opened hidden reads once at once, then waits until it is shown", async () => {
     hidden = true;
-    const fn = vi.fn(async () => 1);
+    let n = 0;
+    const fn = vi.fn(async () => ++n);
     const { result } = renderHook(() => usePoll(fn, 1000));
-    await advance(5000);
-    expect(fn).not.toHaveBeenCalled();
-    expect(result.current.loading).toBe(true);
-    setHidden(false);
     await flush();
     expect(fn).toHaveBeenCalledTimes(1);
-    expect(result.current.data).toBe(1);
+    expect(result.current).toMatchObject({ data: 1, loading: false });
+    await advance(5000);
+    expect(fn).toHaveBeenCalledTimes(1);
+    setHidden(false); // a poll came due while hidden: read again at once
+    await flush();
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toBe(2);
+    await advance(1000);
+    expect(fn).toHaveBeenCalledTimes(3);
   });
 
   it("refresh() polls now and restarts the interval", async () => {

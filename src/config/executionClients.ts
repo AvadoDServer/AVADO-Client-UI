@@ -23,6 +23,8 @@ export interface ExecutionClientCandidate {
   packageName: string;
   /** Plain-language name shown in the picker. */
   name: string;
+  /** Short name for sentences and banners ("Geth"), without the network. */
+  title: string;
   /** Engine API URL written to `ee_endpoint` when this candidate is picked (startNimbus.sh's `--el=`). */
   eeEndpoint: string;
 }
@@ -33,12 +35,14 @@ export const EXECUTION_CLIENTS: ExecutionClientCandidate[] = [
     network: "mainnet",
     packageName: "ethchain-geth.public.dappnode.eth",
     name: "Geth",
+    title: "Geth",
     eeEndpoint: "http://ethchain-geth.my.ava.do:8551",
   },
   {
     network: "mainnet",
     packageName: "avado-dnp-nethermind.public.dappnode.eth",
     name: "Nethermind",
+    title: "Nethermind",
     eeEndpoint: "http://avado-dnp-nethermind.my.ava.do:8551",
   },
   // prater (Goerli testnet) — startNimbus.sh:24
@@ -46,12 +50,14 @@ export const EXECUTION_CLIENTS: ExecutionClientCandidate[] = [
     network: "prater",
     packageName: "goerli-geth.avado.dnp.dappnode.eth",
     name: "Geth (Goerli testnet)",
+    title: "Geth",
     eeEndpoint: "http://goerli-geth.my.ava.do:8551",
   },
   {
     network: "prater",
     packageName: "nethermind-goerli.avado.dnp.dappnode.eth",
     name: "Nethermind (Goerli testnet)",
+    title: "Nethermind",
     eeEndpoint: "http://nethermind-goerli.my.ava.do:8551",
   },
   // holesky testnet — startNimbus.sh:27
@@ -59,6 +65,7 @@ export const EXECUTION_CLIENTS: ExecutionClientCandidate[] = [
     network: "holesky",
     packageName: "holesky-geth.avado.dnp.dappnode.eth",
     name: "Geth (Holesky testnet)",
+    title: "Geth",
     eeEndpoint: "http://holesky-geth.my.ava.do:8551",
   },
   // gnosis — startNimbus.sh:30
@@ -66,6 +73,7 @@ export const EXECUTION_CLIENTS: ExecutionClientCandidate[] = [
     network: "gnosis",
     packageName: "nethermind-gnosis.avado.dnp.dappnode.eth",
     name: "Nethermind",
+    title: "Nethermind",
     eeEndpoint: "http://nethermind-gnosis.my.ava.do:8551",
   },
 ];
@@ -79,4 +87,16 @@ export function executionClientsForNetwork(network: Network): ExecutionClientCan
 export function findExecutionClient(packageName: string | undefined): ExecutionClientCandidate | undefined {
   if (!packageName) return undefined;
   return EXECUTION_CLIENTS.find((c) => c.packageName === packageName);
+}
+
+/**
+ * A short, friendly name for an execution-client package: the known title,
+ * else a guess from the package name (`besu.public.dappnode.eth` → "Besu").
+ */
+export function executionClientTitle(packageName: string): string {
+  const known = findExecutionClient(packageName);
+  if (known) return known.title;
+  const first = packageName.split(".")[0] ?? packageName;
+  const guess = ["geth", "nethermind", "besu", "erigon", "reth"].find((n) => first.includes(n)) ?? first;
+  return guess.charAt(0).toUpperCase() + guess.slice(1);
 }

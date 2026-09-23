@@ -26,6 +26,13 @@ describe("App", () => {
     expect(window.location.hash).toBe("#/");
     expect(screen.getByRole("heading", { level: 1, name: "Validators" })).toBeInTheDocument();
 
+    // In-page links are router links: real hash hrefs under the HashRouter.
+    const add = await within(screen.getByRole("main")).findByRole("link", { name: "Add validators" }, { timeout: 3000 });
+    expect(add).toHaveAttribute("href", "#/add");
+    await userEvent.click(add);
+    expect(window.location.hash).toBe("#/add");
+    expect(screen.getByRole("heading", { level: 1, name: "Add validators" })).toBeInTheDocument();
+
     await userEvent.click(screen.getByRole("button", { name: "Light" }));
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });

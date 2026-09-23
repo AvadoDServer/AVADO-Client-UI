@@ -105,6 +105,20 @@ describe("Routing", () => {
     ["/", "Validators"],
     ["/add", "Add validators"],
     ["/settings", "Settings"],
+    ["/advanced", "Advanced"],
+    ["/nope", "Page not found"],
+  ])("%s has exactly one level-1 heading, the page's own (%s)", async (path, heading) => {
+    localStorage.setItem(MODE_STORAGE_KEY, "advanced");
+    renderApp({ path });
+    await screen.findByText("Synced");
+    const h1s = screen.getAllByRole("heading", { level: 1 });
+    expect(h1s.map((h) => h.textContent)).toEqual([heading]);
+  });
+
+  it.each([
+    ["/", "Validators"],
+    ["/add", "Add validators"],
+    ["/settings", "Settings"],
   ])("%s renders %s", (path, heading) => {
     renderApp({ path });
     expect(screen.getByRole("heading", { level: 1, name: heading })).toBeInTheDocument();
@@ -282,7 +296,7 @@ describe("Problem banners", () => {
     await screen.findByText("No fee recipient set");
     await screen.findByText("No execution client installed");
     const get = vi.spyOn(api.backend, "getSettings").mockRejectedValue(new Error("restarting"));
-    const list = vi.spyOn(api.dappmanager, "listPackages").mockRejectedValue(new Error("wamp down"));
+    const list = vi.spyOn(api.dappmanager, "listPackageStates").mockRejectedValue(new Error("wamp down"));
     await user.click(within(mainNav()).getByRole("link", { name: "Settings" }));
     await waitFor(() => expect(get).toHaveBeenCalled());
     await waitFor(() => expect(list).toHaveBeenCalled());
@@ -331,19 +345,37 @@ describe("Problem banners", () => {
     await waitFor(() => expect(screen.queryByText("No fee recipient set")).toBeNull());
   });
 
-  it("re-reads the settings on every page change", async () => {
+  it("the fee banner opens settings with the field focused, and saving there clears the banner at once", async () => {
     const user = userEvent.setup();
-    const { api } = renderApp({ mock: { settings: MOCK_SETTINGS } });
-    const get = vi.spyOn(api.backend, "getSettings");
+    renderApp({ mock: { settings: { ...MOCK_SETTINGS, validators_proposer_default_fee_recipient: "" } } });
+    await user.click(await screen.findByRole("link", { name: "Set fee recipient" }));
+    const field = await screen.findByLabelText("Default fee recipient");
+    await waitFor(() => expect(field).toHaveFocus());
+    await user.type(field, "0x1111111111111111111111111111111111111111");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await screen.findByText(/Settings saved/);
+    // No page change and no 30 s tick: only the save event can clear it.
+    await waitFor(() => expect(screen.queryByText("No fee recipient set")).toBeNull());
+  });
+
+  it("re-reads the settings on every page change", async () => {
+    // From Add validators to Advanced: neither page reads the settings itself,
+    // so every read counted here is the shell's.
+    localStorage.setItem(MODE_STORAGE_KEY, "advanced");
+    const user = userEvent.setup();
+    const { api } = renderApp({ path: "/add", mock: { settings: MOCK_SETTINGS } });
     await screen.findByText("Synced");
-    await user.click(within(mainNav()).getByRole("link", { name: "Settings" }));
+    const get = vi.spyOn(api.backend, "getSettings");
+    const list = vi.spyOn(api.dappmanager, "listPackageStates");
+    await user.click(within(mainNav()).getByRole("link", { name: "Advanced" }));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
   });
 
   it("settings and packages that can't be read raise no banners (nothing known)", async () => {
     const api = createMockApi({ latencyMs: 0, settings: { ...MOCK_SETTINGS, validators_proposer_default_fee_recipient: "" }, packages: [] });
     const get = vi.spyOn(api.backend, "getSettings").mockRejectedValue(new Error("down"));
-    const list = vi.spyOn(api.dappmanager, "listPackages").mockRejectedValue(new Error("down"));
+    const list = vi.spyOn(api.dappmanager, "listPackageStates").mockRejectedValue(new Error("down"));
     renderApp({ api });
     await screen.findByText("Synced");
     await waitFor(() => expect(get).toHaveBeenCalled());

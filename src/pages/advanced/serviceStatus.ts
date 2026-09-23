@@ -9,7 +9,7 @@ const STATUS_PRESENTATION: Record<string, { tone: StatusTone; label: string }> =
   RUNNING: { tone: "success", label: "Running" },
   STARTING: { tone: "accent", label: "Starting" },
   STOPPING: { tone: "accent", label: "Stopping" },
-  BACKOFF: { tone: "warning", label: "Restarting" },
+  BACKOFF: { tone: "warning", label: "Retrying" },
   STOPPED: { tone: "neutral", label: "Stopped" },
   EXITED: { tone: "warning", label: "Exited" },
   FATAL: { tone: "danger", label: "Failed" },

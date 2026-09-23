@@ -15,6 +15,12 @@ export interface UsePollOptions {
   key?: string | number;
   /** Longest wait between polls while failing. Default max(4 × interval, 60 s). */
   maxBackoffMs?: number;
+  /**
+   * Wait before the first retry after an error, doubled per further failure
+   * (capped by `maxBackoffMs`). Default: twice the interval. A short retry
+   * lets a page recover soon after its client restarts.
+   */
+  retryMs?: number;
 }
 
 export interface PollResult<T> {
@@ -31,11 +37,17 @@ export interface PollResult<T> {
   refresh: () => Promise<void>;
 }
 
-/** Wait before the next poll after `failures` failures in a row: the interval, doubled per failure, capped. */
-export function backoffDelay(intervalMs: number, failures: number, maxBackoffMs?: number): number {
+/**
+ * Wait before the next poll after `failures` failures in a row: the interval,
+ * doubled per failure, capped. With `retryMs` the first retry waits `retryMs`
+ * and each later one doubles it (same cap).
+ */
+export function backoffDelay(intervalMs: number, failures: number, maxBackoffMs?: number, retryMs?: number): number {
   if (failures <= 0) return intervalMs;
   const cap = maxBackoffMs ?? Math.max(intervalMs * 4, 60_000);
-  return Math.min(intervalMs * 2 ** Math.min(failures, 20), cap);
+  const n = Math.min(failures, 20);
+  const delay = retryMs === undefined ? intervalMs * 2 ** n : retryMs * 2 ** (n - 1);
+  return Math.min(delay, cap);
 }
 
 interface State<T> {
@@ -46,14 +58,16 @@ interface State<T> {
 
 /**
  * Poll `fn` every `intervalMs`. Polls never overlap: the next one is
- * scheduled when the previous one ends. Polling pauses while the tab is
- * hidden and picks up when it is shown (at once if a poll is overdue). After
+ * scheduled when the previous one ends. The first read always runs, even in
+ * a tab opened in the background, so the page never waits on skeletons.
+ * After that, polling pauses while the tab is hidden and picks up when it is
+ * shown: at once if a poll came due while hidden, else when the interval ends. After
  * an error it waits longer each time (see `backoffDelay`) and goes back to
  * the normal interval after a success. The latest `fn` is always used, so an
  * inline arrow function is fine.
  */
 export function usePoll<T>(fn: () => Promise<T>, intervalMs: number, options: UsePollOptions = {}): PollResult<T> {
-  const { enabled = true, key, maxBackoffMs } = options;
+  const { enabled = true, key, maxBackoffMs, retryMs } = options;
   const [state, setState] = useState<State<T>>({ data: undefined, error: undefined, loading: enabled });
 
   const fnRef = useRef(fn);
@@ -108,7 +122,7 @@ export function usePoll<T>(fn: () => Promise<T>, intervalMs: number, options: Us
           inFlight = null;
           lastDoneAt = Date.now();
           if (!cancelled) {
-            nextDelay = backoffDelay(intervalMs, failures, maxBackoffMs);
+            nextDelay = backoffDelay(intervalMs, failures, maxBackoffMs, retryMs);
             schedule(nextDelay);
           }
         }
@@ -138,8 +152,9 @@ export function usePoll<T>(fn: () => Promise<T>, intervalMs: number, options: Us
     };
     document.addEventListener("visibilitychange", onVisibility);
 
-    // A tab opened in the background loads when it is first shown.
-    if (!document.hidden) void run();
+    // The first read runs even in a hidden tab (opened in the background):
+    // the page has data when it is first shown, and the next poll is due.
+    void run();
 
     return () => {
       cancelled = true;
@@ -147,7 +162,7 @@ export function usePoll<T>(fn: () => Promise<T>, intervalMs: number, options: Us
       document.removeEventListener("visibilitychange", onVisibility);
       if (runRef.current === refreshNow) runRef.current = null;
     };
-  }, [enabled, key, intervalMs, maxBackoffMs]);
+  }, [enabled, key, intervalMs, maxBackoffMs, retryMs]);
 
   const refresh = useCallback(() => runRef.current?.() ?? Promise.resolve(), []);
 

@@ -43,7 +43,7 @@ describe("AddValidatorsPage", () => {
     expect(importSpy).toHaveBeenCalledWith({ keystores: [expect.any(String), expect.any(String)], passwords: ["secret123", "secret123"] });
     const keys = (await api.keymanager.listKeystores()).map((k) => k.validating_pubkey);
     expect(keys).toEqual(expect.arrayContaining([PK[0], PK[1]]));
-    expect(screen.getByRole("link", { name: "See your validators" })).toHaveAttribute("href", "#/");
+    expect(screen.getByRole("link", { name: "See your validators" })).toHaveAttribute("href", "/"); // a router Link: "#/" under the app's HashRouter
   });
 
   it("with a wrong password for some files, reports each file right and keeps the successes (review focus 4)", async () => {

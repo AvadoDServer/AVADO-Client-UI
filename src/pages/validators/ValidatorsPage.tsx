@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { Button, Card, Skeleton, Spinner, Table, TBody, TH, THead, TR } from "../../components/ui";
 import { useClientConfig } from "../../config/ClientConfigProvider";
 import { clientDisplayName } from "../../lib/clientName";
@@ -40,7 +41,7 @@ const Header = forwardRef<HTMLHeadingElement, { count?: number; action?: ReactNo
 });
 
 const AddButton = ({ size = "md" }: { size?: "md" | "lg" }) => (
-  <Button as="a" href="#/add" size={size} leftIcon={<PlusIcon />}>
+  <Button as={Link} to="/add" size={size} leftIcon={<PlusIcon />}>
     Add validators
   </Button>
 );

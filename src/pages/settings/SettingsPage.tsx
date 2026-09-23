@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useApi } from "../../api/ApiProvider";
+import { isApiError } from "../../api/errors";
+import { saveSettingsMerged } from "../../api/settings";
 import type { Settings } from "../../api/types";
+import { notifySettingsSaved } from "../../components/shell/events";
 import { Badge, Button, Card, CardDescription, CardHeader, CardTitle, Input, Skeleton } from "../../components/ui";
 import type { ClientName } from "../../config/clientConfig";
 import { useClientConfig } from "../../config/ClientConfigProvider";
@@ -8,7 +12,6 @@ import { executionClientsForNetwork } from "../../config/executionClients";
 import { useMode } from "../../settings/ModeProvider";
 import { ExecutionClientField } from "./ExecutionClientField";
 import { buildPatch, graffitiByteLength, toFormState, validateForm, type SettingsFormErrors, type SettingsFormState } from "./formState";
-import { saveSettingsMerged } from "./saveMerged";
 
 const MEVBOOST_PACKAGE = "mevboost.avado.dnp.dappnode.eth";
 
@@ -26,7 +29,14 @@ const FIELD_LABELS: Record<keyof SettingsFormErrors, string> = {
   checkpointUrl: "Checkpoint sync URL",
 };
 
-type SaveState = "idle" | "saving" | "saved" | "error";
+/** "unconfirmed": the save timed out and a re-read couldn't show whether it landed. */
+type SaveState = "idle" | "saving" | "saved" | "error" | "unconfirmed";
+
+/** Link target that opens this page with the fee recipient focused (from the shell's banner). */
+export const FOCUS_PARAM = "focus";
+const FOCUS_TARGETS = { "fee-recipient": "feeRecipient" } as const;
+
+const sameValue = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -49,6 +59,8 @@ export default function SettingsPage() {
   const api = useApi();
   const { client, network } = useClientConfig();
   const { isAdvanced } = useMode();
+  const [searchParams] = useSearchParams();
+  const focusTarget = searchParams.get(FOCUS_PARAM);
 
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -70,6 +82,20 @@ export default function SettingsPage() {
     peerLimit: peerLimitRef,
     checkpointUrl: checkpointUrlRef,
   };
+
+  // `/settings?focus=fee-recipient` (the shell's fee-recipient banner): focus
+  // that field once the form is on screen.
+  const formReady = form !== null;
+  const focusedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!formReady || !focusTarget || focusedFor.current === focusTarget) return;
+    const key = FOCUS_TARGETS[focusTarget as keyof typeof FOCUS_TARGETS];
+    if (!key) return;
+    focusedFor.current = focusTarget;
+    focusField(fieldRefs[key]);
+    // fieldRefs holds stable refs; re-run only when the form appears or the target changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formReady, focusTarget]);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,18 +182,45 @@ export default function SettingsPage() {
     setSaveState("saving");
     setSaveError(null);
     try {
-      await saveSettingsMerged(api.backend, patch);
-      // Re-derive the baseline through toFormState so it's byte-for-byte what
-      // the form would show on a fresh load (e.g. "007" typed into the peer
-      // limit reads back as "7"), instead of leaving `form` and `settings`
-      // to drift apart and show a phantom "unsaved changes" after a save.
-      const nextSettings: Settings = { ...settings, ...patch };
-      setSettings(nextSettings);
-      setForm(toFormState(nextSettings));
-      setSaveState("saved");
+      // The saved object is what is on disk now: the fresh GET plus the patch.
+      const saved = await saveSettingsMerged(api.backend, patch);
+      applySaved(saved);
+      notifySettingsSaved();
     } catch (e) {
+      if (isApiError(e) && e.kind === "timeout") {
+        // The backend writes the file before it restarts the client, so a
+        // timeout doesn't mean nothing was saved. Read the file to find out.
+        await confirmAfterTimeout(patch);
+        return;
+      }
       setSaveState("error");
       setSaveError(errorMessage(e));
+    }
+  }
+
+  /** Re-derive the baseline through toFormState so it reads back exactly as a fresh load would (e.g. "007" → "7"). */
+  function applySaved(next: Settings) {
+    setSettings(next);
+    setForm(toFormState(next));
+    setSaveState("saved");
+  }
+
+  async function confirmAfterTimeout(sent: Settings) {
+    let fresh: Settings;
+    try {
+      fresh = await api.backend.getSettings();
+    } catch {
+      setSaveState("unconfirmed");
+      return;
+    }
+    notifySettingsSaved();
+    if (Object.entries(sent).every(([k, v]) => sameValue(fresh[k], v))) {
+      applySaved(fresh);
+    } else {
+      // Not on disk: keep the owner's edits so they can save again.
+      setSettings(fresh);
+      setSaveState("error");
+      setSaveError("the box didn't answer in time and your changes are not in the settings file. Try again");
     }
   }
 
@@ -384,6 +437,12 @@ export default function SettingsPage() {
         <p role="status" className="text-sm text-success-text">
           Settings saved. {clientLabel} is restarting to use them — this is usually under a minute, longer if it has to find the
           execution client again.
+        </p>
+      )}
+      {saveState === "unconfirmed" && (
+        <p role="status" className="text-sm text-warning-text">
+          The box took too long to answer, so it isn&apos;t clear yet whether your changes were saved. {clientLabel} may be
+          restarting. Reload this page in a minute to check.
         </p>
       )}
       {saveState === "error" && (

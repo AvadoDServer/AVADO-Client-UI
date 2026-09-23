@@ -1,25 +1,36 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { useApi } from "../../api/ApiProvider";
-import type { Settings } from "../../api/types";
+import type { PackageState, Settings } from "../../api/types";
 import { useClientConfigStatus } from "../../config/ClientConfigProvider";
-import { useLocalPoll } from "../../hooks/useLocalPoll";
+import { POLL_MS, usePoll } from "../../hooks/usePoll";
 import { useMode } from "../../settings/ModeProvider";
 import { Banners } from "./Banners";
 import { CLIENT_TITLE } from "./identity";
 import { fetchNodeStatus } from "./nodeStatus";
-import { readPackageStates, type PackageState } from "./packageStates";
+import { SETTINGS_SAVED_EVENT } from "./events";
 import { findProblems } from "./problems";
 import { Sidebar } from "./Sidebar";
 import { StatusStrip } from "./StatusStrip";
 import { TopBar } from "./TopBar";
 
 /** Spec §3: node status every 12 s. Settings and packages change rarely; re-read on every page change too. */
-export const NODE_STATUS_INTERVAL_MS = 12_000;
+export const NODE_STATUS_INTERVAL_MS = POLL_MS.nodeStatus;
 export const PROBLEM_INPUTS_INTERVAL_MS = 30_000;
 
-/** Fired by the settings page after a save, so the banners re-read the settings. */
-export const SETTINGS_SAVED_EVENT = "avado:settings-saved";
+export { SETTINGS_SAVED_EVENT };
+
+/** Call `refresh` when `value` changes (not on the first render). */
+function useRefreshOnChange(value: unknown, refresh: () => Promise<void>) {
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    void refresh();
+  }, [value, refresh]);
+}
 
 /** A failed read is undefined ("unknown"), so the last known value is kept. */
 const orUndefined = <T,>(p: Promise<T>): Promise<T | undefined> => p.catch(() => undefined);
@@ -49,19 +60,20 @@ export function Shell() {
   const behind = useRef<HTMLDivElement>(null);
   const main = useRef<HTMLElement>(null);
 
-  const node = useLocalPoll(
+  const node = usePoll(
     () => fetchNodeStatus(api.beacon, isAdvanced, { client: config.client, serviceStatus: () => api.backend.serviceStatus() }),
     NODE_STATUS_INTERVAL_MS,
-    isAdvanced ? "advanced" : "simple",
   );
+  // Advanced mode adds strip fields: read again at once, keeping what is shown.
+  useRefreshOnChange(isAdvanced, node.refresh);
   // Settings and packages for the banners. A read that fails (backend
   // restarting, WAMP down) keeps the last known value: never "not installed".
   const lastKnown = useRef<ProblemData>({});
-  const inputs = useLocalPoll(
+  const inputs = usePoll(
     async () => {
       const [settings, packages] = await Promise.all([
         orUndefined<Settings>(api.backend.getSettings()),
-        orUndefined(readPackageStates(api.dappmanager)),
+        orUndefined<PackageState[]>(api.dappmanager.listPackageStates()),
       ]);
       const next: ProblemData = {
         settings: settings ?? lastKnown.current.settings,
@@ -71,8 +83,9 @@ export function Shell() {
       return next;
     },
     PROBLEM_INPUTS_INTERVAL_MS,
-    location.pathname,
   );
+  // Every page change re-reads them, keeping the banners shown meanwhile.
+  useRefreshOnChange(location.pathname, inputs.refresh);
 
   const problems = findProblems({
     client: config.client,
@@ -84,12 +97,13 @@ export function Shell() {
     elOffline: node.data?.elOffline,
   });
 
-  // A page that saves settings can ask for fresh banners right away:
-  // window.dispatchEvent(new Event(SETTINGS_SAVED_EVENT)).
+  // A page that saves settings asks for fresh banners right away
+  // (`notifySettingsSaved()` from ./events).
   const refreshInputs = inputs.refresh;
   useEffect(() => {
-    window.addEventListener(SETTINGS_SAVED_EVENT, refreshInputs);
-    return () => window.removeEventListener(SETTINGS_SAVED_EVENT, refreshInputs);
+    const onSaved = () => void refreshInputs();
+    window.addEventListener(SETTINGS_SAVED_EVENT, onSaved);
+    return () => window.removeEventListener(SETTINGS_SAVED_EVENT, onSaved);
   }, [refreshInputs]);
 
   useEffect(() => {

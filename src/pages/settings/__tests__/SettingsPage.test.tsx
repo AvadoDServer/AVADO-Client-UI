@@ -1,11 +1,15 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { ApiProvider } from "../../../api/ApiProvider";
+import { ApiError } from "../../../api/errors";
 import { createMockApi, MOCK_DEFAULT_FEE_RECIPIENT, MOCK_DEFAULT_SETTINGS, MOCK_PACKAGES, MOCK_SETTINGS } from "../../../api/mock";
 import type { Api, PackageBackend, Settings } from "../../../api/types";
 import { ClientConfigProvider } from "../../../config/ClientConfigProvider";
 import { normalizeClientConfig, type ClientConfig } from "../../../config/clientConfig";
 import { MODE_STORAGE_KEY, ModeProvider, useMode } from "../../../settings/ModeProvider";
+import { ROUTER_FUTURE } from "../../../App";
+import { SETTINGS_SAVED_EVENT } from "../../../components/shell/events";
 import SettingsPage from "../SettingsPage";
 
 /** Lets a test flip Simple/Advanced mode mid-session, the way the shared footer's toggle would. */
@@ -18,19 +22,44 @@ function ModeToggleButton() {
   );
 }
 
-function renderPage(api: Api, config: Partial<ClientConfig> = {}, { advanced = false }: { advanced?: boolean } = {}) {
+function renderPage(
+  api: Api,
+  config: Partial<ClientConfig> = {},
+  { advanced = false, path = "/settings" }: { advanced?: boolean; path?: string } = {},
+) {
   if (advanced) localStorage.setItem(MODE_STORAGE_KEY, "advanced");
   return render(
-    <ClientConfigProvider config={normalizeClientConfig(config)}>
-      <ApiProvider api={api}>
-        <ModeProvider>
-          <ModeToggleButton />
-          <SettingsPage />
-        </ModeProvider>
-      </ApiProvider>
-    </ClientConfigProvider>,
+    <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
+      <ClientConfigProvider config={normalizeClientConfig(config)}>
+        <ApiProvider api={api}>
+          <ModeProvider>
+            <ModeToggleButton />
+            <SettingsPage />
+          </ModeProvider>
+        </ApiProvider>
+      </ClientConfigProvider>
+    </MemoryRouter>,
   );
 }
+
+/** A backend around one settings object, like the box: POST overwrites it. */
+function boxBackend(initial: Settings, save: (s: Settings, write: (s: Settings) => void) => Promise<void>): PackageBackend {
+  let onDisk: Settings = { ...initial };
+  return {
+    getSettings: vi.fn(async () => ({ ...onDisk })),
+    saveSettings: vi.fn((s: Settings) => save(s, (w) => (onDisk = { ...w }))),
+    getDefaultSettings: vi.fn().mockResolvedValue({ ...MOCK_DEFAULT_SETTINGS }),
+    service: vi.fn(),
+    serviceStatus: vi.fn().mockResolvedValue([]),
+  };
+}
+
+function apiWith(backend: PackageBackend): Api {
+  const mock = createMockApi({ packages: MOCK_PACKAGES });
+  return { ...mock, backend };
+}
+
+const saveTimeout = () => new ApiError({ kind: "timeout", service: "backend", path: "/settings" });
 
 async function waitForLoaded() {
   await screen.findByLabelText("Default fee recipient");
@@ -456,5 +485,105 @@ describe("SettingsPage — revert and save failure", () => {
     // The edit is not lost — the owner can retry.
     expect(screen.getByLabelText("Graffiti")).toHaveValue("Something else");
     await waitFor(() => expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled());
+  });
+});
+
+describe("SettingsPage — after a save", () => {
+  it("tells the shell the settings changed, so the banners update at once", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    window.addEventListener(SETTINGS_SAVED_EVENT, onSaved);
+    try {
+      renderPage(createMockApi({ packages: MOCK_PACKAGES }), { client: "nimbus", network: "mainnet" });
+      await waitForLoaded();
+      await user.clear(screen.getByLabelText("Graffiti"));
+      await user.type(screen.getByLabelText("Graffiti"), "New graffiti");
+      expect(onSaved).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "Save changes" }));
+      expect(await screen.findByText(/Settings saved/)).toBeInTheDocument();
+      expect(onSaved).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(SETTINGS_SAVED_EVENT, onSaved);
+    }
+  });
+
+  it("does not tell the shell anything when the save fails", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    window.addEventListener(SETTINGS_SAVED_EVENT, onSaved);
+    try {
+      const backend = boxBackend(MOCK_SETTINGS, async () => {
+        throw new Error("refused");
+      });
+      renderPage(apiWith(backend), { client: "nimbus", network: "mainnet" });
+      await waitForLoaded();
+      await user.type(screen.getByLabelText("Graffiti"), "!");
+      await user.click(screen.getByRole("button", { name: "Save changes" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Could not save settings");
+      expect(onSaved).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(SETTINGS_SAVED_EVENT, onSaved);
+    }
+  });
+
+  it("a save that times out after the file was written reads the file again and says saved", async () => {
+    const user = userEvent.setup();
+    const backend = boxBackend(MOCK_SETTINGS, async (s, write) => {
+      write(s); // written, then the restart outlasts the time limit
+      throw saveTimeout();
+    });
+    renderPage(apiWith(backend), { client: "nimbus", network: "mainnet" });
+    await waitForLoaded();
+    await user.clear(screen.getByLabelText("Graffiti"));
+    await user.type(screen.getByLabelText("Graffiti"), "Late graffiti");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText(/Settings saved/)).toBeInTheDocument();
+    // Read-modify-write GET, then the confirming re-read.
+    expect(backend.getSettings).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText(/\bstarting/i)).toBeNull(); // "is restarting to use them" is fine; "is starting, try again" is not
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+  });
+
+  it("a save that times out without writing keeps the edit and says it was not saved", async () => {
+    const user = userEvent.setup();
+    const backend = boxBackend(MOCK_SETTINGS, async () => {
+      throw saveTimeout();
+    });
+    renderPage(apiWith(backend), { client: "nimbus", network: "mainnet" });
+    await waitForLoaded();
+    await user.clear(screen.getByLabelText("Graffiti"));
+    await user.type(screen.getByLabelText("Graffiti"), "Lost graffiti");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("your changes are not in the settings file");
+    expect(screen.getByLabelText("Graffiti")).toHaveValue("Lost graffiti");
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  });
+
+  it("a save that times out when the file can't be read again says so, without claiming either way", async () => {
+    const user = userEvent.setup();
+    const backend = boxBackend(MOCK_SETTINGS, async () => {
+      (backend.getSettings as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("restarting"));
+      throw saveTimeout();
+    });
+    renderPage(apiWith(backend), { client: "nimbus", network: "mainnet" });
+    await waitForLoaded();
+    await user.type(screen.getByLabelText("Graffiti"), "!");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("isn't clear yet whether your changes were saved");
+    expect(screen.queryByText(/Settings saved/)).toBeNull();
+  });
+});
+
+describe("SettingsPage — opened from the fee-recipient banner", () => {
+  it("?focus=fee-recipient focuses the default fee recipient field once loaded", async () => {
+    renderPage(createMockApi({ packages: MOCK_PACKAGES }), { client: "nimbus", network: "mainnet" }, { path: "/settings?focus=fee-recipient" });
+    await waitForLoaded();
+    await waitFor(() => expect(screen.getByLabelText("Default fee recipient")).toHaveFocus());
+  });
+
+  it("without the parameter nothing is focused", async () => {
+    renderPage(createMockApi({ packages: MOCK_PACKAGES }), { client: "nimbus", network: "mainnet" });
+    await waitForLoaded();
+    expect(screen.getByLabelText("Default fee recipient")).not.toHaveFocus();
   });
 });

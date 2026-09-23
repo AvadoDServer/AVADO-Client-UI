@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useApi } from "../../api/ApiProvider";
 import { Button, Input, Modal } from "../../components/ui";
 import type { ValidatorRowData } from "./useValidators";
@@ -112,7 +113,7 @@ export function FeeRecipientDialog({ row, defaultFeeRecipient, onClose, onChange
               </>
             ) : (
               <>
-                No default fee recipient is set yet. <a href="#/settings">Set one in Settings</a> so every validator has
+                No default fee recipient is set yet. <Link to="/settings?focus=fee-recipient">Set one in Settings</Link> so every validator has
                 one.
               </>
             )

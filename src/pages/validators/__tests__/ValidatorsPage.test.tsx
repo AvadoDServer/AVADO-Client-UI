@@ -136,7 +136,7 @@ describe("ValidatorsPage", () => {
   it("shows an empty state that leads to Add validators", async () => {
     renderPage(createMockApi({ keystores: [] }));
     expect(await screen.findByRole("heading", { name: "No validators yet" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Add validators" })).toHaveAttribute("href", "#/add");
+    expect(screen.getByRole("link", { name: "Add validators" })).toHaveAttribute("href", "/add"); // a router Link: "#/add" under the app's HashRouter
   });
 
   describe("fee recipient", () => {

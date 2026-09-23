@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { useApi } from "../../api/ApiProvider";
 import type { Api, ValidatorState } from "../../api/types";
+import { POLL_MS, usePoll } from "../../hooks/usePoll";
 
 export interface ValidatorRowData {
   pubkey: string;
@@ -105,60 +106,22 @@ export interface UseValidators {
 }
 
 /**
- * Validators with polling: every `intervalMs` normally, every `retryMs`
- * after a failure (so the page recovers soon after a client restart without
- * a reload), and paused while the tab is hidden.
+ * Validators with the shared poll (`usePoll`): every `intervalMs` normally,
+ * `retryMs` after a failure (then backing off), so the page recovers soon
+ * after a client restart without a reload. Paused while the tab is hidden.
  */
-export function useValidators(intervalMs = 60_000, retryMs = 10_000): UseValidators {
+export function useValidators(intervalMs: number = POLL_MS.validators, retryMs = 10_000): UseValidators {
   const api = useApi();
-  const [data, setData] = useState<ValidatorsData | null>(null);
-  const [error, setError] = useState<Error | null>(null);
-  const [loading, setLoading] = useState(true);
-  const dataRef = useRef<ValidatorsData | null>(null);
-  const seq = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const alive = useRef(true);
-
-  const refresh = useCallback(async () => {
-    const id = ++seq.current;
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    setLoading(true);
-    let failed = false;
-    try {
-      const next = await loadValidators(api, dataRef.current);
-      if (!alive.current || id !== seq.current) return;
-      dataRef.current = next;
-      setData(next);
-      setError(null);
-    } catch (e) {
-      if (!alive.current || id !== seq.current) return;
-      failed = true;
-      setError(e instanceof Error ? e : new Error(String(e)));
-    }
-    setLoading(false);
-    if (typeof document !== "undefined" && document.hidden) return;
-    timer.current = setTimeout(() => void refresh(), failed ? retryMs : intervalMs);
-  }, [api, intervalMs, retryMs]);
-
-  useEffect(() => {
-    alive.current = true;
-    void refresh();
-    const onVisible = () => {
-      if (document.hidden) {
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = null;
-      } else {
-        void refresh();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      alive.current = false;
-      document.removeEventListener("visibilitychange", onVisible);
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [refresh]);
-
-  return { data, error, loading, refresh };
+  const last = useRef<ValidatorsData | null>(null);
+  const poll = usePoll(
+    async () => {
+      const next = await loadValidators(api, last.current);
+      last.current = next;
+      return next;
+    },
+    intervalMs,
+    { retryMs },
+  );
+  const error = poll.error === undefined ? null : poll.error instanceof Error ? poll.error : new Error(String(poll.error));
+  return { data: poll.data ?? null, error, loading: poll.loading, refresh: poll.refresh };
 }

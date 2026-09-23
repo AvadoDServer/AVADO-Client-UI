@@ -1,4 +1,4 @@
-import { EXECUTION_CLIENTS, executionClientsForNetwork, findExecutionClient } from "../executionClients";
+import { EXECUTION_CLIENTS, executionClientsForNetwork, executionClientTitle, findExecutionClient } from "../executionClients";
 
 // This list must mirror AVADO-DNP-Nimbus/build/startNimbus.sh:19-35 (EE_CANDIDATES) exactly.
 describe("executionClients", () => {
@@ -39,5 +39,17 @@ describe("executionClients", () => {
     );
     expect(findExecutionClient("unknown.package.eth")).toBeUndefined();
     expect(findExecutionClient(undefined)).toBeUndefined();
+  });
+
+  it("every candidate has a short title for banners and sentences", () => {
+    expect(executionClientsForNetwork("prater").map((c) => c.title)).toEqual(["Geth", "Nethermind"]);
+    for (const c of EXECUTION_CLIENTS) expect(c.name.startsWith(c.title)).toBe(true);
+  });
+
+  it("executionClientTitle: the known title, else a guess from the package name", () => {
+    expect(executionClientTitle("goerli-geth.avado.dnp.dappnode.eth")).toBe("Geth");
+    expect(executionClientTitle("avado-dnp-nethermind.public.dappnode.eth")).toBe("Nethermind");
+    expect(executionClientTitle("besu.public.dappnode.eth")).toBe("Besu");
+    expect(executionClientTitle("mystery.avado.dnp.dappnode.eth")).toBe("Mystery");
   });
 });

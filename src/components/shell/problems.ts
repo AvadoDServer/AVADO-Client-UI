@@ -1,9 +1,14 @@
-import type { Settings } from "../../api/types";
+import type { PackageState, Settings } from "../../api/types";
 import { NETWORKS, type ClientName, type Network } from "../../config/clientConfig";
 import { CLIENT_TITLE, NETWORK_TITLE, TEST_NETWORKS } from "./identity";
-import { executionCandidates, executionClientTitle, orList } from "./executionCandidates";
+import { executionClientsForNetwork, executionClientTitle } from "../../config/executionClients";
 import { ADMIN_STORE_URL, adminInstallerUrl, adminPackageUrl } from "./links";
-import type { PackageState } from "./packageStates";
+
+/** "Geth", "Geth or Nethermind", "Geth, Besu or Nethermind". */
+export function orList(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+}
 
 /**
  * The problem banners (spec §4). Pure rules over what the shell has loaded;
@@ -92,7 +97,7 @@ export function findProblems(i: ProblemInputs): Problem[] {
   if (i.packages) {
     const states = new Map(i.packages.map((p) => [p.name, p.running]));
     const installed = (n: string) => states.has(n);
-    const candidates = executionCandidates(i.network);
+    const candidates = executionClientsForNetwork(i.network);
     const installedCandidates = candidates.filter((c) => installed(c.packageName));
     if (candidates.length > 0 && installedCandidates.length === 0) {
       executionProblem = true;

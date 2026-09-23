@@ -134,14 +134,23 @@ describe("AdvancedPage — service actions", () => {
 });
 
 describe("AdvancedPage — logs", () => {
-  it("shows a placeholder before the first poll resolves", () => {
+  it("says the logs are loading before the first poll resolves", () => {
     const api = createMockApi();
     // Neither call resolves during this test, so no state update happens
     // after the synchronous assertion below (nothing left pending to flush).
     vi.spyOn(api.dappmanager, "logs").mockImplementation(() => new Promise(() => {}));
     vi.spyOn(api.backend, "serviceStatus").mockImplementation(() => new Promise(() => {}));
     renderPage(api);
-    expect(screen.getByText("No log output yet.")).toBeInTheDocument();
+    expect(screen.getByText("Loading logs…")).toBeInTheDocument();
+    expect(screen.queryByText("No log output yet.")).toBeNull();
+  });
+
+  it("says there is no output yet when the logs are empty", async () => {
+    const api = createMockApi();
+    vi.spyOn(api.dappmanager, "logs").mockResolvedValue("");
+    renderPage(api);
+    expect(await screen.findByText("No log output yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Loading logs…")).toBeNull();
   });
 
   it("polls DAPPMANAGER for this package's logs with a bounded tail", async () => {

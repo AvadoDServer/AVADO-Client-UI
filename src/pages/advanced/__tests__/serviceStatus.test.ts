@@ -6,7 +6,7 @@ describe("processStatus", () => {
     ["RUNNING", "success", "Running"],
     ["STARTING", "accent", "Starting"],
     ["STOPPING", "accent", "Stopping"],
-    ["BACKOFF", "warning", "Restarting"],
+    ["BACKOFF", "warning", "Retrying"],
     ["STOPPED", "neutral", "Stopped"],
     ["EXITED", "warning", "Exited"],
     ["FATAL", "danger", "Failed"],
