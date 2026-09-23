@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { ROUTER_FUTURE } from "../../../routing/routerFuture";
@@ -25,7 +25,7 @@ describe("Rocket Pool app", () => {
     window.location.hash = "";
   });
 
-  it("renders the shared shell on the mock API under VITE_MOCK=1, routing by hash", async () => {
+  it("renders the shared shell on the demo node under VITE_MOCK=1, routing by hash", async () => {
     vi.stubEnv("VITE_MOCK", "1");
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
@@ -34,13 +34,16 @@ describe("Rocket Pool app", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Page not found" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("link", { name: "Go to Rocket Pool" }));
     expect(window.location.hash).toBe("#/");
-    expect(screen.getByRole("heading", { level: 1, name: "Rocket Pool" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
     expect(within(sidebar()).getAllByText("Rocket Pool").length).toBeGreaterThan(0);
     expect(document.title).toBe("AVADO Rocket Pool");
-    const status = screen.getByTestId("backend-status");
+    const status = screen.getByTestId("service-status");
     expect(within(status).getByText("Demo data")).toBeInTheDocument();
-    expect(await within(status).findByText("Connected", {}, { timeout: 3000 })).toBeInTheDocument();
-    // No client-config.json and no calls to the network in the mock.
+    expect(await within(status).findByText("Running", {}, { timeout: 3000 })).toBeInTheDocument();
+    // The default demo node (mixed) has two banners.
+    const problems = await screen.findByRole("region", { name: "Problems" }, { timeout: 3000 });
+    expect(within(problems).getByText("Your recovery phrase is stored in a plain file")).toBeInTheDocument();
+    // No calls to the network in the mock.
     expect(fetchSpy).not.toHaveBeenCalled();
 
     // The shared sidebar footer: the way back to the Admin and the theme switch.
@@ -49,41 +52,76 @@ describe("Rocket Pool app", () => {
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });
 
-  it("lists one page, Rocket Pool, in Simple mode", async () => {
-    renderAt();
-    await screen.findByText("Connected");
+  it("lists Home, Validators, Rewards and Wallet in Simple mode", async () => {
+    renderAt("/", { scenario: "minipool" });
+    await screen.findByText("Running");
     const nav = screen.getByRole("navigation", { name: "Main" });
-    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Rocket Pool"]);
-    expect(within(nav).getByRole("link", { name: "Rocket Pool" })).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Home", "Validators", "Rewards", "Wallet"]);
+    expect(within(nav).getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("keeps the same page list in Advanced mode", async () => {
+  it("adds Advanced in Advanced mode", async () => {
     localStorage.setItem(MODE_STORAGE_KEY, "advanced");
-    renderAt();
-    await screen.findByText("Connected");
+    renderAt("/", { scenario: "minipool" });
+    await screen.findByText("Running");
     const nav = screen.getByRole("navigation", { name: "Main" });
-    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Rocket Pool"]);
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Home", "Validators", "Rewards", "Wallet", "Advanced"]);
     expect(within(sidebar()).getByRole("button", { name: "Advanced" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("says when the backend does not answer, without a demo badge on real data", async () => {
+  it("opens every page from the sidebar", async () => {
+    localStorage.setItem(MODE_STORAGE_KEY, "advanced");
+    renderAt("/", { scenario: "minipool" });
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    for (const name of ["Validators", "Rewards", "Wallet", "Advanced", "Home"]) {
+      await userEvent.click(within(nav).getByRole("link", { name }));
+      expect(screen.getByRole("heading", { level: 1, name })).toBeInTheDocument();
+    }
+  });
+
+  it("a healthy minipool node shows no banners", async () => {
+    renderAt("/", { scenario: "minipool" });
+    await screen.findByText("Running");
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(screen.queryByRole("region", { name: "Problems" })).not.toBeInTheDocument();
+  });
+
+  it("a daemon that failed to start: the error with its log lines, and Stopped", async () => {
+    renderAt("/", { scenario: "daemon-failed" });
+    const problems = await screen.findByRole("region", { name: "Problems" });
+    expect(within(problems).getByText("Rocket Pool could not start")).toBeInTheDocument();
+    expect(within(problems).getByText(/could not load its settings/)).toBeInTheDocument();
+    expect(within(problems).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(problems).getByRole("link", { name: "See the logs" })).toHaveAttribute("href", "/advanced");
+    expect(within(screen.getByTestId("service-status")).getByText("Stopped")).toBeInTheDocument();
+  });
+
+  it("a fresh node is sent to setup", async () => {
+    renderAt("/", { scenario: "fresh" });
+    const problems = await screen.findByRole("region", { name: "Problems" });
+    expect(within(problems).getByText("Set up your node")).toBeInTheDocument();
+    await userEvent.click(within(problems).getByRole("link", { name: "Start setup" }));
+    expect(screen.getByRole("heading", { level: 1, name: "Set up your node" })).toBeInTheDocument();
+  });
+
+  it("says when the package does not answer, without a demo badge on real data", async () => {
     renderAt("/", { backendDown: true });
-    const status = screen.getByTestId("backend-status");
+    const status = screen.getByTestId("service-status");
     expect(within(status).getByText("Checking")).toBeInTheDocument();
     expect(await within(status).findByText("Not reachable")).toBeInTheDocument();
     expect(within(status).queryByText("Demo data")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Problems" })).toHaveTextContent("The Rocket Pool package is not answering");
   });
 
-  it("shows no client banners or client status strip", async () => {
-    renderAt();
-    await screen.findByText("Connected");
-    expect(screen.queryByRole("region", { name: "Problems" })).not.toBeInTheDocument();
+  it("shows no client status strip", async () => {
+    renderAt("/", { scenario: "minipool" });
+    await screen.findByText("Running");
     expect(screen.queryByText("Synced")).not.toBeInTheDocument();
   });
 
   it("opens the menu as a drawer from the top bar and closes it with Escape", async () => {
     renderAt();
-    await screen.findByText("Connected");
+    await screen.findByText("Running");
     const open = screen.getByRole("button", { name: "Open menu" });
     await userEvent.click(open);
     expect(screen.getByRole("dialog", { name: "Menu" })).toBeInTheDocument();
@@ -92,9 +130,10 @@ describe("Rocket Pool app", () => {
     expect(open).toHaveFocus();
   });
 
-  it("answers an unknown address with a way home", () => {
+  it("answers an unknown address with a way home, banners included", async () => {
     renderAt("/nope");
     expect(screen.getByRole("heading", { level: 1, name: "Page not found" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Go to Rocket Pool" })).toHaveAttribute("href", "/");
+    expect(await screen.findByRole("region", { name: "Problems" })).toBeInTheDocument();
   });
 });

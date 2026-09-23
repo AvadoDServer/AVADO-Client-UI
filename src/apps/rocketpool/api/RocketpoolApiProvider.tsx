@@ -1,14 +1,17 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { createMockRocketpoolApi } from "./mock";
+import { createMockRocketpoolApi, scenarioFromEnvironment } from "./mock";
 import { createRealRocketpoolApi } from "./real";
 import type { RocketpoolApi } from "./types";
 
 /** Same switch as the client app: `VITE_MOCK=1` uses the in-memory adapters. */
 export const isMock = (): boolean => import.meta.env.VITE_MOCK === "1";
 
-/** Mocks under VITE_MOCK=1, else the real adapters. */
+/**
+ * Mocks under VITE_MOCK=1 (the demo node from `?scenario=minipool|mixed|fresh|daemon-failed`,
+ * default mixed), else the real adapters.
+ */
 export function createRocketpoolApi(): RocketpoolApi {
-  if (isMock()) return createMockRocketpoolApi({ latencyMs: 250 });
+  if (isMock()) return createMockRocketpoolApi({ latencyMs: 250, waitMs: 3000, scenario: scenarioFromEnvironment() });
   return createRealRocketpoolApi();
 }
 

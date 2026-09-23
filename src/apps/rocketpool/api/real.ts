@@ -1,18 +1,151 @@
-import type { RocketpoolApi } from "./types";
+import { RpApiError } from "./errors";
+import type { AvadoStatus, LogsView, ReconcileView, SnEnvelope } from "./models";
+import type { CallOptions, RocketpoolApi, SnParams } from "./types";
 
-/** The package backend's status route, served on the UI's own origin. */
-export const STATUS_PATH = "/api/avado/status";
+/** The package backend's routes, on the UI's own origin. */
+export const AVADO_STATUS_PATH = "/api/avado/status";
+export const AVADO_RECONCILE_PATH = "/api/avado/reconcile";
+export const AVADO_RECONCILE_RUN_PATH = "/api/avado/reconcile/run";
+export const AVADO_LOGS_PATH = "/api/avado/logs";
+export const SN_PREFIX = "/api/sn/";
+
+/** The backend refuses a write without this header (its CSRF guard). */
+export const AVADO_REQUEST_HEADER = "X-Avado-Request";
+
+/** Reads: Smartnode's node/status can take a while on a busy node. */
+export const READ_TIMEOUT_MS = 60_000;
+/** Writes: the backend gives the daemon 120 s; a little more here so its own answer arrives. */
+export const WRITE_TIMEOUT_MS = 150_000;
+/** Routes that block until something happens (a tx mined, a wallet recovered); the backend allows 60 min. */
+export const LONG_TIMEOUT_MS = 65 * 60_000;
+
+/** Must match the backend's `long` routes. */
+export const LONG_ROUTES: ReadonlySet<string> = new Set([
+  "wait",
+  "wallet/recover",
+  "wallet/search-and-recover",
+  "wallet/test-recover",
+  "wallet/test-search-and-recover",
+  "wallet/rebuild",
+  "node/wait-and-stake-rpl",
+  "network/download-rewards-file",
+]);
+
+/** `node/status`, `megapool/can-exit-validator`: lower-case segments only, so a route can never climb out of /api/sn/. */
+const ROUTE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/;
+
+export function assertRoute(route: string): void {
+  if (!ROUTE.test(route)) throw new TypeError(`Not a Smartnode route: ${JSON.stringify(route)}`);
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+interface RequestSpec {
+  method: "GET" | "POST";
+  path: string;
+  body?: SnParams;
+  timeoutMs: number;
+  /** Smartnode envelope: a 200 with `status: "error"` is an error too. */
+  envelope: boolean;
+}
 
 /** Adapters for the package backend (same origin as the UI). */
 export function createRealRocketpoolApi(fetchImpl: typeof fetch = (...args) => fetch(...args)): RocketpoolApi {
+  async function request<T>({ method, path, body, timeoutMs, envelope }: RequestSpec): Promise<T> {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    let payload: string | undefined;
+    if (method === "POST") {
+      headers[AVADO_REQUEST_HEADER] = "1";
+      headers["Content-Type"] = "application/json";
+      payload = JSON.stringify(body ?? {});
+    }
+
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+
+    let res: Response;
+    let text: string;
+    try {
+      res = await fetchImpl(path, {
+        method,
+        headers,
+        body: payload,
+        signal: controller.signal,
+        credentials: "same-origin",
+        cache: "no-store",
+        redirect: "error",
+      });
+      text = await res.text();
+    } catch (cause) {
+      throw new RpApiError({ kind: timedOut ? "timeout" : "unreachable", path, cause });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    let data: unknown;
+    let parsed = true;
+    try {
+      data = text === "" ? undefined : JSON.parse(text);
+    } catch {
+      parsed = false;
+    }
+    const detail = isObject(data) && typeof data.error === "string" && data.error.trim() ? data.error.trim() : undefined;
+
+    if (!res.ok) throw new RpApiError({ kind: "http", path, status: res.status, detail });
+    if (!parsed || (envelope && !isObject(data))) {
+      throw new RpApiError({ kind: "invalid", path, status: res.status, detail: "The answer is not JSON" });
+    }
+    if (envelope && isObject(data) && data.status !== "success") {
+      throw new RpApiError({ kind: "smartnode", path, status: res.status, detail });
+    }
+    return data as T;
+  }
+
+  const snPath = (route: string) => {
+    assertRoute(route);
+    return `${SN_PREFIX}${route}`;
+  };
+
   return {
-    async ping() {
-      try {
-        const res = await fetchImpl(STATUS_PATH, { headers: { Accept: "application/json" } });
-        return res.ok;
-      } catch {
-        return false;
-      }
+    avadoStatus: () => request<AvadoStatus>({ method: "GET", path: AVADO_STATUS_PATH, timeoutMs: READ_TIMEOUT_MS, envelope: false }),
+
+    reconcile: () => request<ReconcileView>({ method: "GET", path: AVADO_RECONCILE_PATH, timeoutMs: READ_TIMEOUT_MS, envelope: false }),
+
+    async requestReconcile() {
+      await request<unknown>({ method: "POST", path: AVADO_RECONCILE_RUN_PATH, body: {}, timeoutMs: WRITE_TIMEOUT_MS, envelope: false });
+    },
+
+    logs: (tail = 200) =>
+      request<LogsView>({
+        method: "GET",
+        path: `${AVADO_LOGS_PATH}?tail=${Math.max(1, Math.min(2000, Math.floor(tail)))}`,
+        timeoutMs: READ_TIMEOUT_MS,
+        envelope: false,
+      }),
+
+    snGet<T extends SnEnvelope>(route: string, params?: SnParams, opts: CallOptions = {}) {
+      const path = snPath(route);
+      const query = params ? new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString() : "";
+      return request<T>({
+        method: "GET",
+        path: query ? `${path}?${query}` : path,
+        timeoutMs: opts.timeoutMs ?? (LONG_ROUTES.has(route) ? LONG_TIMEOUT_MS : READ_TIMEOUT_MS),
+        envelope: true,
+      });
+    },
+
+    snPost<T extends SnEnvelope>(route: string, body: SnParams = {}, opts: CallOptions = {}) {
+      return request<T>({
+        method: "POST",
+        path: snPath(route),
+        body,
+        timeoutMs: opts.timeoutMs ?? (LONG_ROUTES.has(route) ? LONG_TIMEOUT_MS : WRITE_TIMEOUT_MS),
+        envelope: true,
+      });
     },
   };
 }

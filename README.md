@@ -36,7 +36,10 @@ The repo builds two apps on the same design system:
 | Rocket Pool | `src/apps/rocketpool/index.html` → `main.tsx` | `yarn build:rocketpool` | `dist-rocketpool/` |
 
 `VITE_MOCK=1 yarn dev:rocketpool` runs the Rocket Pool app on its in-memory
-adapters (`src/apps/rocketpool/api/mock.ts`). Its own Vite and Tailwind
+adapters (`src/apps/rocketpool/api/mock.ts`) with a demo node from
+`src/apps/rocketpool/api/fixtures.ts`: add `?scenario=minipool`, `mixed`
+(the default), `fresh` (no wallet) or `daemon-failed` to the address, e.g.
+`http://localhost:5173/?scenario=fresh#/`. Its own Vite and Tailwind
 configs (`vite.rocketpool.config.ts`, `tailwind.rocketpool.config.ts`) keep
 it out of the client build: `tailwind.config.ts` skips `src/apps/**`, so
 `dist/` is the same with or without it. Both apps use the shared shell
