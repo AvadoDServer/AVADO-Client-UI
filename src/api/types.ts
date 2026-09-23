@@ -180,8 +180,12 @@ export interface ImportResult {
 export type DeleteStatus = "deleted" | "not_active" | "not_found" | "error";
 export interface DeleteKeystoresResponse {
   data: Array<{ status: DeleteStatus; message?: string }>;
-  /** EIP-3076 interchange JSON as a string — offer it as a download. */
-  slashing_protection: string;
+  /**
+   * EIP-3076 interchange JSON as a string — offer it as a download. Missing
+   * when the node didn't return one; the per-key `data` status still says
+   * whether the key was removed.
+   */
+  slashing_protection?: string;
 }
 
 export interface KeymanagerApi {

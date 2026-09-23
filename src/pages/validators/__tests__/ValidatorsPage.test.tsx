@@ -251,6 +251,30 @@ describe("ValidatorsPage", () => {
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     });
 
+    it("a removal without a slashing-protection file is still reported as removed, and says the file is missing", async () => {
+      const api = createMockApi();
+      vi.spyOn(api.keymanager, "deleteKeystores").mockResolvedValue({ data: [{ status: "deleted" }] });
+      renderPage(api);
+      const t = await table();
+      await userEvent.click(await t.findByRole("button", { name: "Remove Validator 412345" }));
+      await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove validator" }));
+      const done = await screen.findByRole("dialog", { name: "Validator 412345 removed" });
+      expect(within(done).getByText("The node didn't return a slashing-protection file for this key.")).toBeInTheDocument();
+      expect(screen.queryByText(/The key was not removed/)).toBeNull();
+      expect(downloads.calls).toHaveLength(0);
+    });
+
+    it("a per-key error status without a slashing-protection file says the key was not removed", async () => {
+      const api = createMockApi();
+      vi.spyOn(api.keymanager, "deleteKeystores").mockResolvedValue({ data: [{ status: "error", message: "locked" }] });
+      renderPage(api);
+      const t = await table();
+      await userEvent.click(await t.findByRole("button", { name: "Remove Validator 412345" }));
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Remove validator" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent("The key was not removed: locked.");
+    });
+
     it("does not report success when the keymanager fails", async () => {
       const api = createMockApi();
       vi.spyOn(api.keymanager, "deleteKeystores").mockRejectedValue(new Error("HTTP 500"));

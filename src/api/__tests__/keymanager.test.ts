@@ -54,17 +54,22 @@ describe("createKeymanagerApi", () => {
     expect(m.calls[0].body).toEqual({ pubkeys: [PK] });
     expect(m.calls[0].headers["content-type"]).toBe("application/json");
     expect(res.data).toEqual([{ status: "deleted", message: "" }]);
-    expect(JSON.parse(res.slashing_protection)).toEqual(INTERCHANGE);
+    expect(typeof res.slashing_protection).toBe("string");
+    expect(JSON.parse(res.slashing_protection as string)).toEqual(INTERCHANGE);
   });
 
   it("deleteKeystores stringifies an interchange that arrives as an object", async () => {
     const m = createFetchMock().on("DELETE", `${KM}/keystores`, { json: { data: [{ status: "deleted" }], slashing_protection: INTERCHANGE } });
-    expect(JSON.parse((await make(m).deleteKeystores([PK])).slashing_protection)).toEqual(INTERCHANGE);
+    const sp = (await make(m).deleteKeystores([PK])).slashing_protection;
+    expect(typeof sp).toBe("string");
+    expect(JSON.parse(sp as string)).toEqual(INTERCHANGE);
   });
 
-  it("deleteKeystores refuses a response without the slashing-protection export", async () => {
+  it("deleteKeystores without a slashing-protection export still returns the per-key statuses (the key was removed)", async () => {
     const m = createFetchMock().on("DELETE", `${KM}/keystores`, { json: { data: [{ status: "deleted" }] } });
-    await expect(make(m).deleteKeystores([PK])).rejects.toMatchObject({ kind: "invalid" });
+    const res = await make(m).deleteKeystores([PK]);
+    expect(res.data).toEqual([{ status: "deleted" }]);
+    expect(res.slashing_protection).toBeUndefined();
   });
 
   it("getFeeRecipient returns the address, and null on 404", async () => {

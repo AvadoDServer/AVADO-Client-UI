@@ -77,7 +77,8 @@ describe("mock API", () => {
     const api = createMockApi();
     const res = await api.keymanager.deleteKeystores([MOCK_PUBKEYS.active01, `0x${"ee".repeat(48)}`]);
     expect(res.data.map((d) => d.status)).toEqual(["deleted", "not_found"]);
-    const interchange = JSON.parse(res.slashing_protection);
+    expect(typeof res.slashing_protection).toBe("string");
+    const interchange = JSON.parse(res.slashing_protection as string);
     expect(interchange.metadata.interchange_format_version).toBe("5");
     expect(interchange.data[0].pubkey).toBe(MOCK_PUBKEYS.active01);
     expect((await api.keymanager.listKeystores()).map((k) => k.validating_pubkey)).not.toContain(MOCK_PUBKEYS.active01);

@@ -66,10 +66,11 @@ export function createKeymanagerApi(config: Pick<ClientConfig, "apiUrl">, deps: 
       const path = "/eth/v1/keystores";
       const { status, data } = await http.request(path, { method: "DELETE", body: { pubkeys } });
       const results = normaliseResults<DeleteStatus>(unwrapData(data, "keymanager", path, status), path);
+      // The delete has happened by now: a missing export must not turn into
+      // "the key was not removed". The per-key status decides the outcome;
+      // the dialog says when there was no slashing-protection file.
       const sp = (data as { slashing_protection?: unknown }).slashing_protection;
-      if (sp === undefined || sp === null) {
-        throw new ApiError({ kind: "invalid", service: "keymanager", path, status, detail: "no slashing_protection in the response" });
-      }
+      if (sp === undefined || sp === null || sp === "") return { data: results };
       return { data: results, slashing_protection: typeof sp === "string" ? sp : JSON.stringify(sp) };
     },
 
