@@ -28,7 +28,9 @@ of `wrong` (or empty) gives an error result.
 
 ## Runtime config
 
-The SPA reads `./client-config.json`, served next to `index.html`. Each
+The SPA reads `/client-config.json`, served next to `index.html` at the web
+root of the package host (the build uses an absolute `base: "/"`, so deep
+links like `/settings/` load too). Each
 client package's Dockerfile writes it at image build time:
 
 ```json

@@ -159,10 +159,11 @@ export function normalizeClientConfig(raw: unknown, fallback: Fallback = {}): Cl
   return checkClientConfig(raw, fallback).config;
 }
 
-export const CLIENT_CONFIG_URL = "./client-config.json";
+/** Absolute, like the asset URLs (vite `base: "/"`), so a deep link such as `/settings/` still finds it. */
+export const CLIENT_CONFIG_URL = "/client-config.json";
 
 /**
- * Load `./client-config.json` and report where the config came from. Never
+ * Load `/client-config.json` and report where the config came from. Never
  * rejects: a missing, unreadable or malformed file yields the hostname's
  * guess (source "hostname") or Nimbus on mainnet (source "default"), with
  * the reason in `problems`.
@@ -188,7 +189,7 @@ export async function loadClientConfigResult(): Promise<ClientConfigResult> {
   return { config, source: "file", problems };
 }
 
-/** Load `./client-config.json`; see `loadClientConfigResult()` for provenance. */
+/** Load `/client-config.json`; see `loadClientConfigResult()` for provenance. */
 export async function loadClientConfig(): Promise<ClientConfig> {
   return (await loadClientConfigResult()).config;
 }

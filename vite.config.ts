@@ -22,7 +22,11 @@ const dropDevClientConfig = (): Plugin => {
 };
 
 export default defineConfig({
-  base: "./",
+  // Absolute from the web root: the UI is always served at the root of its
+  // package host (e.g. http://nimbus.my.ava.do/). A relative base ("./")
+  // broke trailing-slash or nested deep links such as /settings/: the page
+  // then asked for /settings/assets/*.js, got index.html back and stayed blank.
+  base: "/",
   plugins: [react(), dropDevClientConfig()],
   build: {
     outDir: "dist",

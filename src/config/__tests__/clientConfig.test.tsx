@@ -137,11 +137,11 @@ describe("guessFromHostname", () => {
 });
 
 describe("loadClientConfig", () => {
-  it("fetches ./client-config.json and normalizes it", async () => {
+  it("fetches /client-config.json from the web root (so deep links like /settings/ work) and normalizes it", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ client: "teku", network: "holesky" }));
     vi.stubGlobal("fetch", fetchMock);
     const c = await loadClientConfig();
-    expect(fetchMock).toHaveBeenCalledWith("./client-config.json", expect.anything());
+    expect(fetchMock).toHaveBeenCalledWith("/client-config.json", expect.anything());
     expect(c.client).toBe("teku");
     expect(c.apiUrl).toBe("http://teku-holesky.my.ava.do:9999");
   });
