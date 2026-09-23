@@ -1,0 +1,12 @@
+{
+  "client": "nimbus",
+  "network": "mainnet",
+  "packageName": "nimbus.avado.dnp.dappnode.eth",
+  "apiUrl": "http://nimbus.my.ava.do:9999",
+  "backend": "deno",
+  "features": {
+    "batchImport": true,
+    "backup": false,
+    "zeroSync": false
+  }
+}
