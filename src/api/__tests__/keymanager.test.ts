@@ -84,7 +84,10 @@ describe("createKeymanagerApi", () => {
     await km.setFeeRecipient(PK, ADDR);
     await km.deleteFeeRecipient(PK);
     expect(m.calls[0].body).toEqual({ ethaddress: ADDR });
-    expect(m.calls[1].rawBody).toBeUndefined();
+    // The deno proxy JSON-parses every non-GET body: a bodiless DELETE fails there.
+    expect(m.calls[1].method).toBe("DELETE");
+    expect(m.calls[1].rawBody).toBe("{}");
+    expect(m.calls[1].headers["content-type"]).toBe("application/json");
   });
 
   it("setFeeRecipient surfaces a refusal", async () => {
@@ -96,6 +99,9 @@ describe("createKeymanagerApi", () => {
     const signed = { message: { epoch: "300000", validator_index: "7" }, signature: "0xsig" };
     const m = createFetchMock().on("POST", `${KM}/validator/${PK}/voluntary_exit`, { json: { data: signed } });
     expect(await make(m).signVoluntaryExit(PK)).toEqual(signed);
+    // The deno proxy JSON-parses every non-GET body: a bodiless POST fails there.
+    expect(m.calls[0].rawBody).toBe("{}");
+    expect(m.calls[0].headers["content-type"]).toBe("application/json");
   });
 
   it("signVoluntaryExit refuses an explicit epoch, which the package proxies cannot forward", async () => {

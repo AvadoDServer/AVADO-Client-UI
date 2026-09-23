@@ -5,6 +5,13 @@
  *
  * Query strings are deliberately unsupported: both the deno and the monitor
  * `/rest/*` and `/keymanager/*` proxies forward only the path and drop `?...`.
+ *
+ * Bodies through the proxies: the deno proxy (Nimbus `server.ts`) runs
+ * `JSON.parse` on the body of every non-GET request, and oak reports a body
+ * even when none was sent, so a bodiless POST/DELETE fails there with a 500
+ * before the client is ever contacted. Every non-GET call through `/rest` or
+ * `/keymanager` must therefore send a JSON body; a `proxied` Http sends `{}`
+ * when the caller gave none, as a safety net.
  */
 import { ApiError, type ApiService } from "./errors";
 
@@ -84,9 +91,10 @@ export function createHttp(opts: HttpOptions): Http {
       const method = ro.method ?? "GET";
       const headers: Record<string, string> = { Accept: "application/json" };
       let body: string | undefined;
-      if (ro.body !== undefined) {
+      const payload = ro.body === undefined && opts.proxied === true && method !== "GET" ? {} : ro.body;
+      if (payload !== undefined) {
         headers["Content-Type"] = "application/json";
-        body = JSON.stringify(ro.body);
+        body = JSON.stringify(payload);
       }
 
       const controller = new AbortController();

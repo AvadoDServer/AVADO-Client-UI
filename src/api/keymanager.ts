@@ -86,7 +86,8 @@ export function createKeymanagerApi(config: Pick<ClientConfig, "apiUrl">, deps: 
     },
 
     async deleteFeeRecipient(pubkey) {
-      await http.request(feePath(pubkey), { method: "DELETE" });
+      // `{}`: the deno proxy JSON-parses every non-GET body (see http.ts).
+      await http.request(feePath(pubkey), { method: "DELETE", body: {} });
     },
 
     async signVoluntaryExit(pubkey, epoch) {
@@ -94,7 +95,8 @@ export function createKeymanagerApi(config: Pick<ClientConfig, "apiUrl">, deps: 
       // forward the path only), so the client always signs for the current epoch.
       if (epoch !== undefined) throw new Error("signVoluntaryExit: an explicit epoch cannot pass the package proxy");
       const path = `/eth/v1/validator/${encodeURIComponent(pubkey)}/voluntary_exit`;
-      const { status, data } = await http.request(path, { method: "POST" });
+      // `{}`: the deno proxy JSON-parses every non-GET body (see http.ts).
+      const { status, data } = await http.request(path, { method: "POST", body: {} });
       return unwrapData<SignedVoluntaryExit>(data, "keymanager", path, status);
     },
   };
