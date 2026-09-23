@@ -11,6 +11,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "dev:rocketpool": "vite --config vite.rocketpool.config.ts",
+    "build:rocketpool": "tsc --noEmit && vite build --config vite.rocketpool.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

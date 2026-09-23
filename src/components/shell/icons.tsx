@@ -68,3 +68,11 @@ export const ArrowLeftIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M15 6l-6 6 6 6" />
   </Icon>
 );
+
+export const HomeIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M4 11l8-7 8 7" />
+    <path d="M6 9.5V20h12V9.5" />
+    <path d="M10 20v-5h4v5" />
+  </Icon>
+);
