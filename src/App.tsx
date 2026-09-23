@@ -6,6 +6,7 @@ import { Shell } from "./components/shell/Shell";
 import { Button } from "./components/ui";
 import { ClientConfigProvider } from "./config/ClientConfigProvider";
 import type { ClientConfig, ClientConfigResult } from "./config/clientConfig";
+import { ROUTER_FUTURE } from "./routing/routerFuture";
 import AddValidatorsPage from "./pages/add/AddValidatorsPage";
 import AdvancedPage from "./pages/advanced/AdvancedPage";
 import NotFound from "./pages/NotFound";
@@ -14,8 +15,7 @@ import ValidatorsPage from "./pages/validators/ValidatorsPage";
 import { ModeProvider, useMode } from "./settings/ModeProvider";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
-/** React Router v7 behaviour, opted into now (also silences its warnings). */
-export const ROUTER_FUTURE = { v7_startTransition: true, v7_relativeSplatPath: true } as const;
+export { ROUTER_FUTURE };
 
 /** Theme, mode, config and API context around the app. */
 export function Providers({
