@@ -12,7 +12,11 @@ import "./index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { redirectLegacyPath } from "./routing/legacyPaths";
 import { applyTheme, resolveInitialTheme } from "./theme/ThemeProvider";
+
+// Old bookmarks (/settings, /admin) become hash routes before the router starts.
+redirectLegacyPath();
 
 // Paint the right theme before React mounts (no flash).
 applyTheme(resolveInitialTheme());
