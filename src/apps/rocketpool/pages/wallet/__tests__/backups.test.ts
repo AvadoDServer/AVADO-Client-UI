@@ -12,6 +12,10 @@ describe("backups on the box", () => {
     expect(at("0.0.111+b-20260921T090000Z").title).toBe("Automatic backup (from version 0.0.111+b)");
     expect(at("20260920T120000Z-before-wallet-change-2", "wallet-change").title).toBe("Before a wallet change");
     expect(at("mnemonic-archive-20260923T101500Z").title).toBe("Old recovery phrase file");
+    // The backend's collision suffix, and its kind even for a name the UI doesn't know.
+    const mn = (name: string) => describeBackup({ name, createdAt: "2026-09-01T00:00:00Z", kind: "mnemonic-archive" });
+    expect(mn("mnemonic-archive-20260923T101500Z-2")).toMatchObject({ title: "Old recovery phrase file", time: Date.UTC(2026, 8, 23, 10, 15, 0) });
+    expect(mn("renamed")).toMatchObject({ title: "Old recovery phrase file", time: Date.parse("2026-09-01T00:00:00Z") });
     expect(at("something-else")).toMatchObject({ title: "Backup", time: Date.parse("2026-09-01T00:00:00Z") });
     expect(describeBackup({ name: "odd", createdAt: "", kind: "upgrade" }).time).toBeNull();
   });

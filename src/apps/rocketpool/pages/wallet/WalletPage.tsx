@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { Button, Card, Input, Modal } from "../../../../components/ui";
 import { plainError } from "../../api/errors";
 import { ARCHIVE_CONFIRMATION, type WalletExport } from "../../api/models";
@@ -8,6 +9,7 @@ import { useRead } from "../../api/useRead";
 import { formatDateTime } from "../../lib/time";
 import { formatEth, formatRpl, formatUnits, isZeroAddress, sameAddress } from "../../lib/units";
 import { useAppStatus } from "../../status/AppStatus";
+import { SUPPORT_EMAIL } from "../../status/problems";
 import { Address, Callout, CopyButton, Facts, LoadError, LoadingCard, NodeGate, PageHeader, SectionCard } from "../common";
 import { ADMIN_PACKAGE_URL, BACKUP_DIR, describeBackups, exportFileContent } from "./backups";
 
@@ -311,7 +313,15 @@ function OldPhraseFile() {
           The old Rocket Pool package saved your wallet's recovery phrase (24 words) unencrypted on this AVADO. Anyone with access to
           the box could read it.
         </p>
-        <p>First make sure you have the recovery phrase written down safely. Then move the file out of the data folder into the backups folder.</p>
+        <p>
+          First make sure you have the recovery phrase written down safely. The old package never showed it to you: if you have no copy,
+          see the steps on the{" "}
+          <Link to="/" className="font-semibold text-accent underline underline-offset-2">
+            Home page
+          </Link>{" "}
+          or contact {SUPPORT_EMAIL} first. Then move the file out of the data folder into the backups
+          folder.
+        </p>
         <div>
           <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
             Move the file…

@@ -34,9 +34,24 @@ describe("the old recovery-phrase file (backend archive endpoint)", () => {
     expect(await api.archiveLegacyMnemonic("ARCHIVE")).toMatchObject({ name: "mnemonic-archive-20260923T101500Z" });
     const after = await api.avadoStatus();
     expect(after.legacyMnemonicPresent).toBe(false);
-    expect(after.backups[0].name).toBe("mnemonic-archive-20260923T101500Z");
+    expect(after.backups[0]).toMatchObject({ name: "mnemonic-archive-20260923T101500Z", kind: "mnemonic-archive" });
     await expect(api.archiveLegacyMnemonic("ARCHIVE")).rejects.toMatchObject({ status: 404 });
     await expect(createMockRocketpoolApi({ scenario: "minipool" }).archiveLegacyMnemonic("ARCHIVE")).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("backup kinds in the status", () => {
+  it("keeps the backend's three kinds (task 9 adds mnemonic-archive); anything else reads as an upgrade backup", () => {
+    const status = parseAvadoStatus({
+      daemon: { state: "RUNNING" },
+      backups: [
+        { name: "mnemonic-archive-20260923T101500Z", createdAt: "2026-09-23T10:15:00Z", kind: "mnemonic-archive" },
+        { name: "20260920T120000Z-before-wallet-change", createdAt: "", kind: "wallet-change" },
+        { name: "1.0.0-20260921T090000Z", createdAt: "", kind: "upgrade" },
+        { name: "odd", createdAt: "", kind: "something-new" },
+      ],
+    })!;
+    expect(status.backups.map((b) => b.kind)).toEqual(["mnemonic-archive", "wallet-change", "upgrade", "upgrade"]);
   });
 });
 
