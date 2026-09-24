@@ -1,4 +1,4 @@
-import type { ApproveKeysResult, AvadoStatus, LogsView, ReconcileView, SnEnvelope } from "./models";
+import type { ApproveKeysResult, AvadoStatus, LegacyMnemonicArchiveResult, LogsView, ReconcileView, SnEnvelope } from "./models";
 
 /** Flat request parameters: Smartnode reads strings; the backend takes a flat JSON object. */
 export type SnParams = Record<string, string | number | boolean>;
@@ -28,6 +28,13 @@ export interface RocketpoolApi {
    * only from an explicit owner action.
    */
   approveKeys(pubkeys: string[], confirm: string): Promise<ApproveKeysResult>;
+  /**
+   * `POST /api/avado/legacy-mnemonic/archive {confirm}`: moves the old
+   * package's plaintext recovery-phrase file into the backups folder (never
+   * deletes it). `confirm` must be the text the owner typed; the backend
+   * accepts only exactly "ARCHIVE" (400 otherwise, 404 when there is no file).
+   */
+  archiveLegacyMnemonic(confirm: string): Promise<LegacyMnemonicArchiveResult>;
   /** `GET /api/avado/logs?tail=N`: redacted daemon log lines. */
   logs(tail?: number): Promise<LogsView>;
   /**

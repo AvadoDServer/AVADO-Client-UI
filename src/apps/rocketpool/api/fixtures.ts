@@ -7,7 +7,14 @@
  *  - `mixed`: one minipool plus a megapool with two validators (one active,
  *    one in the queue), not in the smoothing pool, withdrawal address still
  *    the hot wallet, little ETH left for gas.
- *  - `fresh`: a new install: daemon running, no wallet yet.
+ *  - `fresh`: a new install: daemon running, no wallet yet. Creating or
+ *    restoring a wallet in the mock turns it into `unregistered`.
+ *  - `unregistered`: a wallet with 8.2 ETH, not registered with Rocket Pool yet.
+ *  - `new-node`: registered, no validators yet, a cold withdrawal address
+ *    waiting for its confirmation, not in the smoothing pool.
+ *  - `keys-attention`: every key-check state the Home page explains: keys
+ *    awaiting approval (with a reason they can't load yet), a key settling,
+ *    a key loaded in two clients, and one waiting for a Teku update.
  *  - `daemon-failed`: the daemon would not start (bad settings); its API is down.
  *
  * Big integers follow the wire format: a number when it is a safe integer,
@@ -15,6 +22,7 @@
  */
 import type {
   AvadoStatus,
+  CanDepositResponse,
   GasPriceResponse,
   MegapoolDetails,
   MegapoolStatusResponse,
@@ -65,9 +73,17 @@ export class DemoSnError {
   ) {}
 }
 
-export type MockScenarioName = "minipool" | "mixed" | "fresh" | "daemon-failed";
+export type MockScenarioName = "minipool" | "mixed" | "fresh" | "unregistered" | "new-node" | "keys-attention" | "daemon-failed";
 
-export const MOCK_SCENARIOS: readonly MockScenarioName[] = ["minipool", "mixed", "fresh", "daemon-failed"];
+export const MOCK_SCENARIOS: readonly MockScenarioName[] = [
+  "minipool",
+  "mixed",
+  "fresh",
+  "unregistered",
+  "new-node",
+  "keys-attention",
+  "daemon-failed",
+];
 
 export interface MockScenario {
   name: MockScenarioName;
@@ -99,6 +115,9 @@ export const DEMO = {
   pubkeyC: pubkey(3),
   megaPubkey1: pubkey(4),
   megaPubkey2: pubkey(5),
+  megaPubkey3: pubkey(6),
+  megaPubkey4: pubkey(7),
+  megaPubkey5: pubkey(8),
 } as const;
 
 const NOW = "2026-09-23T10:00:00Z";
@@ -289,6 +308,8 @@ function nodeStatus(o: {
   megapool: MegapoolDetails;
   smoothingPool: boolean;
   unclaimed: string;
+  registered?: boolean;
+  pendingWithdrawal?: string;
 }): NodeStatus {
   const hasMegapool = o.megapool.deployed && o.megapool.validatorCount > 0;
   return {
@@ -297,13 +318,13 @@ function nodeStatus(o: {
     warning: "",
     accountAddress: DEMO.nodeAddress,
     primaryWithdrawalAddress: o.withdrawal,
-    pendingPrimaryWithdrawalAddress: ZERO_ADDRESS,
+    pendingPrimaryWithdrawalAddress: o.pendingWithdrawal ?? ZERO_ADDRESS,
     isRPLWithdrawalAddressSet: false,
     rplWithdrawalAddress: o.withdrawal,
     pendingRPLWithdrawalAddress: ZERO_ADDRESS,
-    registered: true,
+    registered: o.registered ?? true,
     trusted: false,
-    timezoneLocation: "Europe/Ljubljana",
+    timezoneLocation: o.registered === false ? "" : "Europe/Ljubljana",
     accountBalances: { eth: eth(o.eth), reth: 0, rpl: eth(o.rpl), fixedSupplyRpl: 0 },
     totalRplStake: eth(o.legacyRpl),
     rplStakeMegapool: 0,
@@ -313,7 +334,7 @@ function nodeStatus(o: {
     lastRPLUnstakeTime: "0001-01-01T00:00:00Z",
     unstakingPeriodDuration: 2_419_200_000_000_000, // 28 days in ns
     minipoolCounts: counts(o.minipools.length),
-    isFeeDistributorInitialized: true,
+    isFeeDistributorInitialized: o.minipools.length > 0,
     feeRecipientInfo: {
       smoothingPoolAddress: DEMO.smoothingPool,
       feeDistributorAddress: DEMO.feeDistributor,
@@ -364,6 +385,27 @@ const rewardsInfo = (o: { minipools: number; megapool: number; unclaimed: Return
   rplPrice: eth("0.00321"),
   activeMinipools: o.minipools,
   activeMegapoolValidators: o.megapool,
+});
+
+/** `node/can-deposit` for a node with `balance` ETH and no credit (the demo ignores the amount asked). */
+const canDeposit = (balance: string, enough: boolean): CanDepositResponse => ({
+  status: "success",
+  error: "",
+  canDeposit: enough,
+  creditBalance: 0,
+  usableCreditBalance: 0,
+  depositBalance: eth("1250"),
+  canUseCredit: false,
+  nodeBalance: eth(balance),
+  insufficientBalance: !enough,
+  insufficientBalanceWithoutCredit: false,
+  invalidAmount: false,
+  depositDisabled: false,
+  inConsensus: false,
+  nodeHasDebt: false,
+  megapoolAddress: DEMO.megapool,
+  validatorPubkeys: [],
+  ...(enough ? { gasLimits: { estimated: 1_450_000, safe: 2_175_000 } } : {}),
 });
 
 const spStatus = (registered: boolean): SmoothingPoolStatus => ({ status: "success", error: "", nodeRegistered: registered, timeLeftUntilChangeable: 0 });
@@ -546,6 +588,7 @@ const minipoolNode: MockScenario = {
       unclaimed: [interval(42, "18.4412", "0.0412"), interval(43, "17.9021", "0.0388")],
     }),
     "node/get-smoothing-pool-registration-status": spStatus(true),
+    "node/can-deposit": canDeposit("0.4128", false),
   },
   logLines: NORMAL_LOG,
 };
@@ -580,6 +623,7 @@ const mixedNode: MockScenario = {
     "megapool/status": megapoolStatus(MEGAPOOL),
     "node/get-rewards-info": rewardsInfo({ minipools: 1, megapool: 1, stake: "610", unclaimed: [interval(43, "6.1204", "0")] }),
     "node/get-smoothing-pool-registration-status": spStatus(false),
+    "node/can-deposit": canDeposit("0.0061", false),
   },
   logLines: [
     ...NORMAL_LOG,
@@ -604,6 +648,130 @@ const freshNode: MockScenario = {
     "node/get-smoothing-pool-registration-status": new DemoSnError(500, NO_WALLET),
   },
   logLines: ["2026/09/23 09:40:00 Waiting for the node wallet to be initialized..."],
+};
+
+const NOT_REGISTERED = "The node is not registered with Rocket Pool.";
+
+/** A node with nothing on it yet: no minipools, no megapool, no express tickets. */
+const EMPTY_MEGAPOOL: MegapoolDetails = { ...NO_MEGAPOOL, nodeExpressTicketCount: 0 };
+
+const unregisteredNode: MockScenario = {
+  name: "unregistered",
+  title: "Wallet ready, not registered",
+  avado: { ...baseAvado, backups: [] },
+  reconcile: reconcileView({ state: "waiting", client: null, keys: [], message: "The node is not registered with Rocket Pool yet." }),
+  reads: {
+    ...sharedReads,
+    "wallet/status": walletStatus(true),
+    "node/status": nodeStatus({
+      withdrawal: DEMO.nodeAddress,
+      eth: "8.2",
+      rpl: "0",
+      legacyRpl: "0",
+      minipools: [],
+      megapool: EMPTY_MEGAPOOL,
+      smoothingPool: false,
+      unclaimed: "0",
+      registered: false,
+    }),
+    "minipool/status": minipoolStatus([]),
+    "megapool/status": megapoolStatus(EMPTY_MEGAPOOL),
+    "node/get-rewards-info": new DemoSnError(500, NOT_REGISTERED),
+    "node/get-smoothing-pool-registration-status": new DemoSnError(500, NOT_REGISTERED),
+    "node/can-register": { status: "success", error: "", canRegister: true, alreadyRegistered: false, registrationDisabled: false, gasLimits: { estimated: 290_000, safe: 435_000 } },
+  },
+  logLines: ["2026/09/23 09:40:00 The node is not registered with Rocket Pool yet."],
+};
+
+const newNode: MockScenario = {
+  name: "new-node",
+  title: "Registered, no validators yet",
+  avado: { ...baseAvado, backups: [] },
+  reconcile: reconcileView({ state: "ok", client: NIMBUS, keys: [], message: "No Rocket Pool validators yet." }),
+  reads: {
+    ...sharedReads,
+    "wallet/status": walletStatus(true),
+    "node/status": nodeStatus({
+      withdrawal: DEMO.nodeAddress,
+      pendingWithdrawal: DEMO.coldWallet,
+      eth: "8.35",
+      rpl: "0",
+      legacyRpl: "0",
+      minipools: [],
+      megapool: EMPTY_MEGAPOOL,
+      smoothingPool: false,
+      unclaimed: "0",
+    }),
+    "minipool/status": minipoolStatus([]),
+    "megapool/status": megapoolStatus(EMPTY_MEGAPOOL),
+    "node/get-rewards-info": rewardsInfo({ minipools: 0, megapool: 0, stake: "0", unclaimed: [] }),
+    "node/get-smoothing-pool-registration-status": spStatus(false),
+    "node/can-deposit": canDeposit("8.35", true),
+  },
+  logLines: NORMAL_LOG,
+};
+
+/** Teku too old for safe key loading (backend TEKU_SAFE_IMPORT_VERSION 0.0.76). */
+const OLD_TEKU_REASON = "Teku 0.0.75 is too old to load keys into safely. Update Teku before loading keys.";
+
+function keysAttentionReconcile(): ReconcileView {
+  const view = reconcileView({
+    state: "error",
+    client: TEKU,
+    keys: [
+      demoKey(DEMO.pubkeyA, "minipool", DEMO.minipoolA, "loaded", "fee-distributor", DEMO.feeDistributor, "ok", [TEKU.package]),
+      demoKey(DEMO.pubkeyB, "minipool", DEMO.minipoolB, "loaded-twice", "fee-distributor", DEMO.feeDistributor, "ok", [NIMBUS.package, TEKU.package]),
+      demoKey(DEMO.megaPubkey1, "megapool", "0", "awaiting-approval", "megapool", DEMO.megapool),
+      demoKey(DEMO.megaPubkey2, "megapool", "1", "awaiting-approval", "megapool", DEMO.megapool),
+      demoKey(DEMO.megaPubkey3, "megapool", "2", "settling", "megapool", DEMO.megapool),
+      demoKey(DEMO.megaPubkey4, "megapool", "3", "client-update-needed", "megapool", DEMO.megapool),
+    ],
+    message: `Validator 0x${DEMO.pubkeyB} is loaded in both Nimbus and Teku — this can get it slashed. Remove it from one of them now.`,
+    importBlockedReasons: [OLD_TEKU_REASON],
+  });
+  const status = view.status as { clients: Array<{ package: string; version: string }> };
+  for (const c of status.clients) if (c.package === TEKU.package) c.version = "0.0.75";
+  return view;
+}
+
+const KEYS_MEGAPOOL: MegapoolDetails = {
+  ...MEGAPOOL,
+  validatorCount: 4,
+  activeValidatorCount: 4,
+  nodeBond: eth("16"),
+  nodeQueuedBond: 0,
+  validators: [
+    megaValidator(0, DEMO.megaPubkey1, "active"),
+    megaValidator(1, DEMO.megaPubkey2, "active"),
+    megaValidator(2, DEMO.megaPubkey3, "active"),
+    megaValidator(3, DEMO.megaPubkey4, "active"),
+  ],
+};
+
+const keysAttentionNode: MockScenario = {
+  name: "keys-attention",
+  title: "Validator keys need attention",
+  avado: baseAvado,
+  reconcile: keysAttentionReconcile(),
+  reads: {
+    ...sharedReads,
+    "wallet/status": walletStatus(true),
+    "node/status": nodeStatus({
+      withdrawal: DEMO.coldWallet,
+      eth: "0.35",
+      rpl: "0",
+      legacyRpl: "900",
+      minipools: [MINIPOOL_A, MINIPOOL_B],
+      megapool: KEYS_MEGAPOOL,
+      smoothingPool: true,
+      unclaimed: "0.05",
+    }),
+    "minipool/status": minipoolStatus([MINIPOOL_A, MINIPOOL_B]),
+    "megapool/status": megapoolStatus(KEYS_MEGAPOOL),
+    "node/get-rewards-info": rewardsInfo({ minipools: 2, megapool: 4, stake: "900", unclaimed: [] }),
+    "node/get-smoothing-pool-registration-status": spStatus(true),
+  },
+  logLines: NORMAL_LOG,
 };
 
 const daemonFailed: MockScenario = {
@@ -639,6 +807,9 @@ export const SCENARIOS: Record<MockScenarioName, MockScenario> = {
   minipool: minipoolNode,
   mixed: mixedNode,
   fresh: freshNode,
+  unregistered: unregisteredNode,
+  "new-node": newNode,
+  "keys-attention": keysAttentionNode,
   "daemon-failed": daemonFailed,
 };
 

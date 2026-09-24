@@ -63,7 +63,8 @@ describe("status banners", () => {
     expect(ids(findStatusProblems({ avado: with_({ passwordFilePresent: false }) }))).toEqual(["password-missing"]);
     const p = findStatusProblems({ avado: with_({ legacyMnemonicPresent: true }) });
     expect(ids(p)).toEqual(["legacy-mnemonic"]);
-    expect(p[0].action.to).toBe("/wallet");
+    // Explained and moved away on Home (typed ARCHIVE).
+    expect(p[0].action).toEqual({ label: "Review", to: "/" });
   });
 
   it("mixed node: a key waiting for the owner's approval, most serious first", () => {
@@ -219,7 +220,19 @@ describe("node banners (for Home)", () => {
   it("mixed node: withdrawal address is the hot wallet, and little ETH for gas", () => {
     const p = findNodeProblems(node({}, "mixed"));
     expect(ids(p)).toEqual(["withdrawal-is-hot-wallet", "low-gas-balance"]);
+    expect(p[0]).toMatchObject({ title: "Your withdrawal address is still the node wallet", action: { to: "/setup/withdrawal" } });
     expect(p[1].body).toContain("0.0061 ETH");
+    expect(p[1].action).toEqual({ label: "Add ETH", to: "/setup/fund" });
+  });
+
+  it("a new withdrawal address waiting for its confirmation says how to confirm it", () => {
+    const p = findNodeProblems(node({ pendingPrimaryWithdrawalAddress: DEMO.coldWallet }, "mixed"));
+    expect(p[0]).toMatchObject({
+      id: "withdrawal-is-hot-wallet",
+      title: "Confirm your new withdrawal address",
+      action: { label: "How to confirm", to: "/setup/withdrawal" },
+    });
+    expect(p[0].body).toContain(`${DEMO.coldWallet.slice(0, 6)}…`);
   });
 
   it("none for the healthy minipool node, an unregistered node, or nothing loaded", () => {

@@ -8,6 +8,7 @@ import type { RocketpoolApi } from "./api/types";
 import HomePage from "./pages/HomePage";
 import NotFound from "./pages/NotFound";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import SetupPage from "./pages/setup/SetupPage";
 import { RocketpoolShell } from "./RocketpoolShell";
 import { PendingTxProvider } from "./tx/pending";
 
@@ -29,10 +30,8 @@ export function AppRoutes() {
     <Routes>
       <Route element={<RocketpoolShell />}>
         <Route index element={<HomePage />} />
-        <Route
-          path="setup"
-          element={<PlaceholderPage title="Set up your node" text="Create or restore your node wallet, register, and start validating." />}
-        />
+        <Route path="setup" element={<SetupPage />} />
+        <Route path="setup/:step" element={<SetupPage />} />
         <Route
           path="validators"
           element={<PlaceholderPage title="Validators" text="Your minipools and megapool validators, with exits and distributions." />}

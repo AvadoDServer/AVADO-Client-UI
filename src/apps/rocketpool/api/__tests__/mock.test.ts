@@ -27,8 +27,8 @@ async function rejection(p: Promise<unknown>): Promise<RpApiError> {
 }
 
 describe("demo fixtures", () => {
-  it("has the four nodes", () => {
-    expect([...MOCK_SCENARIOS]).toEqual(["minipool", "mixed", "fresh", "daemon-failed"]);
+  it("has the demo nodes", () => {
+    expect([...MOCK_SCENARIOS]).toEqual(["minipool", "mixed", "fresh", "unregistered", "new-node", "keys-attention", "daemon-failed"]);
     for (const name of MOCK_SCENARIOS) expect(SCENARIOS[name].name).toBe(name);
   });
 
@@ -138,7 +138,51 @@ describe("mock backend", () => {
     expect(backup.wallet).toMatch(/not a real wallet/);
 
     const fresh = createMockRocketpoolApi({ scenario: "fresh" });
-    await expect(fresh.snPost("wallet/set-password", { password: "x" })).resolves.toMatchObject({ status: "success" });
+    expect((await rejection(fresh.snPost("wallet/set-password", { password: "short" }))).detail).toMatch(/at least 12 characters/);
+    await expect(fresh.snPost("wallet/set-password", { password: "x".repeat(64) })).resolves.toMatchObject({ status: "success" });
+    // Only once, like the backend.
+    expect((await rejection(fresh.snPost("wallet/set-password", { password: "y".repeat(64) }))).status).toBe(409);
+  });
+
+  it("creates a wallet like Smartnode: init shows a new phrase and saves nothing; recover saves it", async () => {
+    const api = createMockRocketpoolApi({ scenario: "fresh" });
+    expect((await rejection(api.snPost("wallet/init"))).detail).toMatch(/password has not been set/);
+    await api.snPost("wallet/set-password", { password: "p".repeat(64) });
+    expect(await api.avadoStatus()).toMatchObject({ walletFilePresent: false, passwordFilePresent: true });
+    expect((await getWalletStatus(api)).passwordSet).toBe(true);
+    const a = await api.snPost<{ status: "success"; error: string; mnemonic: string; accountAddress: string }>("wallet/init");
+    const b = await api.snPost<{ status: "success"; error: string; mnemonic: string; accountAddress: string }>("wallet/init");
+    expect(a.mnemonic.split(" ")).toHaveLength(24);
+    expect(b.mnemonic).not.toBe(a.mnemonic);
+    expect(a.accountAddress).toBe(DEMO.nodeAddress);
+    expect((await api.avadoStatus()).walletFilePresent).toBe(false);
+    await api.snPost("wallet/recover", { mnemonic: b.mnemonic, skipValidatorKeyRecovery: "true" });
+    expect(api.scenario.name).toBe("unregistered");
+    expect(await api.avadoStatus()).toMatchObject({ walletFilePresent: true, passwordFilePresent: true });
+    expect((await getNodeStatus(api)).registered).toBe(false);
+    expect((await rejection(api.snPost("wallet/recover", { mnemonic: b.mnemonic }))).status).toBe(409);
+  });
+
+  it("registering the unregistered demo node makes it a new registered node", async () => {
+    const api = createMockRocketpoolApi({ scenario: "unregistered" });
+    await api.snPost("node/register", { timezoneLocation: "Europe/Ljubljana" });
+    expect(api.scenario.name).toBe("new-node");
+    expect((await getNodeStatus(api)).registered).toBe(true);
+  });
+
+  it("answers the bond requirement per validator count", async () => {
+    const api = createMockRocketpoolApi({ scenario: "new-node" });
+    const r = await api.snGet<{ status: "success"; error: string; bondRequirement: string }>("node/get-bond-requirement", { numValidators: 3 });
+    expect(String(r.bondRequirement)).toBe("12000000000000000000");
+  });
+
+  it("archives the legacy recovery-phrase file only with ARCHIVE, once", async () => {
+    const api = createMockRocketpoolApi({ scenario: "mixed" });
+    expect((await rejection(api.archiveLegacyMnemonic("archive"))).status).toBe(400);
+    expect((await api.avadoStatus()).legacyMnemonicPresent).toBe(true);
+    await expect(api.archiveLegacyMnemonic("ARCHIVE")).resolves.toMatchObject({ archived: true, name: expect.stringMatching(/^mnemonic-archive-/) });
+    expect((await api.avadoStatus()).legacyMnemonicPresent).toBe(false);
+    expect((await rejection(api.archiveLegacyMnemonic("ARCHIVE"))).status).toBe(404);
   });
 
   it("never hands out the fixture objects themselves", async () => {

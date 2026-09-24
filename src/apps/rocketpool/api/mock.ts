@@ -9,17 +9,32 @@
  *    with a gas estimate.
  *  - Any write that isn't a wallet route answers with a fresh demo tx hash;
  *    `wait` then succeeds after `waitMs`, or fails with `txOutcome: "revert"`.
- *  - Nothing changes state after a transaction: the fixtures read the same.
- *    The one exception is approving keys: they then read as loaded.
+ *  - Transactions don't change the fixtures, with one exception for the
+ *    setup demo: registering the `unregistered` node turns it into `new-node`.
+ *  - Setting up a wallet works like the backend and Smartnode: set-password
+ *    once, `wallet/init` returns a demo recovery phrase without saving it,
+ *    `wallet/recover` saves it; the `fresh` node then reads as `unregistered`.
+ *  - Approved keys read as loaded; an archived legacy recovery-phrase file is gone.
+ *  - `node/get-bond-requirement?numValidators=N` answers N × 4 ETH.
  */
 import { RpApiError } from "./errors";
-import { DemoSnError, SCENARIOS, demoHex, isScenarioName, type MockScenario, type MockScenarioName } from "./fixtures";
-import { APPROVE_CONFIRMATION, type ApproveKeysResult, type AvadoStatus, type LogsView, type ReconcileView, type SnEnvelope } from "./models";
+import { DEMO, DemoSnError, SCENARIOS, demoHex, isScenarioName, type MockScenario, type MockScenarioName } from "./fixtures";
+import {
+  APPROVE_CONFIRMATION,
+  ARCHIVE_CONFIRMATION,
+  type ApproveKeysResult,
+  type AvadoStatus,
+  type LegacyMnemonicArchiveResult,
+  type LogsView,
+  type ReconcileView,
+  type SnEnvelope,
+} from "./models";
 import { normalizePubkey } from "./reconcile";
 import { canFlag } from "./sn";
 
 export { canFlag };
 import {
+  AVADO_LEGACY_MNEMONIC_ARCHIVE_PATH,
   AVADO_LOGS_PATH,
   AVADO_RECONCILE_APPROVE_PATH,
   AVADO_RECONCILE_PATH,
@@ -66,6 +81,12 @@ export const WALLET_EXISTS_MESSAGE =
 const EXPORT_REFUSED = 'Type EXPORT to confirm the wallet export (typedConfirmation must be "EXPORT").';
 const DAEMON_DOWN = "The Rocket Pool daemon is not reachable (it may still be starting).";
 const TX_FAILED = "Transaction failed with status 0";
+const ARCHIVE_REFUSED = "Type ARCHIVE to confirm moving the legacy recovery phrase into the backups folder.";
+const NO_LEGACY_MNEMONIC = "No legacy recovery phrase file was found; there is nothing to archive.";
+const PASSWORD_SET = "A wallet password is already set.";
+const NO_PASSWORD = "The node password has not been set. Please run 'rocketpool wallet set-password' and try again.";
+/** Smartnode's minimum password length (`passwords.MinPasswordLength`). */
+const MIN_PASSWORD_LENGTH = 12;
 const APPROVE_REFUSED =
   'Type LOAD to confirm that these validators are not running anywhere else (confirm must be "LOAD").';
 
@@ -99,6 +120,9 @@ function withApproved(view: ReconcileView, approved: ReadonlySet<string>): Recon
       state: done ? "ok" : s.state,
       message: `Validator keys in sync with ${clientName}: ${inSync}/${keys.total}.`,
       trigger: "request",
+      // The run the approval asked for has finished since.
+      startedAt: "2026-09-23T10:00:58Z",
+      finishedAt: "2026-09-23T10:01:00Z",
       awaitingApproval: stillWaiting,
       keys: { ...keys, inSync, imported: loaded.length, summary: `${inSync}/${keys.total}` },
       validators,
@@ -132,6 +156,22 @@ export function txHashField(route: string): string {
 
 export const DEMO_GAS_LIMITS = { estimated: 145_000, safe: 217_500 } as const;
 
+/** Demo bond per megapool validator (the answer of `node/get-bond-requirement` is N × this). */
+export const DEMO_BOND_PER_VALIDATOR_WEI = 4n * 10n ** 18n;
+
+/** Words for demo recovery phrases: real BIP-39 words, but the phrases are not real wallets. */
+const DEMO_WORDS = [
+  "abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract", "absurd", "abuse", "access", "accident",
+  "account", "accuse", "achieve", "acid", "acoustic", "acquire", "across", "act", "action", "actor", "actress", "actual",
+  "adapt", "add", "addict", "address", "adjust", "admit", "adult", "advance", "advice", "aerobic", "affair", "afford",
+];
+
+/** A 24-word demo recovery phrase, different for every `seed`. */
+export function demoMnemonic(seed: number): string {
+  const hex = demoHex(700 + seed, 24);
+  return Array.from({ length: 24 }, (_, i) => DEMO_WORDS[parseInt(hex.slice(i * 2, i * 2 + 2), 16) % DEMO_WORDS.length]).join(" ");
+}
+
 /** The scenario for `VITE_MOCK=1`: `?scenario=` in the page address, else VITE_MOCK_SCENARIO, else "mixed". */
 export function scenarioFromEnvironment(): MockScenarioName {
   let fromUrl: string | null = null;
@@ -148,9 +188,14 @@ export function scenarioFromEnvironment(): MockScenarioName {
 export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): MockRocketpoolApi {
   const { latencyMs = 0, backendDown = false, txOutcome = "success", failures = {}, reads = {} } = options;
   const waitMs = options.waitMs ?? latencyMs * 4;
-  const scenario = SCENARIOS[options.scenario ?? "mixed"];
+  const initial = SCENARIOS[options.scenario ?? "mixed"];
+  /** The demo node now: it moves on when a wallet is created or the node registers. */
+  let scenario = initial;
   const calls: MockCall[] = [];
   let txCount = 0;
+  let initCount = 0;
+  let passwordSet = initial.avado.passwordFilePresent;
+  let legacyArchived = false;
   /** Keys the owner approved in this mock: the next status shows them loaded. */
   const approved = new Set<string>();
 
@@ -183,11 +228,16 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
 
   return {
     calls,
-    scenario,
+    get scenario() {
+      return scenario;
+    },
 
     async avadoStatus() {
       await enter("GET", AVADO_STATUS_PATH);
-      return clone(scenario.avado) as AvadoStatus;
+      const avado = clone(scenario.avado) as AvadoStatus;
+      if (legacyArchived) avado.legacyMnemonicPresent = false;
+      if (!avado.walletFilePresent) avado.passwordFilePresent = passwordSet;
+      return avado;
     },
 
     async reconcile() {
@@ -214,6 +264,15 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
       return { status: "success", error: "", approved: unique.length, added, runRequested: true } as ApproveKeysResult;
     },
 
+    async archiveLegacyMnemonic(confirm: string) {
+      const path = AVADO_LEGACY_MNEMONIC_ARCHIVE_PATH;
+      await enter("POST", path, { confirm });
+      if (confirm !== ARCHIVE_CONFIRMATION) fail(path, new DemoSnError(400, ARCHIVE_REFUSED));
+      if (legacyArchived || !scenario.avado.legacyMnemonicPresent) fail(path, new DemoSnError(404, NO_LEGACY_MNEMONIC));
+      legacyArchived = true;
+      return { status: "success", error: "", archived: true, name: "mnemonic-archive-20260924T101500Z" } as LegacyMnemonicArchiveResult;
+    },
+
     async logs(tail = 200) {
       await enter("GET", `${AVADO_LOGS_PATH}?tail=${tail}`);
       return { available: true, lines: scenario.logLines.slice(-tail) } as LogsView;
@@ -231,7 +290,16 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
         return { status: "success", error: "" } as T;
       }
       if (route in reads) return answer<T>(path, reads[route]);
+      if (route === "wallet/status" && !scenario.avado.walletFilePresent) {
+        return { ...answer<T & { passwordSet: boolean }>(path, scenario.reads[route]), passwordSet } as T;
+      }
       if (route in scenario.reads) return answer<T>(path, scenario.reads[route]);
+      if (route === "node/get-bond-requirement") {
+        const n = Number(params.numValidators);
+        if (!Number.isInteger(n) || n < 0) fail(path, new DemoSnError(500, "invalid numValidators"));
+        const wei = DEMO_BOND_PER_VALIDATOR_WEI * BigInt(n);
+        return { status: "success", error: "", bondRequirement: wei <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(wei) : wei.toString() } as unknown as T;
+      }
       const flag = canFlag(route);
       if (flag) return { status: "success", error: "", [flag]: true, gasLimits: { ...DEMO_GAS_LIMITS } } as unknown as T;
       throw new RpApiError({ kind: "http", path, status: 404, detail: "Not in the demo data." });
@@ -247,8 +315,8 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
       if (["wallet/init", "wallet/recover", "wallet/search-and-recover"].includes(route) && walletExists) {
         fail(path, new DemoSnError(409, WALLET_EXISTS_MESSAGE));
       }
-      if (route === "wallet/set-password" && scenario.avado.passwordFilePresent) {
-        fail(path, new DemoSnError(409, "A wallet password is already set."));
+      if (route === "wallet/set-password" && (scenario.avado.passwordFilePresent || passwordSet)) {
+        fail(path, new DemoSnError(409, PASSWORD_SET));
       }
       if (route === "wallet/export" && body.typedConfirmation !== "EXPORT") fail(path, new DemoSnError(400, EXPORT_REFUSED));
 
@@ -263,9 +331,31 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
           accountPrivateKey: "demo-key-not-real",
         } as unknown as T;
       }
+      if (route === "wallet/set-password") {
+        if (String(body.password ?? "").length < MIN_PASSWORD_LENGTH) {
+          fail(path, new DemoSnError(500, `Password must be at least ${MIN_PASSWORD_LENGTH} characters long`));
+        }
+        passwordSet = true;
+        return { status: "success", error: "" } as T;
+      }
+      if (route === "wallet/init") {
+        if (!passwordSet) fail(path, new DemoSnError(500, NO_PASSWORD));
+        initCount += 1;
+        // Like Smartnode: a new phrase every time, and nothing is saved.
+        return { status: "success", error: "", mnemonic: demoMnemonic(initCount), accountAddress: DEMO.nodeAddress } as unknown as T;
+      }
+      if (route === "wallet/recover" || route === "wallet/search-and-recover") {
+        if (!passwordSet) fail(path, new DemoSnError(500, NO_PASSWORD));
+        const words = String(body.mnemonic ?? "").trim().split(/\s+/);
+        if (![12, 15, 18, 21, 24].includes(words.length)) fail(path, new DemoSnError(500, "Invalid mnemonic"));
+        scenario = SCENARIOS.unregistered; // the wallet now exists
+        return { status: "success", error: "", accountAddress: DEMO.nodeAddress, validatorKeys: [] } as unknown as T;
+      }
       if (route.startsWith("wallet/")) return { status: "success", error: "" } as T;
 
       txCount += 1;
+      // The one transaction the setup demo follows through: registering.
+      if (route === "node/register" && scenario.name === "unregistered" && txOutcome === "success") scenario = SCENARIOS["new-node"];
       return { status: "success", error: "", [txHashField(route)]: `0x${demoHex(9000 + txCount, 32)}` } as unknown as T;
     },
   };

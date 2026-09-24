@@ -38,8 +38,12 @@ The repo builds two apps on the same design system:
 `VITE_MOCK=1 yarn dev:rocketpool` runs the Rocket Pool app on its in-memory
 adapters (`src/apps/rocketpool/api/mock.ts`) with a demo node from
 `src/apps/rocketpool/api/fixtures.ts`: add `?scenario=minipool`, `mixed`
-(the default), `fresh` (no wallet) or `daemon-failed` to the address, e.g.
-`http://localhost:5173/?scenario=fresh#/`. Its own Vite and Tailwind
+(the default), `fresh` (no wallet), `unregistered` (wallet, not registered),
+`new-node` (registered, no validators), `keys-attention` (every key-check
+state) or `daemon-failed` to the address, e.g.
+`http://localhost:5173/?scenario=fresh#/setup`. In `fresh`, creating or
+restoring a wallet leads on to `unregistered`, and registering that leads on
+to `new-node`, so the whole setup wizard can be walked through. Its own Vite and Tailwind
 configs (`vite.rocketpool.config.ts`, `tailwind.rocketpool.config.ts`) keep
 it out of the client build: `tailwind.config.ts` skips `src/apps/**`, so
 `dist/` is the same with or without it. Both apps use the shared shell
