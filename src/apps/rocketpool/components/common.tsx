@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Button, StatusDot, cn } from "../../../components/ui";
 import { addressUrl } from "../lib/explorer";
+import { daemonSettings, gweiToWei } from "../pages/advanced/automatic";
+import { useAppStatus } from "../status/AppStatus";
 
 export type NoticeTone = "danger" | "warning" | "success" | "accent" | "neutral";
 
@@ -119,22 +121,31 @@ export function Facts({ rows, testId }: { rows: Array<[ReactNode, ReactNode]>; t
 }
 
 /**
- * The owner-facing truth about the daemon's own transactions (package
- * settings: auto-tx gas threshold 20 gwei).
+ * The owner-facing truth about the daemon's own transactions. The gas
+ * threshold is the one `/api/avado/status` reports (`settings`), else the
+ * package template's (20 gwei, `pages/advanced/automatic.ts`).
  */
-export const AUTO_TX_THRESHOLD_GWEI = 20;
-
 export function AutoTxNotice({ className }: { className?: string }) {
+  const { avado } = useAppStatus();
+  const threshold = daemonSettings(avado).values.autoTxGasThreshold;
+  const off = gweiToWei(threshold) === 0n;
   return (
     <Notice tone="neutral" title="Your node also sends transactions by itself" className={className} testId="auto-tx-notice">
       <p>
         Rocket Pool does some things automatically from the node wallet: staking new validators when their turn comes in the queue,
         distributing rewards and keeping the contracts up to date. Each one pays a network fee from the node wallet.
       </p>
-      <p>
-        They wait only while the network fee is above {AUTO_TX_THRESHOLD_GWEI} gwei. Fees are almost always far lower, so in
-        practice these transactions always go through. Keep at least 0.05 ETH in the node wallet for them.
-      </p>
+      {off ? (
+        <p>
+          This package's settings turn off the optional ones (such as distributing rewards); the essential ones, such as staking new
+          validators, still go through. Keep at least 0.05 ETH in the node wallet for them.
+        </p>
+      ) : (
+        <p>
+          They wait only while the network fee is above {threshold} gwei. Fees are almost always far lower, so in practice these
+          transactions always go through. Keep at least 0.05 ETH in the node wallet for them.
+        </p>
+      )}
     </Notice>
   );
 }

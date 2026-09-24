@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { createFetchMock } from "../../../../api/__tests__/fetchMock";
@@ -37,6 +37,21 @@ const card = (name: string) => screen.getByRole("region", { name });
 const rowValue = (testId: string, label: string) => within(screen.getByTestId(testId)).getByText(label).nextElementSibling?.textContent;
 
 describe("Home", () => {
+  it("the automatic-transaction notice uses the gas limit the backend reports, else the package's 20 gwei", async () => {
+    const withSettings = (autoTxGasThreshold: string) => {
+      const api = createMockRocketpoolApi({ scenario: "minipool" });
+      const read = api.avadoStatus.bind(api);
+      api.avadoStatus = async () => ({ ...(await read()), settings: { autoTxGasThreshold } });
+      return api;
+    };
+    renderHome(withSettings("35"));
+    await waitFor(() => expect(screen.getByTestId("auto-tx-notice")).toHaveTextContent("above 35 gwei"));
+    cleanup();
+    renderHome(withSettings("0"));
+    await waitFor(() => expect(screen.getByTestId("auto-tx-notice")).toHaveTextContent("turn off the optional ones"));
+    expect(screen.getByTestId("auto-tx-notice")).not.toHaveTextContent("always go through");
+  });
+
   it("a healthy minipool node: health, balances, validators, rewards; nothing to fix", async () => {
     const api = renderHome({ scenario: "minipool" });
     await waitFor(() => expect(rowValue("balances", "ETH")).toBe("0.4128 ETH"));
