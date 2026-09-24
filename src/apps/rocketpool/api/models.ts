@@ -105,12 +105,19 @@ export interface NodeStatus extends SnEnvelope {
   totalRplStake: BigNumberish;
   rplStakeMegapool: BigNumberish;
   rplStakeLegacy: BigNumberish;
+  /** The legacy RPL stake that must stay while minipools exist (15% of borrowed ETH). */
   rplStakeThreshold?: BigNumberish;
+  /** 0.15 today. */
+  rplStakeThresholdFraction?: number;
+  /** RPL locked on the node (pDAO proposal bonds); it can't be unstaked. */
+  nodeRPLLocked?: BigNumberish;
   unstakingRPL: BigNumberish;
   /** RFC 3339. */
   lastRPLUnstakeTime: string;
   /** Nanoseconds (Go time.Duration). */
   unstakingPeriodDuration: BigNumberish;
+  /** RFC 3339: the chain's time, to compare with `lastRPLUnstakeTime`. */
+  latestBlockTime?: string;
   minipoolCounts: MinipoolCounts;
   isFeeDistributorInitialized: boolean;
   feeRecipientInfo: FeeRecipientInfo;
@@ -213,6 +220,59 @@ export interface MinipoolStatusResponse extends SnEnvelope {
   latestDelegate: string;
 }
 
+/** Beacon-chain state names (`beacon.ValidatorState`). */
+export type BeaconState =
+  | "pending_initialized"
+  | "pending_queued"
+  | "active_ongoing"
+  | "active_exiting"
+  | "active_slashed"
+  | "exited_unslashed"
+  | "exited_slashed"
+  | "withdrawal_possible"
+  | "withdrawal_done"
+  | "";
+
+/** One entry of `GET minipool/get-minipool-close-details-for-node` (`MinipoolCloseDetails`). */
+export interface MinipoolCloseDetails {
+  address: string;
+  isFinalized: boolean;
+  minipoolStatus: MinipoolStatusName;
+  minipoolVersion: number;
+  distributed: boolean;
+  canClose: boolean;
+  balance: BigNumberish;
+  refund: BigNumberish;
+  userDepositBalance: BigNumberish;
+  beaconState: BeaconState | string;
+  nodeShare: BigNumberish;
+  gasLimits: GasLimits;
+}
+
+/** `GET minipool/get-minipool-close-details-for-node`. No `details` until the fee distributor is initialised. */
+export interface MinipoolCloseDetailsResponse extends SnEnvelope {
+  expressTicketsProvisioned: boolean;
+  isFeeDistributorInitialized: boolean;
+  details: MinipoolCloseDetails[] | null;
+}
+
+/** One entry of `GET minipool/get-distribute-balance-details` (`MinipoolBalanceDistributionDetails`). */
+export interface MinipoolDistributeDetails {
+  address: string;
+  balance: BigNumberish;
+  refund: BigNumberish;
+  nodeShareOfBalance: BigNumberish;
+  minipoolVersion: number;
+  status: MinipoolStatusName;
+  isFinalized: boolean;
+  canDistribute: boolean;
+  gasLimits: GasLimits;
+}
+
+export interface MinipoolDistributeDetailsResponse extends SnEnvelope {
+  details: MinipoolDistributeDetails[] | null;
+}
+
 /* ------------------------------------------------------------------ */
 /* Megapool                                                            */
 /* ------------------------------------------------------------------ */
@@ -288,6 +348,37 @@ export interface MegapoolStatusResponse extends SnEnvelope {
   secondsPerEpoch?: number;
 }
 
+/** `GET megapool/pending-rewards`. `rewardSplit` has Go field names (no JSON tags in Smartnode). */
+export interface MegapoolPendingRewards extends SnEnvelope {
+  rewardSplit: { NodeRewards: BigNumberish; VoterRewards: BigNumberish; ProtocolDAORewards: BigNumberish; RethRewards: BigNumberish };
+  refundValue: BigNumberish;
+}
+
+/** `GET megapool/can-distribute`. */
+export interface CanDistributeMegapool extends CanResponse {
+  canDistribute: boolean;
+  megapoolNotDeployed: boolean;
+  lastDistributionTime: number;
+  lockedValidatorCount: number;
+  exitingValidatorCount: number;
+}
+
+/** `GET node/can-distribute` (the fee distributor). `nodeShare` is ETH as a float (Smartnode's own type). */
+export interface CanDistributeFeeDistributor extends CanResponse {
+  balance: BigNumberish;
+  nodeShare: number;
+}
+
+/** `GET node/get-bond-requirement?numValidators=N`: the total bond for a megapool with N validators. */
+export interface BondRequirementResponse extends SnEnvelope {
+  bondRequirement: BigNumberish;
+}
+
+/** `GET node/stake-rpl-allowance`: how much RPL the staking contract may take. */
+export interface RplAllowanceResponse extends SnEnvelope {
+  allowance: BigNumberish;
+}
+
 /** `GET node/can-deposit` (`CanNodeDepositsResponse`). */
 export interface CanDepositResponse extends CanResponse {
   canDeposit: boolean;
@@ -298,6 +389,8 @@ export interface CanDepositResponse extends CanResponse {
   invalidAmount: boolean;
   depositDisabled: boolean;
   nodeHasDebt?: boolean;
+  canUseCredit?: boolean;
+  insufficientBalanceWithoutCredit?: boolean;
   megapoolAddress?: string;
   validatorPubkeys?: string[];
 }
@@ -384,6 +477,23 @@ export interface AvadoStatus {
   passwordFilePresent: boolean;
   /** The old package's plaintext recovery-phrase file is still in the data dir. */
   legacyMnemonicPresent: boolean;
+  /**
+   * The daemon's gas settings as rendered on start (strings, as in
+   * user-settings.yml). Only from a backend that reports them; the UI falls
+   * back to the package template's values.
+   */
+  settings?: DaemonSettings;
+}
+
+export interface DaemonSettings {
+  /** gwei: automatic transactions wait until the network's max fee is below this. */
+  autoTxGasThreshold?: string;
+  /** ETH: a minipool's balance is distributed automatically above this. */
+  distributeThreshold?: string;
+  /** gwei; 0 = use the network estimate. */
+  manualMaxFee?: string;
+  /** gwei: the tip on the daemon's own transactions. */
+  priorityFee?: string;
 }
 
 /** The loop's verdict on its last pass. */
@@ -520,6 +630,16 @@ export interface ApproveKeysResult extends SnEnvelope {
   added: number;
   runRequested: boolean;
 }
+
+/** `POST /api/avado/legacy-mnemonic/archive` (needs `confirm: "ARCHIVE"`). */
+export interface ArchiveMnemonicResult extends SnEnvelope {
+  archived: boolean;
+  /** The backup folder it was moved into, e.g. "mnemonic-archive-20260923T101500Z". */
+  name: string;
+}
+
+/** The exact text the owner types to move the old recovery-phrase file into the backups. */
+export const ARCHIVE_CONFIRMATION = "ARCHIVE";
 
 /** `GET /api/avado/logs?tail=N`. */
 export interface LogsView {

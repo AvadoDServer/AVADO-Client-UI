@@ -23,6 +23,12 @@ export interface GasQuote {
   maxFeeWei: bigint;
   gasLimit: number;
   estimatedGas: number;
+  /**
+   * Gas of a second transaction Smartnode sends with this one (a close
+   * bundle's fixed-limit second step): counted in both costs, never in
+   * `gasLimit` (the field sent for the first transaction).
+   */
+  extraGas: number;
 }
 
 /** Null when there is no usable estimate (no limits, zero limits, or no base fee). */
@@ -30,21 +36,24 @@ export function quoteGas(
   limits: GasLimits | null | undefined,
   baseFee: BigNumberish | null | undefined,
   priorityFeeWei: bigint = DEFAULT_PRIORITY_FEE_WEI,
+  extraGas = 0,
 ): GasQuote | null {
   const base = toBigInt(baseFee);
   if (!limits || base === null || base < 0n) return null;
   const estimated = Number(limits.estimated);
   const safe = Math.max(Number(limits.safe), estimated);
   if (!Number.isSafeInteger(estimated) || estimated <= 0 || !Number.isSafeInteger(safe)) return null;
+  if (!Number.isSafeInteger(extraGas) || extraGas < 0) return null;
   const maxFeeWei = 2n * base + priorityFeeWei;
   return {
-    estimatedCostWei: BigInt(estimated) * (base + priorityFeeWei),
-    maxCostWei: BigInt(safe) * maxFeeWei,
+    estimatedCostWei: BigInt(estimated + extraGas) * (base + priorityFeeWei),
+    maxCostWei: BigInt(safe + extraGas) * maxFeeWei,
     baseFeeWei: base,
     priorityFeeWei,
     maxFeeWei,
     gasLimit: safe,
     estimatedGas: estimated,
+    extraGas,
   };
 }
 

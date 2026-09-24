@@ -30,7 +30,38 @@ export interface TransactionSpec<C extends CanResponse = CanResponse> {
   gasLimits?: (can: C) => GasLimits | undefined;
   /** The write answer's field with the tx hash (default `txHash`). */
   txHashField?: string;
+  /**
+   * The pending-transaction lock for this action, when the route and its
+   * parameters don't name it well (e.g. `megapool/exit-queue` names its
+   * validator id `validatorIndex`). Default: `pendingKey(route, params)`.
+   */
+  lockKey?: string;
+  /**
+   * Not a transaction: Smartnode signs a message and hands it to the beacon
+   * chain (a voluntary exit). No network fee, no gas fields, no tx hash; the
+   * action is done when the write succeeds.
+   */
+  offChain?: OffChainSpec;
+  /**
+   * Gas of a second transaction Smartnode sends with this one (the close
+   * bundle's fixed-limit second step). Shown in the fee, never sent as the limit.
+   */
+  extraGas?: { gas: number; label: string };
 }
+
+export interface OffChainSpec {
+  /** Shown while it is being handed over, e.g. "Sending the exit request to the beacon chain…". */
+  sendingText: string;
+  /** The success note's title, e.g. "Exit requested". */
+  doneTitle: string;
+  doneText: ReactNode;
+  /** How to check it if the answer got lost, e.g. "Check the validator on beaconcha.in: …". */
+  checkText: ReactNode;
+}
+
+/** The lock an action takes in the pending-transaction store. */
+export const specLockKey = (spec: Pick<TransactionSpec, "route" | "params" | "lockKey">): string =>
+  spec.lockKey ?? pendingKey(spec.route, spec.params);
 
 export interface TransactionFlowProps<C extends CanResponse = CanResponse> {
   open: boolean;
@@ -53,7 +84,10 @@ export interface TransactionFlowProps<C extends CanResponse = CanResponse> {
   /** A summary older than this is checked again before sending (ms). */
   maxQuoteAgeMs?: number;
   onClose: () => void;
-  /** The transaction was mined and succeeded (also when the dialog was closed meanwhile). */
+  /**
+   * The transaction was mined and succeeded (also when the dialog was closed
+   * meanwhile). For an off-chain action: it was accepted, and `txHash` is "".
+   */
   onDone?: (txHash: string) => void;
 }
 
@@ -64,15 +98,18 @@ export const DEFAULT_MAX_QUOTE_AGE_MS = 60_000;
 interface Checked<C> {
   route: string;
   params: SnParams;
+  lockKey: string;
   txHashField: string;
   details?: (can: C) => ReactNode;
+  offChain?: OffChainSpec;
 }
 
 type Phase<C> =
   | { k: "checking"; stale?: boolean }
   | { k: "check-error"; message: string }
   | { k: "blocked"; reason: string }
-  | { k: "ready"; can: C; quote: GasQuote; spec: Checked<C>; checkedAt: number; stale?: boolean }
+  /** `quote` is null only for an off-chain action (no fee). */
+  | { k: "ready"; can: C; quote: GasQuote | null; spec: Checked<C>; checkedAt: number; stale?: boolean }
   /** The write was refused: `certain` when the backend refused before the daemon saw it. */
   | { k: "send-failed"; message: string; certain: boolean }
   /** Showing the app's record of this action (sending, sent, unclear, lost, done, failed). */
@@ -188,7 +225,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
   const [armed, setArmed] = useState(false);
   const [typed, setTyped] = useState("");
   /** The action this dialog shows: the props' until checked, then the checked one. */
-  const [key, setKey] = useState(() => pendingKey(tx.route, tx.params));
+  const [key, setKey] = useState(() => specLockKey(tx));
   /** Bumped on every (re)start and on close: late answers of an older run are ignored. */
   const run = useRef(0);
   /** Set the moment the write is fired; cleared only by a fresh check. */
@@ -211,22 +248,34 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
       sent.current = false;
       setArmed(false);
       const spec = txRef.current;
+      const params = { ...(spec.params ?? {}) };
       const frozen: Checked<C> = {
         route: spec.route,
-        params: { ...(spec.params ?? {}) },
+        params,
+        lockKey: specLockKey({ route: spec.route, params, lockKey: spec.lockKey }),
         txHashField: spec.txHashField ?? "txHash",
         details: spec.details,
+        offChain: spec.offChain,
       };
-      const frozenKey = pendingKey(frozen.route, frozen.params);
+      const frozenKey = frozen.lockKey;
       setKey(frozenKey);
       if (pending.isBlocking(frozenKey)) return setPhase({ k: "tracked" });
       setPhase({ k: "checking", stale });
       try {
-        const [can, gas] = await Promise.all([api.snGet<C>(spec.canRoute, frozen.params), getGasPrice(api)]);
+        const [can, gas] = await Promise.all([
+          api.snGet<C>(spec.canRoute, frozen.params),
+          frozen.offChain ? Promise.resolve(null) : getGasPrice(api),
+        ]);
         if (id !== run.current) return;
         const reason = spec.blockedReason ? spec.blockedReason(can) : defaultBlockedReason(can, spec.canRoute);
         if (reason) return setPhase({ k: "blocked", reason });
-        const quote = quoteGas(spec.gasLimits ? spec.gasLimits(can) : can.gasLimits, gas.gasPrice);
+        if (frozen.offChain) return setPhase({ k: "ready", can, quote: null, spec: frozen, checkedAt: Date.now(), stale });
+        const quote = quoteGas(
+          spec.gasLimits ? spec.gasLimits(can) : can.gasLimits,
+          gas?.gasPrice,
+          undefined,
+          spec.extraGas?.gas ?? 0,
+        );
         if (!quote) {
           return setPhase({
             k: "blocked",
@@ -246,7 +295,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
   useEffect(() => {
     if (!open) return;
     setTyped("");
-    const k = pendingKey(txRef.current.route, txRef.current.params);
+    const k = specLockKey(txRef.current);
     setKey(k);
     const e = pending.get(k);
     if (e && (e.state === "done" || e.state === "failed")) pending.dismiss(k);
@@ -289,7 +338,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
       return;
     }
     const { spec, quote } = phase;
-    const k = pendingKey(spec.route, spec.params);
+    const k = spec.lockKey;
     sent.current = true; // before any await: a second click can't get past this
     // Recorded before the request, so no other dialog, page or reload can start it again.
     if (!pending.begin({ key: k, title, route: spec.route, params: spec.params, page: currentPage() })) {
@@ -302,7 +351,8 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
     setPhase({ k: "tracked" });
     let res: TxResponse;
     try {
-      res = await api.snPost<TxResponse & SnEnvelope>(spec.route, { ...spec.params, ...gasParams(quote) });
+      const body = quote ? { ...spec.params, ...gasParams(quote) } : { ...spec.params };
+      res = await api.snPost<TxResponse & SnEnvelope>(spec.route, body);
     } catch (e) {
       // Always record the outcome, even if this dialog was closed meanwhile.
       if (isOutcomeUnknown(e)) {
@@ -311,6 +361,12 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
         pending.markNotSent(k);
         if (id === run.current) setPhase({ k: "send-failed", message: plainError(e), certain: isDefinitelyNotSent(e) });
       }
+      return;
+    }
+    if (spec.offChain) {
+      // Accepted by the beacon node: there is no transaction to follow.
+      pending.markFinished(k);
+      onDoneRef.current?.("");
       return;
     }
     const hash = res[spec.txHashField];
@@ -420,7 +476,13 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
       <div className="text-sm text-fg-muted">{summary}</div>
 
       {showEntry && entry ? (
-        <EntryNote entry={entry} noteRef={noteRef} startedElsewhere={!!startedElsewhere} overdue={overdue} />
+        <EntryNote
+          entry={entry}
+          noteRef={noteRef}
+          startedElsewhere={!!startedElsewhere}
+          overdue={overdue}
+          offChain={txRef.current.offChain}
+        />
       ) : (
         <>
           {phase.k === "checking" && (
@@ -449,7 +511,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
                 </p>
               )}
               {phase.spec.details && <div className="mt-4 text-sm text-fg">{phase.spec.details(phase.can)}</div>}
-              <FeeBox quote={phase.quote} />
+              {phase.quote ? <FeeBox quote={phase.quote} extraLabel={txRef.current.extraGas?.label} /> : <NoFeeBox />}
               {requireText !== undefined && (
                 <Input
                   className="mt-4"
@@ -485,7 +547,19 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
   );
 }
 
-function FeeBox({ quote }: { quote: GasQuote }) {
+/** An off-chain action (a signed exit): nothing is paid. */
+function NoFeeBox() {
+  return (
+    <div className="mt-4 rounded-xl border border-border bg-surface p-4 text-sm" data-testid="tx-no-fee">
+      <p className="font-medium text-fg">No network fee</p>
+      <p className="mt-1 text-xs text-fg-muted">
+        This is a message signed by your node and handed to the beacon chain, not an Ethereum transaction.
+      </p>
+    </div>
+  );
+}
+
+function FeeBox({ quote, extraLabel }: { quote: GasQuote; extraLabel?: string }) {
   return (
     <div className="mt-4 rounded-xl border border-border bg-surface p-4 text-sm" data-testid="tx-fee">
       <dl>
@@ -513,10 +587,16 @@ function FeeBox({ quote }: { quote: GasQuote }) {
           <dt>Gas limit</dt>
           <dd>{quote.gasLimit.toLocaleString("en-US")}</dd>
         </div>
+        {quote.extraGas > 0 && (
+          <div className="mt-1 flex flex-wrap justify-between gap-x-4 text-xs text-fg-muted">
+            <dt>{extraLabel ?? "Second transaction"}</dt>
+            <dd>{quote.extraGas.toLocaleString("en-US")} gas</dd>
+          </div>
+        )}
       </dl>
       <p className="mt-2 text-xs text-fg-muted">
         Paid from your node wallet to the Ethereum network, not to AVADO or Rocket Pool. It never costs more than &ldquo;at
-        most&rdquo;: max fee per gas × gas limit.
+        most&rdquo;: max fee per gas × {quote.extraGas > 0 ? "all the gas above" : "gas limit"}.
       </p>
     </div>
   );
@@ -529,11 +609,13 @@ function EntryNote({
   noteRef,
   startedElsewhere,
   overdue,
+  offChain,
 }: {
   entry: PendingTx;
   noteRef: React.Ref<HTMLDivElement>;
   startedElsewhere: boolean;
   overdue: boolean;
+  offChain?: OffChainSpec;
 }) {
   const earlier = startedElsewhere && entry.state !== "done" && entry.state !== "failed" && (
     <p>This was started earlier. It can't be started again until it has finished.</p>
@@ -551,6 +633,34 @@ function EntryNote({
           shows it was dropped or went through: if it is still pending and you start the same action again, both can go
           through.
         </p>
+        {earlier}
+      </Note>
+    );
+  }
+  if (offChain && (entry.state === "sending" || entry.state === "unknown" || entry.state === "done")) {
+    if (entry.state === "sending") {
+      return (
+        <Note tone="accent" title="Sending…" noteRef={noteRef}>
+          <p className="flex items-center gap-2">
+            <Spinner size="sm" label="Sending" /> {offChain.sendingText}
+          </p>
+          {earlier}
+        </Note>
+      );
+    }
+    if (entry.state === "done") {
+      return (
+        <Note tone="success" title={offChain.doneTitle} noteRef={noteRef}>
+          {offChain.doneText}
+        </Note>
+      );
+    }
+    return (
+      <Note tone="warning" title="We don't know if it was sent" noteRef={noteRef}>
+        {entry.message && <p>{entry.message}</p>}
+        <p>Don't try again yet: it may already be on its way.</p>
+        <div>{offChain.checkText}</div>
+        <p>After {MINUTES} minutes you can stop tracking it here.</p>
         {earlier}
       </Note>
     );

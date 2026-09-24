@@ -38,7 +38,9 @@ The repo builds two apps on the same design system:
 `VITE_MOCK=1 yarn dev:rocketpool` runs the Rocket Pool app on its in-memory
 adapters (`src/apps/rocketpool/api/mock.ts`) with a demo node from
 `src/apps/rocketpool/api/fixtures.ts`: add `?scenario=minipool`, `mixed`
-(the default), `fresh` (no wallet) or `daemon-failed` to the address, e.g.
+(the default), `fresh` (no wallet), `daemon-failed` or `exits` (a minipool
+ready to close, megapool validators exiting, a debt, a refund, credit and
+unstaking RPL) to the address, e.g.
 `http://localhost:5173/?scenario=fresh#/`. Its own Vite and Tailwind
 configs (`vite.rocketpool.config.ts`, `tailwind.rocketpool.config.ts`) keep
 it out of the client build: `tailwind.config.ts` skips `src/apps/**`, so

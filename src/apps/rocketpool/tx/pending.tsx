@@ -76,12 +76,27 @@ export function lockParams(route: string): readonly string[] {
   return [];
 }
 
-/** The lock key of an action: its route, plus its target parameters if it has any. */
+/**
+ * Write routes that end in the same on-chain action share one lock:
+ * `wait-and-stake-rpl` stakes exactly like `stake-rpl`.
+ */
+export const LOCK_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  "node/wait-and-stake-rpl": "node/stake-rpl",
+});
+
+/** One spelling per target: addresses lower-case, whole numbers without leading zeros ("007" → "7"). */
+function canonicalTarget(value: string | number | boolean): string {
+  const text = String(value).trim().toLowerCase();
+  return /^\d+$/.test(text) ? BigInt(text).toString() : text;
+}
+
+/** The lock key of an action: its route (or its alias), plus its target parameters if it has any. */
 export function pendingKey(route: string, params: SnParams = {}): string {
-  const targets = lockParams(route)
+  const lockRoute = LOCK_ALIASES[route] ?? route;
+  const targets = lockParams(lockRoute)
     .filter((k) => params[k] !== undefined && String(params[k]) !== "")
-    .map((k) => [k, String(params[k]).toLowerCase()]);
-  return targets.length ? `${route}?${JSON.stringify(targets)}` : route;
+    .map((k) => [k, canonicalTarget(params[k])]);
+  return targets.length ? `${lockRoute}?${JSON.stringify(targets)}` : lockRoute;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -267,6 +282,17 @@ export class PendingTxStore {
     this.waitSeenAt.set(key, this.mono());
     this.put({ ...e, state: "sent", message: undefined, waitingSince: this.now(), updatedAt: this.now() });
     this.follow(key, { restart: true });
+  }
+
+  /**
+   * An action that is not a transaction (a signed exit message handed to the
+   * beacon chain) was accepted: it is done at once. Kept in memory only,
+   * like any finished entry, until the owner has seen it.
+   */
+  markFinished(key: string): void {
+    const e = this.entries.get(key);
+    if (!e || e.state !== "sending") return;
+    this.put({ ...e, state: "done", message: undefined, updatedAt: this.now() });
   }
 
   /** The write was refused: nothing to track. */

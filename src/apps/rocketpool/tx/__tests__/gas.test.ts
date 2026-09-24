@@ -27,4 +27,14 @@ describe("gas quote", () => {
     expect(quoteGas({ estimated: 21_000, safe: 30_000 }, "garbage")).toBeNull();
     expect(quoteGas({ estimated: 21_000, safe: 30_000 }, -1)).toBeNull();
   });
+
+  it("counts a bundle's second transaction in both costs but never in the gas limit that is sent", () => {
+    const q = quoteGas({ estimated: 145_000, safe: 217_500 }, 850_000_000, DEFAULT_PRIORITY_FEE_WEI, 600_000)!;
+    expect(q.estimatedCostWei).toBe(745_000n * 1_850_000_000n);
+    expect(q.maxCostWei).toBe(817_500n * 2_700_000_000n);
+    expect(q.extraGas).toBe(600_000);
+    expect(gasParams(q).gasLimit).toBe("217500");
+    expect(quoteGas({ estimated: 1, safe: 1 }, 1, DEFAULT_PRIORITY_FEE_WEI, -1)).toBeNull();
+    expect(quoteGas({ estimated: 145_000, safe: 217_500 }, 1)!.extraGas).toBe(0);
+  });
 });

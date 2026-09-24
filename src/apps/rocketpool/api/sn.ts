@@ -4,7 +4,14 @@
  */
 import { isTxHash } from "../lib/explorer";
 import type {
+  BondRequirementResponse,
+  CanDistributeFeeDistributor,
+  CanDistributeMegapool,
   GasPriceResponse,
+  MegapoolPendingRewards,
+  MinipoolCloseDetailsResponse,
+  MinipoolDistributeDetailsResponse,
+  RplAllowanceResponse,
   MegapoolStatusResponse,
   MinipoolStatusResponse,
   NodeStatus,
@@ -27,6 +34,18 @@ export const getMegapoolStatus = (api: RocketpoolApi) => api.snGet<MegapoolStatu
 export const getRewardsInfo = (api: RocketpoolApi) => api.snGet<RewardsInfo>("node/get-rewards-info");
 export const getSmoothingPoolStatus = (api: RocketpoolApi) =>
   api.snGet<SmoothingPoolStatus>("node/get-smoothing-pool-registration-status");
+export const getMinipoolCloseDetails = (api: RocketpoolApi) =>
+  api.snGet<MinipoolCloseDetailsResponse>("minipool/get-minipool-close-details-for-node");
+export const getMinipoolDistributeDetails = (api: RocketpoolApi) =>
+  api.snGet<MinipoolDistributeDetailsResponse>("minipool/get-distribute-balance-details");
+export const getMegapoolPendingRewards = (api: RocketpoolApi) => api.snGet<MegapoolPendingRewards>("megapool/pending-rewards");
+export const getMegapoolCanDistribute = (api: RocketpoolApi) => api.snGet<CanDistributeMegapool>("megapool/can-distribute");
+export const getFeeDistributorCanDistribute = (api: RocketpoolApi) => api.snGet<CanDistributeFeeDistributor>("node/can-distribute");
+/** The total bond a megapool needs with `numValidators` validators. */
+export const getBondRequirement = (api: RocketpoolApi, numValidators: number) =>
+  api.snGet<BondRequirementResponse>("node/get-bond-requirement", { numValidators });
+export const getRplAllowance = (api: RocketpoolApi) => api.snGet<RplAllowanceResponse>("node/stake-rpl-allowance");
+
 /** The latest block's base fee (wei). */
 export const getGasPrice = (api: RocketpoolApi) => api.snGet<GasPriceResponse>("service/get-gas-price-from-latest-block");
 

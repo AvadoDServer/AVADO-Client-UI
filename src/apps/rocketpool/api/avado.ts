@@ -3,13 +3,26 @@
  * never crashes the shell. Anything missing gets the cautious value (not
  * running, not reachable, not present).
  */
-import type { AvadoStatus, BackupInfo } from "./models";
+import type { AvadoStatus, BackupInfo, DaemonSettings } from "./models";
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : null);
 const bool = (v: unknown): boolean => v === true;
 const strings = (v: unknown, max = 50): string[] =>
   (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string" && s.trim() !== "") : []).slice(0, max);
+
+const SETTING_KEYS = ["autoTxGasThreshold", "distributeThreshold", "manualMaxFee", "priorityFee"] as const;
+
+/** Plain decimal settings only ("20", "0.01"); anything else is left out. */
+function parseSettings(v: unknown): DaemonSettings | undefined {
+  if (!isObject(v)) return undefined;
+  const out: DaemonSettings = {};
+  for (const k of SETTING_KEYS) {
+    const raw = typeof v[k] === "number" ? String(v[k]) : v[k];
+    if (typeof raw === "string" && /^\d+(\.\d+)?$/.test(raw.trim())) out[k] = raw.trim();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 
 /** The status, or null when the answer is not a status at all. */
 export function parseAvadoStatus(raw: unknown): AvadoStatus | null {
@@ -39,5 +52,6 @@ export function parseAvadoStatus(raw: unknown): AvadoStatus | null {
     walletFilePresent: raw.walletFilePresent !== false,
     passwordFilePresent: raw.passwordFilePresent !== false,
     legacyMnemonicPresent: bool(raw.legacyMnemonicPresent),
+    ...(parseSettings(raw.settings) ? { settings: parseSettings(raw.settings) } : {}),
   };
 }

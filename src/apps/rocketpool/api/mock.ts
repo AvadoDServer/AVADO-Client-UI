@@ -13,13 +13,23 @@
  *    The one exception is approving keys: they then read as loaded.
  */
 import { RpApiError } from "./errors";
-import { DemoSnError, SCENARIOS, demoHex, isScenarioName, type MockScenario, type MockScenarioName } from "./fixtures";
-import { APPROVE_CONFIRMATION, type ApproveKeysResult, type AvadoStatus, type LogsView, type ReconcileView, type SnEnvelope } from "./models";
+import { DemoSnError, SCENARIOS, demoBondRequirement, demoHex, isScenarioName, type MockScenario, type MockScenarioName } from "./fixtures";
+import {
+  APPROVE_CONFIRMATION,
+  ARCHIVE_CONFIRMATION,
+  type ApproveKeysResult,
+  type ArchiveMnemonicResult,
+  type AvadoStatus,
+  type LogsView,
+  type ReconcileView,
+  type SnEnvelope,
+} from "./models";
 import { normalizePubkey } from "./reconcile";
 import { canFlag } from "./sn";
 
 export { canFlag };
 import {
+  AVADO_ARCHIVE_MNEMONIC_PATH,
   AVADO_LOGS_PATH,
   AVADO_RECONCILE_APPROVE_PATH,
   AVADO_RECONCILE_PATH,
@@ -130,6 +140,9 @@ export function txHashField(route: string): string {
   return "txHash";
 }
 
+/** Write routes that sign a beacon-chain message instead of sending a transaction (Smartnode answers without a hash). */
+export const OFF_CHAIN_ROUTES: ReadonlySet<string> = new Set(["minipool/exit", "megapool/exit-validator"]);
+
 export const DEMO_GAS_LIMITS = { estimated: 145_000, safe: 217_500 } as const;
 
 /** The scenario for `VITE_MOCK=1`: `?scenario=` in the page address, else VITE_MOCK_SCENARIO, else "mixed". */
@@ -153,6 +166,8 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
   let txCount = 0;
   /** Keys the owner approved in this mock: the next status shows them loaded. */
   const approved = new Set<string>();
+  /** The legacy recovery-phrase file was moved into this backup (then the status no longer reports it). */
+  let mnemonicArchive: string | null = null;
 
   const delay = async (ms = latencyMs, signal?: AbortSignal, path?: string) => {
     if (ms > 0 || signal?.aborted) await sleep(ms, signal, path);
@@ -187,7 +202,12 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
 
     async avadoStatus() {
       await enter("GET", AVADO_STATUS_PATH);
-      return clone(scenario.avado) as AvadoStatus;
+      const status = clone(scenario.avado) as AvadoStatus;
+      if (mnemonicArchive) {
+        status.legacyMnemonicPresent = false;
+        status.backups = [{ name: mnemonicArchive, createdAt: "2026-09-23T10:15:00Z", kind: "upgrade" }, ...status.backups];
+      }
+      return status;
     },
 
     async reconcile() {
@@ -214,6 +234,15 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
       return { status: "success", error: "", approved: unique.length, added, runRequested: true } as ApproveKeysResult;
     },
 
+    async archiveLegacyMnemonic(confirm: string) {
+      const path = AVADO_ARCHIVE_MNEMONIC_PATH;
+      await enter("POST", path, { confirm });
+      if (confirm !== ARCHIVE_CONFIRMATION) fail(path, new DemoSnError(400, 'Type ARCHIVE to confirm (confirm must be "ARCHIVE").'));
+      if (!scenario.avado.legacyMnemonicPresent || mnemonicArchive) fail(path, new DemoSnError(404, "There is no legacy mnemonic file."));
+      mnemonicArchive = "mnemonic-archive-20260923T101500Z";
+      return { status: "success", error: "", archived: true, name: mnemonicArchive } as ArchiveMnemonicResult;
+    },
+
     async logs(tail = 200) {
       await enter("GET", `${AVADO_LOGS_PATH}?tail=${tail}`);
       return { available: true, lines: scenario.logLines.slice(-tail) } as LogsView;
@@ -232,6 +261,9 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
       }
       if (route in reads) return answer<T>(path, reads[route]);
       if (route in scenario.reads) return answer<T>(path, scenario.reads[route]);
+      if (route === "node/get-bond-requirement" && !scenario.daemonDown) {
+        return { status: "success", error: "", bondRequirement: demoBondRequirement(Number(params.numValidators) || 0) } as unknown as T;
+      }
       const flag = canFlag(route);
       if (flag) return { status: "success", error: "", [flag]: true, gasLimits: { ...DEMO_GAS_LIMITS } } as unknown as T;
       throw new RpApiError({ kind: "http", path, status: 404, detail: "Not in the demo data." });
@@ -264,6 +296,8 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
         } as unknown as T;
       }
       if (route.startsWith("wallet/")) return { status: "success", error: "" } as T;
+      // Voluntary exits are signed messages to the beacon chain: no transaction, no hash.
+      if (OFF_CHAIN_ROUTES.has(route)) return { status: "success", error: "" } as T;
 
       txCount += 1;
       return { status: "success", error: "", [txHashField(route)]: `0x${demoHex(9000 + txCount, 32)}` } as unknown as T;
