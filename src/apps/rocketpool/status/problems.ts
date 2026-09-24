@@ -8,7 +8,7 @@ import type { Problem, ProblemTone } from "../../../components/shell/problems";
 import type { AvadoStatus, NodeStatus, ReconcileKeyState, ReconcileStatus, ReconcileView } from "../api/models";
 import { reconcileStatusOf } from "../api/reconcile";
 import { txUrl } from "../lib/explorer";
-import { formatEth, isZeroAddress, sameAddress, toBigInt } from "../lib/units";
+import { formatEth, isZeroAddress, sameAddress, shortAddress, toBigInt } from "../lib/units";
 import type { PendingTx } from "../tx/pending";
 
 export const RP_PACKAGE = "rocketpool.avado.dnp.dappnode.eth";
@@ -147,8 +147,8 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
       id: "legacy-mnemonic",
       tone: "warning",
       title: "Your recovery phrase is stored in a plain file",
-      body: "The previous version of this package kept your recovery phrase unprotected on the AVADO. Make sure you have your own safe copy, then remove the file from the Wallet page.",
-      action: { label: "Open Wallet", to: "/wallet" },
+      body: "The previous version of this package kept your recovery phrase unprotected on the AVADO. Make sure you have your own safe copy, then move the file into the backups folder from Home.",
+      action: { label: "Review", to: LEGACY_MNEMONIC_ROUTE },
     });
   }
 
@@ -165,6 +165,13 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
 
 /** Where the owner approves loading keys (the approval screen lives on Home). */
 export const KEY_APPROVAL_ROUTE = "/";
+/** Where the old plaintext recovery-phrase file is explained and moved away (Home). */
+export const LEGACY_MNEMONIC_ROUTE = "/";
+/** The setup wizard's steps that fix node problems. */
+export const SETUP_WITHDRAWAL_ROUTE = "/setup/withdrawal";
+export const SETUP_FUND_ROUTE = "/setup/fund";
+/** Rocket Pool's site, where a new withdrawal address confirms itself from its own wallet. */
+export const CONFIRM_WITHDRAWAL_URL = "https://node.rocketpool.net/primary-withdrawal-address";
 
 /** Key states that mean "should run in the client but doesn't", other than waiting for approval or settling. */
 const NOT_RUNNING: ReadonlySet<ReconcileKeyState> = new Set([
@@ -330,13 +337,24 @@ export function findNodeProblems(node: NodeStatus | null | undefined): RpProblem
   if (!node || !node.registered) return [];
   const out: RpProblem[] = [];
   if (!isZeroAddress(node.primaryWithdrawalAddress) && sameAddress(node.primaryWithdrawalAddress, node.accountAddress)) {
-    out.push({
-      id: "withdrawal-is-hot-wallet",
-      tone: "warning",
-      title: "Your withdrawal address is still the node wallet",
-      body: "Your staked ETH and rewards go to the withdrawal address. Set it to a wallet you control outside this AVADO (a hardware wallet is best), so they stay safe even if the AVADO is lost.",
-      action: { label: "Set withdrawal address", to: "/wallet" },
-    });
+    const pending = isZeroAddress(node.pendingPrimaryWithdrawalAddress) ? null : node.pendingPrimaryWithdrawalAddress;
+    out.push(
+      pending
+        ? {
+            id: "withdrawal-is-hot-wallet",
+            tone: "warning",
+            title: "Confirm your new withdrawal address",
+            body: `${shortAddress(pending)} still has to confirm that it is your withdrawal address: open the Rocket Pool website with that wallet and confirm. Until then, your staked ETH and rewards still go to the node wallet.`,
+            action: { label: "How to confirm", to: SETUP_WITHDRAWAL_ROUTE },
+          }
+        : {
+            id: "withdrawal-is-hot-wallet",
+            tone: "warning",
+            title: "Your withdrawal address is still the node wallet",
+            body: "Your staked ETH and rewards go to the withdrawal address. Set it to a wallet you control outside this AVADO (a hardware wallet is best), so they stay safe even if the AVADO is lost.",
+            action: { label: "Set withdrawal address", to: SETUP_WITHDRAWAL_ROUTE },
+          },
+    );
   }
   const balance = toBigInt(node.accountBalances?.eth);
   if (balance !== null && balance < LOW_GAS_WEI) {
@@ -345,7 +363,7 @@ export function findNodeProblems(node: NodeStatus | null | undefined): RpProblem
       tone: "warning",
       title: "Little ETH left for network fees",
       body: `The node wallet has ${formatEth(balance)}. Rocket Pool needs some ETH there to pay network fees for claims and automatic actions. Send at least 0.05 ETH to it.`,
-      action: { label: "Open Wallet", to: "/wallet" },
+      action: { label: "Add ETH", to: SETUP_FUND_ROUTE },
     });
   }
   return out.sort(bySeverity);

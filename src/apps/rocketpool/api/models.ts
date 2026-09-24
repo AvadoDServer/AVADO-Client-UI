@@ -170,6 +170,18 @@ export interface WalletStatus extends SnEnvelope {
   isObserve: boolean;
 }
 
+/** `POST wallet/init`: a new recovery phrase. Smartnode does NOT save it: `wallet/recover` does. Secret. */
+export interface InitWalletResponse extends SnEnvelope {
+  mnemonic: string;
+  accountAddress: string;
+}
+
+/** `POST wallet/recover` / `wallet/search-and-recover`. */
+export interface RecoverWalletResponse extends SnEnvelope {
+  accountAddress: string;
+  validatorKeys?: string[];
+}
+
 /** `POST wallet/export` (needs `typedConfirmation: "EXPORT"`). Secret: never log or keep it. */
 export interface WalletExport extends SnEnvelope {
   password: string;
@@ -293,13 +305,44 @@ export interface CanDepositResponse extends CanResponse {
   canDeposit: boolean;
   creditBalance: BigNumberish;
   usableCreditBalance?: BigNumberish;
+  /** The deposit pool's balance (caps how much credit can be used). */
+  depositBalance?: BigNumberish;
+  /** Credit can pay for (part of) this deposit. */
+  canUseCredit?: boolean;
   nodeBalance: BigNumberish;
   insufficientBalance: boolean;
+  /** There is credit, but the deposit pool can't take it now and the wallet alone isn't enough. */
+  insufficientBalanceWithoutCredit?: boolean;
   invalidAmount: boolean;
   depositDisabled: boolean;
+  inConsensus?: boolean;
   nodeHasDebt?: boolean;
   megapoolAddress?: string;
   validatorPubkeys?: string[];
+}
+
+/** `POST node/deposit` with `submit=true` (`NodeDepositsResponse`). */
+export interface NodeDepositResponse extends TxResponse {
+  validatorPubkeys?: string[];
+  /** Nanoseconds. */
+  scrubPeriod?: BigNumberish;
+}
+
+/** `GET node/get-bond-requirement?numValidators=N`: the total bond for N megapool validators. */
+export interface BondRequirementResponse extends SnEnvelope {
+  bondRequirement: BigNumberish;
+}
+
+/** `GET node/can-register` (`CanRegisterNodeResponse`). */
+export interface CanRegisterResponse extends CanResponse {
+  canRegister: boolean;
+  alreadyRegistered: boolean;
+  registrationDisabled: boolean;
+}
+
+/** `GET node/can-set-primary-withdrawal-address`: the flag is `canSet`, not named after the route. */
+export interface CanSetWithdrawalAddressResponse extends CanResponse {
+  canSet: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -519,6 +562,16 @@ export interface ApproveKeysResult extends SnEnvelope {
   /** Of those, newly added to the approved list. */
   added: number;
   runRequested: boolean;
+}
+
+/** The exact text the owner types to move the old plaintext recovery-phrase file into the backups folder. */
+export const ARCHIVE_CONFIRMATION = "ARCHIVE";
+
+/** `POST /api/avado/legacy-mnemonic/archive` answer (200). */
+export interface LegacyMnemonicArchiveResult extends SnEnvelope {
+  archived: boolean;
+  /** The backup folder it was moved into, e.g. "mnemonic-archive-20260924T101500Z". */
+  name: string;
 }
 
 /** `GET /api/avado/logs?tail=N`. */
