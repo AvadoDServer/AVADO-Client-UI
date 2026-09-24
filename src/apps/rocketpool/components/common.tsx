@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Button, StatusDot, cn } from "../../../components/ui";
+import { useMode } from "../../../settings/ModeProvider";
+import { errorDetails } from "../api/errors";
 import { addressUrl } from "../lib/explorer";
 import { daemonSettings, gweiToWei } from "../pages/advanced/automatic";
 import { useAppStatus } from "../status/AppStatus";
@@ -40,6 +42,28 @@ export function Notice({
         {children && <div className={cn("flex flex-col gap-2 break-words", title ? "mt-1" : undefined)}>{children}</div>}
       </div>
     </div>
+  );
+}
+
+/**
+ * The technical side of a problem (the error's route, status and raw text, or
+ * log lines), folded away under "Details". Advanced mode only: Simple mode
+ * shows the plain explanation alone.
+ */
+export function TechDetails({ error, lines, className }: { error?: unknown; lines?: string[]; className?: string }) {
+  const { isAdvanced } = useMode();
+  if (!isAdvanced) return null;
+  const all = [...(error !== undefined ? [errorDetails(error)] : []), ...(lines ?? [])].filter((l): l is string => !!l && l.trim() !== "");
+  if (all.length === 0) return null;
+  return (
+    <details className={cn("text-xs text-fg-muted", className)} data-testid="tech-details">
+      <summary className="cursor-pointer font-medium">Details</summary>
+      <ul className="mt-1 flex flex-col gap-1 font-mono [overflow-wrap:anywhere]">
+        {all.map((l, i) => (
+          <li key={i}>{l}</li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -132,18 +156,18 @@ export function AutoTxNotice({ className }: { className?: string }) {
   return (
     <Notice tone="neutral" title="Your node also sends transactions by itself" className={className} testId="auto-tx-notice">
       <p>
-        Rocket Pool does some things automatically from the node wallet: staking new validators when their turn comes in the queue,
-        distributing rewards and keeping the contracts up to date. Each one pays a network fee from the node wallet.
+        Rocket Pool does some things by itself from the node wallet: starting new validators when their turn comes, paying out rewards
+        and keeping its contracts up to date. Each one pays a small network fee from the node wallet.
       </p>
       {off ? (
         <p>
-          This package's settings turn off the optional ones (such as distributing rewards); the essential ones, such as staking new
+          This package's settings turn off the optional ones (such as paying out rewards); the essential ones, such as starting new
           validators, still go through. Keep at least 0.05 ETH in the node wallet for them.
         </p>
       ) : (
         <p>
-          They wait only while the network fee is above {threshold} gwei. Fees are almost always far lower, so in practice these
-          transactions always go through. Keep at least 0.05 ETH in the node wallet for them.
+          They only wait while network fees are unusually high (above {threshold} gwei, the unit fees are measured in), which is rare. Keep
+          at least 0.05 ETH in the node wallet for them.
         </p>
       )}
     </Notice>

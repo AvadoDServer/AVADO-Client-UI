@@ -33,7 +33,7 @@ function ExitWarning({ children }: { children?: ReactNode }) {
     <div className="flex flex-col gap-2">
       <div role="note" className="rounded-lg border border-danger/30 bg-danger-subtle p-3 text-danger-text">
         <strong className="font-semibold">An exit is permanent and can't be undone.</strong> The validator stops validating for
-        good. To stake again you need a new validator and a new deposit.
+        good and stops earning rewards. To stake again you need a new validator and a new deposit.
       </div>
       <ul className="flex list-disc flex-col gap-1 pl-5">
         <li>Keep this node running until the validator has fully left. That can take from a day to several weeks.</li>
@@ -48,17 +48,17 @@ function BeaconLink({ pubkey }: { pubkey: string }) {
   if (!href) return null;
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" className="font-semibold text-accent underline-offset-2 hover:underline">
-      Check the validator on beaconcha.in<span className="sr-only"> (opens in a new tab)</span>
+      Check the validator on beaconcha.in<span className="sr-only"> (a website that shows every validator; opens in a new tab)</span>
     </a>
   );
 }
 
 const exitOffChain = (pubkey: string) => ({
-  sendingText: "Sending the signed exit request to the beacon chain…",
+  sendingText: "Sending the exit request…",
   doneTitle: "Exit requested",
   doneText: (
     <>
-      <p>The beacon chain has the exit request. Within a few minutes the validator shows as exiting.</p>
+      <p>The network has the exit request. Within a few minutes the validator shows as exiting.</p>
       <p>Keep this node running until it has fully left.</p>
       <BeaconLink pubkey={pubkey} />
     </>
@@ -81,8 +81,7 @@ export function exitMinipoolFlow(address: string, pubkey: string): FlowConfig {
     summary: (
       <ExitWarning>
         <li>
-          Once its ETH is back from the beacon chain, close the minipool here to pay out your bond and rewards to your withdrawal
-          address.
+          Once its ETH is back, close the minipool here: that pays out your bond and rewards to your withdrawal address.
         </li>
         <li>
           To confirm, type the last 6 characters of the minipool address: <span className="font-mono font-semibold text-fg">{code}</span>.
@@ -107,7 +106,7 @@ export function distributeMinipoolFlow(address: string): FlowConfig {
   const find = (can: CanResponse) =>
     ((can as unknown as MinipoolDistributeDetailsResponse).details ?? []).find((d) => sameAddress(d.address, address));
   return {
-    title: `Distribute the rewards of minipool ${shortAddress(address)}`,
+    title: `Pay out the rewards of minipool ${shortAddress(address)}`,
     summary: (
       <p>
         Pays out the rewards that collected in this minipool: your share goes to your withdrawal address, the rest to Rocket
@@ -121,7 +120,7 @@ export function distributeMinipoolFlow(address: string): FlowConfig {
       blockedReason: (can) => {
         const d = find(can);
         if (!d) return "Rocket Pool didn't report this minipool.";
-        return d.canDistribute ? null : "There is nothing to distribute in this minipool right now.";
+        return d.canDistribute ? null : "There is nothing to pay out in this minipool right now.";
       },
       gasLimits: (can) => find(can)?.gasLimits,
       details: (can) => {
@@ -135,7 +134,7 @@ export function distributeMinipoolFlow(address: string): FlowConfig {
         );
       },
     },
-    confirmLabel: "Distribute",
+    confirmLabel: "Pay out",
   };
 }
 
@@ -150,23 +149,23 @@ export function minipoolPayout(d: { status: string; balance: unknown; nodeShareO
 }
 
 /** Pay out the fee distributor (tips and MEV of minipools outside the smoothing pool). */
-export function distributeFeeDistributorFlow(approxShare?: bigint, title = "Distribute your fee distributor"): FlowConfig {
+export function distributeFeeDistributorFlow(approxShare?: bigint, title = "Pay out your minipools' block rewards"): FlowConfig {
   return {
     title,
     summary: (
       <p>
-        Pays out the tips and MEV your minipools collected outside the smoothing pool: your share
-        {approxShare !== undefined ? ` (about ${formatEth(approxShare)})` : ""} goes to your withdrawal address, the rest to Rocket
-        Pool's stakers.
+        Pays out the block rewards (tips from the network) your minipools collected in their fee distributor, a contract that holds
+        them until paid out. Your share{approxShare !== undefined ? ` (about ${formatEth(approxShare)})` : ""} goes to your withdrawal
+        address, the rest to Rocket Pool's stakers.
       </p>
     ),
     tx: {
       canRoute: "node/can-distribute",
       route: "node/distribute",
       blockedReason: (can: CanResponse) =>
-        (toBigInt((can as CanDistributeFeeDistributor).balance) ?? 0n) > 0n ? null : "Your fee distributor is empty right now.",
+        (toBigInt((can as CanDistributeFeeDistributor).balance) ?? 0n) > 0n ? null : "There is nothing to pay out right now.",
     },
-    confirmLabel: "Distribute",
+    confirmLabel: "Pay out",
   };
 }
 
@@ -206,17 +205,17 @@ export function closeMinipoolFlow(address: string, { bundle = false, title }: { 
       blockedReason: (can) => {
         const r = can as unknown as MinipoolCloseDetailsResponse;
         if (r.isFeeDistributorInitialized === false) {
-          return "Your fee distributor must be set up before minipools can be closed.";
+          return "Your node first has to set up its fee distributor (the contract that collects your minipools' block rewards). Your node does this by itself; try again later, or contact AVADO support if this stays.";
         }
         const d = find(can);
         if (!d) return "Rocket Pool didn't report this minipool.";
         if (d.isFinalized) return "This minipool is already closed.";
         if (!d.canClose) {
-          if (d.minipoolVersion < 3) return "This minipool uses an old contract version and can't be closed safely yet.";
+          if (d.minipoolVersion < 3) return "This minipool uses an old contract version and can't be closed safely yet. Contact AVADO support.";
           if (d.minipoolStatus !== "Dissolved" && d.beaconState !== "withdrawal_done") {
-            return "Its ETH isn't back from the beacon chain yet. Exit it first and wait until it has been withdrawn.";
+            return "Its ETH isn't back yet. Exit it first, then wait until its ETH has arrived (this can take days to weeks).";
           }
-          return "Rocket Pool says it can't be closed right now.";
+          return "Rocket Pool says it can't be closed right now. Try again later.";
         }
         const distributable = (toBigInt(d.balance) ?? 0n) - (toBigInt(d.refund) ?? 0n);
         if (d.minipoolStatus !== "Dissolved" && distributable < (toBigInt(d.userDepositBalance) ?? 0n)) {
@@ -260,9 +259,9 @@ export function exitMegapoolValidatorFlow(v: MegapoolValidator, index: string): 
     title: `Exit validator ${index}?`,
     summary: (
       <ExitWarning>
-        <li>Rocket Pool settles its ETH automatically once it has left; your share then shows in your megapool.</li>
+        <li>Once it has left, Rocket Pool settles its ETH by itself; your share then shows in your megapool.</li>
         <li>
-          To confirm, type the validator index: <span className="font-mono font-semibold text-fg">{index}</span>.
+          To confirm, type the validator's number: <span className="font-mono font-semibold text-fg">{index}</span>.
         </li>
       </ExitWarning>
     ),
@@ -286,8 +285,8 @@ export function leaveQueueFlow(v: MegapoolValidator): FlowConfig {
     summary: (
       <div className="flex flex-col gap-2">
         <p>
-          Validator {id} stops waiting in the deposit queue and will not start. Its bond comes back to your node as credit, which
-          you can use for a new validator or withdraw as rETH on the Rewards page.
+          Validator {id} stops waiting in line and will not start. Its bond comes back to your node as credit, which you can use for
+          a new validator, or withdraw on the Rewards page as rETH (Rocket Pool's staked-ETH token, worth the same).
         </p>
         <p>This can't be undone: to validate again you need a new deposit.</p>
       </div>
@@ -306,10 +305,10 @@ export function leaveQueueFlow(v: MegapoolValidator): FlowConfig {
 
 export function distributeMegapoolFlow(pendingNodeShare?: bigint | null): FlowConfig {
   return {
-    title: "Distribute your megapool rewards",
+    title: "Pay out your megapool rewards",
     summary: (
       <p>
-        Pays out the rewards collected in your megapool: your share goes to your withdrawal address, the rest to Rocket Pool's
+        Pays out the block rewards collected in your megapool: your share goes to your withdrawal address, the rest to Rocket Pool's
         stakers and the protocol.
       </p>
     ),
@@ -323,8 +322,8 @@ export function distributeMegapoolFlow(pendingNodeShare?: bigint | null): FlowCo
         const why: string[] = [];
         if (c.exitingValidatorCount > 0) why.push(`${c.exitingValidatorCount} validator${c.exitingValidatorCount === 1 ? " is" : "s are"} exiting`);
         if (c.lockedValidatorCount > 0) why.push(`${c.lockedValidatorCount} validator${c.lockedValidatorCount === 1 ? " is" : "s are"} finishing an exit`);
-        if (!c.megapoolNotDeployed && c.lastDistributionTime === 0) return "There are no staking validators in your megapool yet.";
-        return why.length ? `It can't be distributed while ${why.join(" and ")}. Try again once that is done.` : base;
+        if (!c.megapoolNotDeployed && c.lastDistributionTime === 0) return "None of your megapool validators is validating yet, so there is nothing to pay out.";
+        return why.length ? `It can't be paid out while ${why.join(" and ")}. Try again once that is done.` : base;
       },
       details: () =>
         pendingNodeShare !== undefined && pendingNodeShare !== null ? (
@@ -333,7 +332,7 @@ export function distributeMegapoolFlow(pendingNodeShare?: bigint | null): FlowCo
           </p>
         ) : null,
     },
-    confirmLabel: "Distribute",
+    confirmLabel: "Pay out",
   };
 }
 
@@ -370,8 +369,8 @@ export function provisionTicketsFlow(): FlowConfig {
     title: "Set up your express tickets",
     summary: (
       <p>
-        Your minipools earn express tickets: new validators with a ticket skip ahead in Rocket Pool's deposit queue. Your node sets
-        them up automatically when gas is low; this does it now.
+        Your minipools earned express tickets: a new validator with a ticket skips ahead in Rocket Pool's waiting line. Your node
+        sets them up by itself when network fees are low; this does it now.
       </p>
     ),
     tx: {

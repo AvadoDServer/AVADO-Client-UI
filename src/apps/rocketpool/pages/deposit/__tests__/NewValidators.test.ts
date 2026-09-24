@@ -8,7 +8,7 @@ describe("why a deposit is blocked (both deposit screens)", () => {
   it("lets it through only on an explicit canDeposit=true", () => {
     expect(blockedReasonFor(can({}))).toBeNull();
     const { canDeposit: _omit, ...noFlag } = can({});
-    expect(blockedReasonFor(noFlag as CanDepositResponse)).toBe("Rocket Pool says this can't be done right now.");
+    expect(blockedReasonFor(noFlag as CanDepositResponse)).toBe("Rocket Pool says this can't be done right now. Try again later.");
   });
 
   it("names a debt first, then the wallet, then Smartnode's other reasons", () => {

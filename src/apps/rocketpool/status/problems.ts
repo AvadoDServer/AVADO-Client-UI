@@ -4,7 +4,8 @@
  * loaded yet never raises a problem. Most serious first.
  */
 import { ADMIN_STORE_URL, adminPackageUrl } from "../../../components/shell/links";
-import type { Problem, ProblemTone } from "../../../components/shell/problems";
+import type { Problem, ProblemAction, ProblemTone } from "../../../components/shell/problems";
+import { plainMessage } from "../api/errors";
 import type { AvadoStatus, NodeStatus, ReconcileKeyState, ReconcileStatus, ReconcileView } from "../api/models";
 import { reconcileStatusOf } from "../api/reconcile";
 import { txUrl } from "../lib/explorer";
@@ -37,7 +38,21 @@ export type RpProblemId =
   | "withdrawal-is-hot-wallet"
   | "low-gas-balance";
 
-export type RpProblem = Problem<RpProblemId>;
+/**
+ * A banner. `techDetails` (raw log lines, the key check's own errors) show
+ * only in Advanced mode; `simpleAction` replaces the action in Simple mode
+ * when the Advanced one leads to logs and settings a home staker can't use.
+ */
+export type RpProblem = Problem<RpProblemId> & { techDetails?: string[]; simpleAction?: ProblemAction };
+
+/** The banner as shown in the current mode. */
+export function forMode(p: RpProblem, advanced: boolean): Problem<RpProblemId> {
+  const { techDetails, simpleAction, ...rest } = p;
+  if (advanced) return { ...rest, details: [...(rest.details ?? []), ...(techDetails ?? [])] };
+  return { ...rest, action: simpleAction ?? rest.action };
+}
+
+const CONTACT_SUPPORT: ProblemAction = { label: "Contact AVADO support", href: `mailto:${SUPPORT_EMAIL}` };
 
 /** Supervisord states in which the daemon is not running and won't be soon. */
 const STOPPED_STATES = new Set(["FATAL", "BACKOFF", "EXITED", "STOPPED", "STOPPING"]);
@@ -69,8 +84,8 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
         id: "backend-unreachable",
         tone: "danger",
         title: "The Rocket Pool package is not answering",
-        body: "It may be restarting after an update. If this stays for more than a few minutes, restart the package from the AVADO Admin.",
-        action: { label: "Open in the AVADO Admin", href: packagePage },
+        body: "It may be restarting after an update: wait a minute. If this lasts more than a few minutes, restart the package in the AVADO Admin.",
+        action: { label: "Open the package", href: packagePage },
       },
     ];
   }
@@ -84,9 +99,9 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
     out.push({
       id: "network-unsupported",
       tone: "danger",
-      title: "Unsupported network",
-      body: `This package runs on Ethereum mainnet only, but it is set to "${avado.network}". Rocket Pool will not start on it.`,
-      action: { label: "Open in the AVADO Admin", href: packagePage },
+      title: "Wrong network",
+      body: `This package works on the main Ethereum network only, but it is set to "${avado.network}", so Rocket Pool won't start. Contact AVADO support to fix this.`,
+      action: CONTACT_SUPPORT,
     });
   }
 
@@ -95,18 +110,19 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
       id: "startup-error",
       tone: "danger",
       title: "Rocket Pool could not start",
-      body: `${avado.startupError} Your wallet and validator keys are not affected.`,
-      details: lastLines(avado.daemonErrors),
+      body: `${plainMessage(avado.startupError) || "Something went wrong while it was starting."} Your wallet and validator keys are safe. Restarting the package in the AVADO Admin often fixes this; if it doesn't, contact AVADO support.`,
+      techDetails: [avado.startupError, ...lastLines(avado.daemonErrors)],
       action: { label: "See the logs", to: "/advanced" },
+      simpleAction: { label: "Open the package", href: packagePage },
     });
   } else if (stopped) {
     out.push({
       id: "daemon-stopped",
       tone: "danger",
-      title: "The Rocket Pool service has stopped",
-      body: "Your node is not doing its Rocket Pool duties while it is stopped. Restarting the package usually helps; if it stays, contact AVADO support.",
-      details: lastLines(avado.daemonErrors),
-      action: { label: "Open in the AVADO Admin", href: packagePage },
+      title: "Rocket Pool has stopped",
+      body: "Your node isn't doing its Rocket Pool work while it is stopped. Restart the package in the AVADO Admin; if it stops again, contact AVADO support.",
+      techDetails: lastLines(avado.daemonErrors),
+      action: { label: "Open the package", href: packagePage },
     });
   }
 
@@ -117,8 +133,9 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
       id: "daemon-starting",
       tone: "accent",
       title: "Rocket Pool is starting",
-      body: "This can take a few minutes after a restart or an update. This page fills in once it's ready.",
+      body: "This can take a few minutes after a restart or an update. The page fills in by itself once it's ready: there is nothing you need to do.",
       action: { label: "See the logs", to: "/advanced" },
+      simpleAction: { label: "Go to Home", to: "/" },
     });
   }
 
@@ -136,9 +153,9 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
     out.push({
       id: "password-missing",
       tone: "danger",
-      title: "The wallet password file is missing",
-      body: "Rocket Pool can't unlock the node wallet without it, so it can't validate or send transactions. Contact AVADO support before changing anything.",
-      action: { label: "Contact support", href: `mailto:${SUPPORT_EMAIL}` },
+      title: "The node wallet can't be unlocked",
+      body: "The file with the node wallet's password is missing, so Rocket Pool can't use the wallet or send transactions. Don't change anything yourself: contact AVADO support.",
+      action: CONTACT_SUPPORT,
     });
   }
 
@@ -146,9 +163,9 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
     out.push({
       id: "legacy-mnemonic",
       tone: "warning",
-      title: "Your recovery phrase is stored in a plain file",
-      body: "The previous version of this package kept your recovery phrase unprotected on the AVADO. Make sure you have your own safe copy, then move the file into the backups folder from Home.",
-      action: { label: "Review", to: LEGACY_MNEMONIC_ROUTE },
+      title: "Your recovery phrase is saved in an unprotected file",
+      body: "The old version of this package saved your recovery phrase as plain text on this AVADO. Make sure you have the words on paper, then move the file into the backups.",
+      action: { label: "Fix this", to: LEGACY_MNEMONIC_ROUTE },
     });
   }
 
@@ -206,9 +223,10 @@ function reconcileProblems(s: ReconcileStatus): RpProblem[] {
       id: "keys-loaded-twice",
       tone: "danger",
       title: n === 1 ? "A validator key is loaded in two clients — this can get it slashed" : `${n} validator keys are loaded in two clients — this can get them slashed`,
-      body: `Remove ${n === 1 ? "it" : "them"} from one of the clients now. Rocket Pool never removes keys itself.`,
+      body: `Slashing is a heavy penalty: it takes part of your ETH and forces the validator out. Remove ${n === 1 ? "the key" : "the keys"} from one of the clients now. Rocket Pool never removes keys itself; Home shows where ${n === 1 ? "it is" : "they are"}.`,
       details: s.loadedTwice.slice(0, 5).map((t) => `${shortKey(t.pubkey)}: ${t.packages.join(" and ") || "two clients"}`),
       action: { label: "See details", to: "/advanced" },
+      simpleAction: { label: "Show me where", to: KEY_APPROVAL_ROUTE },
     });
   }
 
@@ -219,8 +237,9 @@ function reconcileProblems(s: ReconcileStatus): RpProblem[] {
     out.push({
       id: "no-consensus-client",
       tone: "danger",
-      title: "No consensus client for your validators",
-      body: `${s.clientChoice?.why || s.message || "Rocket Pool could not find the consensus client to load your validator keys into."} Your validators need an installed consensus client (Nimbus, Teku, Lighthouse or Prysm) to run.`,
+      title: "Your validators have no consensus client",
+      body: `${s.clientChoice?.why && plainMessage(s.clientChoice.why) ? `${plainMessage(s.clientChoice.why)} ` : ""}Your validators run inside a consensus client, one of the two Ethereum programs on your AVADO. Install Nimbus, Teku, Lighthouse or Prysm from the DappStore.`,
+      techDetails: s.message ? [s.message] : [],
       action: { label: "Open the DappStore", href: ADMIN_STORE_URL },
     });
     return out;
@@ -232,10 +251,10 @@ function reconcileProblems(s: ReconcileStatus): RpProblem[] {
       id: "keys-awaiting-approval",
       tone: "warning",
       title: `${plural(awaiting, "validator key")} ${awaiting === 1 ? "needs" : "need"} your approval`,
-      body: `${awaiting === 1 ? "It is" : "They are"} not loaded in ${name} yet. Load ${awaiting === 1 ? "it" : "them"} only if ${
+      body: `${awaiting === 1 ? "It is" : "They are"} not running in ${name} yet. Start ${awaiting === 1 ? "it" : "them"} only if ${
         awaiting === 1 ? "this validator is" : "these validators are"
-      } not running anywhere else: running a key on two machines gets it slashed.`,
-      details: s.importBlockedReasons.slice(0, 5),
+      } not running anywhere else: running a key on two machines gets it slashed (a heavy penalty).`,
+      details: s.importBlockedReasons.slice(0, 5).map(plainMessage).filter(Boolean),
       action: { label: "Review keys", to: KEY_APPROVAL_ROUTE },
     });
   }
@@ -246,11 +265,12 @@ function reconcileProblems(s: ReconcileStatus): RpProblem[] {
     out.push({
       id: "keys-settling",
       tone: "accent",
-      title: `${plural(settling.length, "validator key")} will be loaded soon`,
-      body: `To be safe from double signing, Rocket Pool first makes sure ${
+      title: `${plural(settling.length, "validator key")} will start soon`,
+      body: `To be safe, Rocket Pool first waits to make sure ${
         settling.length === 1 ? "it isn't" : "they aren't"
-      } running anywhere else${times.length ? `; loading starts at about ${times[times.length - 1]}` : ""}.`,
+      } running anywhere else${times.length ? `. ${settling.length === 1 ? "It starts" : "They start"} at about ${times[times.length - 1]}` : ""}. Nothing to do.`,
       action: { label: "See details", to: "/advanced" },
+      simpleAction: { label: "See on Home", to: KEY_APPROVAL_ROUTE },
     });
   }
 
@@ -262,25 +282,26 @@ function reconcileProblems(s: ReconcileStatus): RpProblem[] {
     const where = [...new Set(elsewhere.flatMap((v) => v.loadedIn))];
     const blocked = stuck.some((v) => v.state === "import-blocked");
     const update = stuck.some((v) => v.state === "client-update-needed");
-    let body = "Rocket Pool tries again every few minutes. If this stays, check the details on the Advanced page.";
+    let body = "They aren't validating right now. Rocket Pool tries again every few minutes by itself. If this lasts more than an hour, contact AVADO support.";
     if (elsewhere.length > 0) {
       body = `${plural(elsewhere.length, "key is", "keys are")} loaded in ${where.length ? where.join(", ") : "another consensus client"} instead, so ${
         elsewhere.length === 1 ? "it was" : "they were"
       } not added to ${name} as well (that would get ${elsewhere.length === 1 ? "it" : "them"} slashed). If that is the client you use, choose it as Rocket Pool's consensus client.`;
     } else if (update) {
-      body = `Update ${name} from the AVADO Admin: this version can't have keys loaded into it safely.`;
+      body = `Update ${name} in the AVADO Admin: this version can't have keys loaded into it safely. Rocket Pool loads them after the update.`;
     } else if (blocked) {
-      body = `Another consensus client on this AVADO could not be checked, so nothing was loaded into ${name}, to be safe from double signing. Start or remove that client.`;
+      body = `Another consensus client on this AVADO couldn't be checked, so to be safe nothing was loaded into ${name}. Start that other client, or remove it if you don't use it.`;
     }
-    const reasons = [...s.importBlockedReasons, ...details].slice(0, 5);
     errorsShown = details.length > 0;
     out.push({
       id: "keys-not-loaded",
       tone: "warning",
       title: `${plural(notRunning, "validator key")} not running in ${name}`,
       body,
-      details: reasons,
+      details: s.importBlockedReasons.slice(0, 5).map(plainMessage).filter(Boolean),
+      techDetails: details,
       action: { label: "See details", to: "/advanced" },
+      simpleAction: update && s.client ? { label: `Open ${name}`, href: adminPackageUrl(s.client.package) } : CONTACT_SUPPORT,
     });
   }
 
@@ -288,9 +309,10 @@ function reconcileProblems(s: ReconcileStatus): RpProblem[] {
     out.push({
       id: "fee-recipient-failed",
       tone: "warning",
-      title: `Fee recipient could not be set for ${plural(s.feeRecipients.failed, "validator")}`,
-      body: `${name} could send their block rewards to the wrong address. Rocket Pool tries again every few minutes; if this stays, check the details on the Advanced page.`,
+      title: `Block rewards may go to the wrong address for ${plural(s.feeRecipients.failed, "validator")}`,
+      body: `Rocket Pool couldn't set where ${name} pays these validators' block rewards (the "fee recipient"). It tries again every few minutes by itself. If this lasts more than an hour, contact AVADO support.`,
       action: { label: "See details", to: "/advanced" },
+      simpleAction: CONTACT_SUPPORT,
     });
   }
 
@@ -298,19 +320,21 @@ function reconcileProblems(s: ReconcileStatus): RpProblem[] {
     out.push({
       id: "reconcile-failed",
       tone: "danger",
-      title: "The validator key check could not run",
-      body: s.message || `Rocket Pool could not check your validator keys in ${name}.`,
-      details: errorsShown ? [] : details,
+      title: "Rocket Pool couldn't check your validators",
+      body: `Every few minutes Rocket Pool checks that your validators run in ${name}. The last check failed; it tries again by itself. If this lasts more than an hour, contact AVADO support.`,
+      techDetails: [s.message, ...(errorsShown ? [] : details)].filter((t): t is string => !!t),
       action: { label: "See details", to: "/advanced" },
+      simpleAction: CONTACT_SUPPORT,
     });
   } else if (details.length > 0 && !errorsShown && s.state !== "error") {
     out.push({
       id: "reconcile-errors",
       tone: "warning",
-      title: "The validator key check found a problem",
-      body: s.message || `Rocket Pool checks every few minutes that your validator keys and fee recipients are right in ${name}.`,
-      details,
+      title: "Rocket Pool found a problem with your validators",
+      body: `Rocket Pool checks every few minutes that your validators run in ${name} and pay their rewards to the right place. It tries to fix this by itself. If this lasts more than an hour, contact AVADO support.`,
+      techDetails: [s.message, ...details].filter((t): t is string => !!t),
       action: { label: "See details", to: "/advanced" },
+      simpleAction: CONTACT_SUPPORT,
     });
   }
 
@@ -318,9 +342,11 @@ function reconcileProblems(s: ReconcileStatus): RpProblem[] {
     out.push({
       id: "reconcile-newer",
       tone: "warning",
-      title: "Check your validator keys",
-      body: s.message || "The key check reported something this page can't show yet. Update the Rocket Pool package page by reloading it.",
+      title: "Check your validators",
+      body: "Rocket Pool reported something this page can't show yet. Reload the page; if this stays, contact AVADO support.",
+      techDetails: s.message ? [s.message] : [],
       action: { label: "See details", to: "/advanced" },
+      simpleAction: CONTACT_SUPPORT,
     });
   }
   return out;
@@ -344,14 +370,14 @@ export function findNodeProblems(node: NodeStatus | null | undefined): RpProblem
             id: "withdrawal-is-hot-wallet",
             tone: "warning",
             title: "Confirm your new withdrawal address",
-            body: `${shortAddress(pending)} still has to confirm that it is your withdrawal address: open the Rocket Pool website with that wallet and confirm. Until then, your staked ETH and rewards still go to the node wallet.`,
+            body: `Your withdrawal address is the wallet your staked ETH and rewards are paid to. ${shortAddress(pending)} still has to confirm it: open the Rocket Pool website with that wallet and confirm. Until then, everything still goes to the node wallet.`,
             action: { label: "How to confirm", to: SETUP_WITHDRAWAL_ROUTE },
           }
         : {
             id: "withdrawal-is-hot-wallet",
             tone: "warning",
             title: "Your withdrawal address is still the node wallet",
-            body: "Your staked ETH and rewards go to the withdrawal address. Set it to a wallet you control outside this AVADO (a hardware wallet is best), so they stay safe even if the AVADO is lost.",
+            body: "Your withdrawal address is the wallet your staked ETH and rewards are paid to. Set it to a wallet you control outside this AVADO (a hardware wallet is best), so they stay safe even if the AVADO is lost.",
             action: { label: "Set withdrawal address", to: SETUP_WITHDRAWAL_ROUTE },
           },
     );
@@ -362,7 +388,7 @@ export function findNodeProblems(node: NodeStatus | null | undefined): RpProblem
       id: "low-gas-balance",
       tone: "warning",
       title: "Little ETH left for network fees",
-      body: `The node wallet has ${formatEth(balance)}. Rocket Pool needs some ETH there to pay network fees for claims and automatic actions. Send at least 0.05 ETH to it.`,
+      body: `The node wallet has ${formatEth(balance)}. Rocket Pool pays network fees from it, for your claims and for what it does automatically. Send at least 0.05 ETH to it.`,
       action: { label: "Add ETH", to: SETUP_FUND_ROUTE },
     });
   }
@@ -389,7 +415,7 @@ export function findPendingProblems(list: PendingTx[], isOverdue: (key: string) 
       id: "tx-unclear",
       tone: "warning",
       title: unclear.length === 1 ? `Check your transaction: ${one.title}` : `${unclear.length} transactions need checking`,
-      body: "It's not known yet whether it went through. Don't start it again until you've checked it; the same action stays locked meanwhile.",
+      body: "It isn't known yet whether it went through. Don't start it again until you've checked it: the same action stays locked until then.",
       details: unclear.length > 1 ? unclear.map((e) => e.title) : [],
       action: unclear.length === 1 ? link(one) : { label: "Open", to: one.page },
     });
@@ -400,7 +426,7 @@ export function findPendingProblems(list: PendingTx[], isOverdue: (key: string) 
       id: "tx-on-its-way",
       tone: "accent",
       title: moving.length === 1 ? `Transaction on its way: ${one.title}` : `${moving.length} transactions on their way`,
-      body: "It is waiting to be included in a block. This page keeps following it.",
+      body: "It is waiting to be confirmed by the network, usually within a minute. This page keeps following it.",
       details: moving.length > 1 ? moving.map((e) => e.title) : [],
       action: link(one),
     });

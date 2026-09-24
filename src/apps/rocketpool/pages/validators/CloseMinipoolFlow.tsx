@@ -27,7 +27,7 @@ export function CloseMinipoolFlow({
   const [distributed, setDistributed] = useState(false);
 
   if (step === "distribute") {
-    const f = distributeFeeDistributorFlow(undefined, `Step 1 of 2: pay out your fee distributor`);
+    const f = distributeFeeDistributorFlow(undefined, `Step 1 of 2: pay out your minipools' block rewards`);
     return (
       <TransactionFlow
         key="distribute"
@@ -37,8 +37,8 @@ export function CloseMinipoolFlow({
           <div className="flex flex-col gap-2">
             {f.summary}
             <p>
-              Your fee distributor holds ETH. It is paid out before minipool {shortAddress(address)} is closed, so both are paid at
-              the right commission. Step 2 closes the minipool (a second transaction with its own fee).
+              These rewards are paid out before minipool {shortAddress(address)} is closed, so you get the right share of both. Step 2
+              closes the minipool (a second transaction with its own fee).
             </p>
           </div>
         }

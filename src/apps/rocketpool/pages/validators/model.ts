@@ -50,13 +50,13 @@ export function minipoolStatus(mp: MinipoolDetails, close?: MinipoolCloseDetails
     return { label: "Dissolved", tone: "warning", text: "It never started validating. Close it to get its ETH back." };
   }
   if (s === "Initialized" || s === "Prelaunch") {
-    return { label: "Starting", tone: "accent", text: "Waiting for Rocket Pool to stake it on the beacon chain." };
+    return { label: "Starting", tone: "accent", text: "Waiting for Rocket Pool to start it." };
   }
   if (close?.canClose) {
     return {
       label: "Exited, ready to close",
       tone: "warning",
-      text: "Its ETH is back from the beacon chain. Close it to pay out your share.",
+      text: "It has stopped validating and its ETH is back. Close it to pay out your share.",
     };
   }
   const beacon = close?.beaconState ?? "";
@@ -64,17 +64,17 @@ export function minipoolStatus(mp: MinipoolDetails, close?: MinipoolCloseDetails
     return {
       label: "Exiting",
       tone: "accent",
-      text: "It has asked to leave the beacon chain. Its ETH comes back after the network's exit and withdrawal queues.",
+      text: "It has asked to stop validating. Its ETH comes back after the network's waiting lines, which can take days to weeks.",
     };
   }
   if (s === "Withdrawable") {
-    return { label: "Exited", tone: "accent", text: "It has left the beacon chain. Close it once its ETH has arrived." };
+    return { label: "Exited", tone: "accent", text: "It has stopped validating. Close it once its ETH has arrived." };
   }
   if (!mp.validator.exists) {
-    return { label: "Waiting for the beacon chain", tone: "accent", text: "The beacon chain hasn't picked up this validator yet." };
+    return { label: "Starting", tone: "accent", text: "The network hasn't picked up this validator yet. This happens by itself." };
   }
   if (!mp.validator.active) {
-    return { label: "Activating", tone: "accent", text: "The beacon chain is activating this validator." };
+    return { label: "Activating", tone: "accent", text: "The network is starting this validator. This happens by itself." };
   }
   return { label: "Staking", tone: "success", text: "Validating and earning rewards." };
 }
@@ -130,21 +130,21 @@ export function megapoolValidatorStatus(v: MegapoolValidator): Status {
   const beacon = v.beaconStatus?.status ?? "";
   if (v.dissolved) return { label: "Dissolved", tone: "danger", text: "It was dissolved and will not validate." };
   if (beacon === "active_slashed" || beacon === "exited_slashed") {
-    return { label: "Slashed", tone: "danger", text: "The beacon chain penalised this validator and is removing it." };
+    return { label: "Slashed", tone: "danger", text: "The network penalised this validator and is removing it. Contact AVADO support." };
   }
-  if (v.exited) return { label: "Exited", tone: "neutral", text: "It has left the beacon chain and its ETH is settled." };
+  if (v.exited) return { label: "Exited", tone: "neutral", text: "It has stopped validating and its ETH is settled." };
   if (v.locked) {
     return {
       label: "Finishing its exit",
       tone: "accent",
-      text: "It has left the beacon chain. Rocket Pool is settling its final balance; your node reports it automatically.",
+      text: "It has stopped validating. Rocket Pool is settling its final balance; your node does this by itself.",
     };
   }
   if (v.exiting || LEAVING.has(beacon)) {
     return {
       label: "Exiting",
       tone: "accent",
-      text: "It has asked to leave the beacon chain. Its ETH comes back after the network's exit and withdrawal queues.",
+      text: "It has asked to stop validating. Its ETH comes back after the network's waiting lines, which can take days to weeks.",
     };
   }
   if (v.inQueue) {
@@ -152,18 +152,18 @@ export function megapoolValidatorStatus(v: MegapoolValidator): Status {
     return {
       label: pos !== null && pos > 0n ? `In the queue (position ${pos.toLocaleString("en-US")})` : "In the queue",
       tone: "accent",
-      text: "Waiting for Rocket Pool to assign ETH from the deposit pool. It starts validating after that.",
+      text: "Waiting in line for ETH from Rocket Pool's stakers. It starts validating after that, by itself.",
     };
   }
   if (v.inPrestake) {
-    return { label: "Waiting to stake", tone: "accent", text: "Its deposit was accepted. Your node stakes it automatically once it has been checked." };
+    return { label: "Waiting to stake", tone: "accent", text: "Its deposit was accepted. Your node starts it by itself once it has been checked." };
   }
   if (beacon === "pending_initialized" || beacon === "pending_queued") {
-    return { label: "Activating", tone: "accent", text: "The beacon chain is activating this validator." };
+    return { label: "Activating", tone: "accent", text: "The network is starting this validator. This happens by itself." };
   }
   if (v.staked && beacon === "active_ongoing") return { label: "Active", tone: "success", text: "Validating and earning rewards." };
-  if (v.staked) return { label: "Staked", tone: "accent", text: "Staked; waiting for the beacon chain to show it." };
-  return { label: "Unknown", tone: "neutral", text: "Rocket Pool reports a state this page doesn't know." };
+  if (v.staked) return { label: "Staked", tone: "accent", text: "Staked. Waiting for the network to show it." };
+  return { label: "Unknown", tone: "neutral", text: "Rocket Pool reports a state this page doesn't know. If it stays like this, contact AVADO support." };
 }
 
 export function megapoolValidatorView(v: MegapoolValidator): MegapoolValidatorView {

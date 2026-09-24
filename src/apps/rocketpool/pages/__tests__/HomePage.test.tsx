@@ -3,12 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { createFetchMock } from "../../../../api/__tests__/fetchMock";
 import { ROUTER_FUTURE } from "../../../../routing/routerFuture";
+import { MODE_STORAGE_KEY } from "../../../../settings/ModeProvider";
 import { AppRoutes, Providers } from "../../App";
 import { RpApiError, plainError } from "../../api/errors";
 import { DEMO } from "../../api/fixtures";
 import { createMockRocketpoolApi, type MockRocketpoolApi, type RocketpoolMockOptions } from "../../api/mock";
 import { ARCHIVE_CONFIRMATION } from "../../api/models";
 import { createRealRocketpoolApi } from "../../api/real";
+import { mockDownloads } from "./renderPage";
 import { SLASHING_WARNING, approvalOutcome } from "../home/KeyApproval";
 import { SCENARIOS, demoKey, reconcileView } from "../../api/fixtures";
 import { reconcileStatusOf } from "../../api/reconcile";
@@ -49,7 +51,7 @@ describe("Home", () => {
     cleanup();
     renderHome(withSettings("0"));
     await waitFor(() => expect(screen.getByTestId("auto-tx-notice")).toHaveTextContent("turn off the optional ones"));
-    expect(screen.getByTestId("auto-tx-notice")).not.toHaveTextContent("always go through");
+    expect(screen.getByTestId("auto-tx-notice")).not.toHaveTextContent("which is rare");
   });
 
   it("a healthy minipool node: health, balances, validators, rewards; nothing to fix", async () => {
@@ -61,17 +63,17 @@ describe("Home", () => {
     expect(rowValue("health", "Consensus client")).toBe("In sync");
     expect(rowValue("health", "Node wallet")).toBe("Ready");
     expect(rowValue("health", "Registered with Rocket Pool")).toBe("Yes");
-    expect(rowValue("health", "Validator keys")).toBe("2/2 in sync with Nimbus");
+    expect(rowValue("health", "Validator keys")).toBe("2/2 running in Nimbus");
     expect(rowValue("validators-summary", "Minipools")).toBe("2 staking");
     expect(rowValue("validators-summary", "Megapool validators")).toBe("None");
     // 18.4412 + 17.9021 RPL and 0.0412 + 0.0388 ETH over two intervals.
-    await waitFor(() => expect(rowValue("rewards-summary", "Periodic rewards to claim")).toBe("36.34 RPL and 0.08 ETH"));
+    await waitFor(() => expect(rowValue("rewards-summary", "Rocket Pool rewards to claim")).toBe("36.34 RPL and 0.08 ETH"));
     expect(screen.queryByRole("region", { name: "Things to fix" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("key-approval")).not.toBeInTheDocument();
     expect(screen.queryByTestId("legacy-mnemonic")).not.toBeInTheDocument();
     expect(screen.queryByTestId("setup-callout")).not.toBeInTheDocument();
     expect(screen.getByTestId("auto-tx-notice")).toHaveTextContent("above 20 gwei");
-    expect(screen.getByTestId("auto-tx-notice")).toHaveTextContent("in practice these transactions always go through");
+    expect(screen.getByTestId("auto-tx-notice")).toHaveTextContent("which is rare");
     // Reads only, never a write.
     expect(api.calls.filter((c) => c.method === "POST")).toEqual([]);
   });
@@ -85,8 +87,8 @@ describe("Home", () => {
     expect(within(fixes).getByRole("link", { name: "Add ETH" })).toHaveAttribute("href", "/setup/fund");
     await waitFor(() => expect(rowValue("validators-summary", "Megapool validators")).toBe("1 active, 1 in the queue"));
     expect(rowValue("validators-summary", "Minipools")).toBe("1 staking");
-    await waitFor(() => expect(rowValue("rewards-summary", "Waiting in your fee distributor")).toBe("0.0931 ETH"));
-    expect(rowValue("rewards-summary", "Waiting in your megapool")).toBe("0.0214 ETH");
+    await waitFor(() => expect(rowValue("rewards-summary", "Block rewards waiting (minipools)")).toBe("0.0931 ETH"));
+    expect(rowValue("rewards-summary", "Block rewards waiting (megapool)")).toBe("0.0214 ETH");
     await userEvent.click(within(fixes).getByRole("link", { name: "Set withdrawal address" }));
     expect(screen.getByTestId("where")).toHaveTextContent("/setup/withdrawal");
   });
@@ -95,12 +97,13 @@ describe("Home", () => {
     const api = renderHome({ scenario: "mixed" });
     const box = await screen.findByTestId("key-approval");
     const waiting = within(box).getByTestId("awaiting-approval");
-    expect(within(waiting).getByText("1 key is not loaded in Teku and waits for your approval")).toBeInTheDocument();
+    expect(within(waiting).getByText("1 validator key is waiting for your OK to start in Teku")).toBeInTheDocument();
     expect(within(waiting).getByText("Megapool validator 1")).toBeInTheDocument();
     expect(within(waiting).getByRole("link", { name: /0x.*…/ })).toHaveAttribute("href", `https://beaconcha.in/validator/0x${DEMO.megaPubkey2}`);
     expect(within(waiting).getByText(SLASHING_WARNING)).toBeInTheDocument();
     expect(SLASHING_WARNING).toBe("Only do this if these validators are not running anywhere else — running a key on two machines gets it slashed.");
-    expect(within(waiting).getByText(/Why Teku: The Rocket Pool package setting CONSENSUSCLIENT is "teku"/)).toBeInTheDocument();
+    // Why this client was chosen is for Advanced mode (it names package settings).
+    expect(within(waiting).queryByText(/Why Teku/)).toBeNull();
 
     const button = within(waiting).getByRole("button", { name: "Load 1 validator key into Teku" });
     const input = within(waiting).getByLabelText(/to confirm/);
@@ -153,12 +156,12 @@ describe("Home", () => {
     expect(within(box).getByText(/^loads at about /)).toBeInTheDocument();
 
     const waiting = within(box).getByTestId("awaiting-approval");
-    expect(within(waiting).getByText("2 keys are not loaded in Teku and wait for your approval")).toBeInTheDocument();
+    expect(within(waiting).getByText("2 validator keys are waiting for your OK to start in Teku")).toBeInTheDocument();
     expect(within(waiting).getByText("They can't be loaded right now, even after you approve:")).toBeInTheDocument();
     expect(within(waiting).getByText(/Teku 0.0.75 is too old/)).toBeInTheDocument();
     expect(within(waiting).getByRole("button", { name: "Load 2 validator keys into Teku" })).toBeDisabled();
-    // Long pubkeys in the backend's message wrap anywhere (no sideways scrolling on a phone).
-    expect(within(box).getByText(/is loaded in both Nimbus and Teku/).className).toContain("[overflow-wrap:anywhere]");
+    // The backend's message quotes the whole pubkey: Simple mode leaves it out (the red notice above says it in plain words).
+    expect(within(box).queryByText(/is loaded in both Nimbus and Teku/)).toBeNull();
     // Approving while the old Teku blocks loading says so, instead of promising "a few minutes".
     await userEvent.type(within(waiting).getByLabelText(/to confirm/), "LOAD");
     await userEvent.click(within(waiting).getByRole("button", { name: "Load 2 validator keys into Teku" }));
@@ -170,27 +173,49 @@ describe("Home", () => {
     expect(await screen.findByText("A validator key is loaded in two clients — this can get it slashed")).toBeInTheDocument();
   });
 
+  it("Advanced mode: the key check's own message and why this client was chosen; long pubkeys wrap anywhere", async () => {
+    localStorage.setItem(MODE_STORAGE_KEY, "advanced");
+    renderHome({ scenario: "keys-attention" });
+    const box = await screen.findByTestId("key-approval");
+    expect(within(box).getByText(/is loaded in both Nimbus and Teku/).className).toContain("[overflow-wrap:anywhere]");
+    expect(within(box).getByText(/^Why Teku:/)).toBeInTheDocument();
+  });
+
   it("legacy recovery-phrase file: explained, moved only with ARCHIVE typed, and then gone", async () => {
     const api = renderHome({ scenario: "mixed" });
     const box = await screen.findByTestId("legacy-mnemonic");
-    expect(within(box).getByText("Your recovery phrase is stored in a plain file")).toBeInTheDocument();
-    expect(box).toHaveTextContent("Make sure you have your own copy");
+    expect(within(box).getByText("Your recovery phrase is saved in an unprotected file")).toBeInTheDocument();
+    expect(box).toHaveTextContent("Check that you have the 24 words written on paper.");
     expect(within(box).getByRole("link", { name: "support@ava.do" })).toHaveAttribute("href", "mailto:support@ava.do");
-    const button = within(box).getByRole("button", { name: "Move it into the backups folder" });
+    const button = within(box).getByRole("button", { name: "Move the file into the backups" });
     expect(button).toBeDisabled();
     await userEvent.type(within(box).getByLabelText(/to confirm/), "archive");
     expect(button).toBeDisabled();
     await userEvent.clear(within(box).getByLabelText(/to confirm/));
     await userEvent.type(within(box).getByLabelText(/to confirm/), ARCHIVE_CONFIRMATION);
     await userEvent.dblClick(button);
-    expect(await within(box).findByText("The file is no longer in the Rocket Pool data folder")).toBeInTheDocument();
-    expect(box).toHaveTextContent("backups/mnemonic-archive-20260923T101500Z");
-    expect(box).toHaveTextContent("Nothing was deleted.");
+    expect(await within(box).findByText("The file was moved into the backups")).toBeInTheDocument();
+    expect(box).toHaveTextContent("Nothing was deleted");
+    // No paths on the box: a download button instead, for an owner who has no written copy.
+    expect(box).not.toHaveTextContent("mnemonic-archive-");
+    expect(box).not.toHaveTextContent("/rocketpool/");
     expect(api.calls.filter((c) => c.path === "/api/avado/legacy-mnemonic/archive")).toEqual([
       { method: "POST", path: "/api/avado/legacy-mnemonic/archive", params: { confirm: "ARCHIVE" } },
     ]);
     // The banner on every page goes away with the file.
-    await waitFor(() => expect(screen.queryByText("Your recovery phrase is stored in a plain file")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Your recovery phrase is saved in an unprotected file")).not.toBeInTheDocument());
+
+    // One click to the moved file, with the recovery-phrase warning and no typing.
+    const saved = mockDownloads();
+    await userEvent.click(within(box).getByRole("button", { name: "Download the recovery phrase file" }));
+    const dialog = screen.getByRole("dialog", { name: "Download backup" });
+    expect(dialog).toHaveTextContent("This file holds your node wallet's recovery phrase (24 words) as plain text.");
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Download" }));
+    expect(await screen.findByRole("dialog", { name: "Backup downloaded" })).toBeInTheDocument();
+    expect(api.calls.filter((c) => c.path === "/api/avado/backups/download").map((c) => c.params)).toEqual([{ name: "mnemonic-archive-20260923T101500Z" }]);
+    expect(saved.names).toEqual([expect.stringMatching(/\.zip$/)]);
+    saved.restore();
   });
 
   it("a new node without a wallet: the way into setup, and no node reads", async () => {

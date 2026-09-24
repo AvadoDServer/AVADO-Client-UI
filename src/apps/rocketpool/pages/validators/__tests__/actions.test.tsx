@@ -22,8 +22,8 @@ const reason = (d: MinipoolCloseDetails) =>
 
 describe("validator actions", () => {
   it("M7: a minipool that is back from the beacon chain but can't be closed gets a neutral reason", () => {
-    expect(reason(detail({ canClose: false, beaconState: "withdrawal_done" }))).toBe("Rocket Pool says it can't be closed right now.");
-    expect(reason(detail({ canClose: false, beaconState: "active_exiting" }))).toMatch(/isn't back from the beacon chain yet/);
+    expect(reason(detail({ canClose: false, beaconState: "withdrawal_done" }))).toBe("Rocket Pool says it can't be closed right now. Try again later.");
+    expect(reason(detail({ canClose: false, beaconState: "active_exiting" }))).toMatch(/isn't back yet\. Exit it first/);
     expect(reason(detail({ canClose: false, minipoolVersion: 2 }))).toMatch(/old contract version/);
     expect(reason(detail({ canClose: true }))).toBeNull();
   });

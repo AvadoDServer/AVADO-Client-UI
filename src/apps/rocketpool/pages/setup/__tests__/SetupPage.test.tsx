@@ -312,7 +312,7 @@ describe("Setup wizard", () => {
       const bondReads = api.calls.filter((c) => c.path === "/api/sn/node/get-bond-requirement").map((c) => c.params.numValidators);
       expect(bondReads).toEqual(expect.arrayContaining([1, 2]));
       expect(screen.queryByLabelText("Express tickets to use")).not.toBeInTheDocument(); // none on a new node
-      expect(screen.getByTestId("auto-tx-notice")).toHaveTextContent("always go through");
+      expect(screen.getByTestId("auto-tx-notice")).toHaveTextContent("which is rare");
 
       await user.click(screen.getByRole("button", { name: "Create 2 validators" }));
       const dialog = await confirmTx(user, "Create validators");
@@ -351,7 +351,7 @@ describe("Setup wizard", () => {
       // Credit 3, only 1 usable: Smartnode would subtract all 3, so the credit is not used.
       const partly = creditPlan(can({ canUseCredit: true, creditBalance: "3000000000000000000", usableCreditBalance: "1000000000000000000" }), 4n * E);
       expect(partly).toMatchObject({ useCredit: false, fromWallet: 4n * E, blocked: null });
-      expect(partly.note).toMatch(/deposit pool is low/);
+      expect(partly.note).toMatch(/doesn.t have enough staker ETH waiting/);
       const short = creditPlan(can({ canUseCredit: true, nodeBalance: "2000000000000000000", creditBalance: "3000000000000000000", usableCreditBalance: "1000000000000000000" }), 4n * E);
       expect(short.blocked).toMatch(/not enough for the whole bond/);
     });

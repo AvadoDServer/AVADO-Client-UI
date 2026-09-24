@@ -75,27 +75,85 @@ export const isDefinitelyNotSent = (e: unknown): boolean =>
 export const isTxReverted = (e: unknown): boolean =>
   isRpApiError(e) && (e.kind === "http" || e.kind === "smartnode") && /failed with status 0/i.test(e.detail ?? "");
 
-/** The sentence(s) the UI shows for an error. Never includes secrets: only server messages and fixed text. */
+/**
+ * Smartnode and client messages that mean something to an owner, in plain
+ * words with the next step. First match wins.
+ */
+const KNOWN: Array<[RegExp, string]> = [
+  [/insufficient funds/i, "The node wallet doesn't have enough ETH to pay for this, including the network fee. Add ETH to the node wallet and try again."],
+  [/nonce too low|replacement transaction underpriced|already known/i, "Another transaction from the node wallet is still waiting to go through. Wait a few minutes, then try again."],
+  [/execution reverted|revert/i, "Ethereum would reject this transaction, so it was not sent and no fee was paid. Reload the page and check again; if it keeps happening, contact AVADO support."],
+  [/wallet (?:has not been|is not|not) initiali[sz]ed/i, "There is no node wallet on this AVADO yet. Set up your node first."],
+  [/password (?:has not been|is not|not) set/i, "The node wallet has no password yet. Set up your node first, or contact AVADO support."],
+  [/\b(?:ec|cc|execution client|consensus client|beacon (?:node|client)|clients?)\b[^.]*\bnot (?:yet )?synced|still syncing|is syncing/i, "Your Ethereum clients are still catching up with the network. Try again once they are in sync (Home shows their progress)."],
+  [/connection refused|dial tcp|no such host|\bEOF\b|could not connect|connection reset/i, "Rocket Pool couldn't reach one of your Ethereum clients. Check that they are running on your AVADO, then try again."],
+  [/deadline exceeded|timed? ?out/i, "Rocket Pool took too long to answer. Try again in a minute."],
+];
+
+/** Text that is for a developer, not an owner: codes, hashes, internal addresses, stack traces. */
+const TECHNICAL = /0x[0-9a-f]{16,}|rpc error|\bcode\s*[=:]|json:|panic|goroutine|(?:^|\s)\/[a-z0-9_.-]+\/[a-z0-9_./-]+|\bstatus code\b|\berr(?:or)?:\s*\w+:|[{}[\]<>]/i;
+
+/**
+ * The sentence(s) the UI shows for an error: what it means and what to do.
+ * Never includes secrets. Known Smartnode messages are put in plain words;
+ * anything technical (codes, hashes, paths) is left out: `errorDetails`
+ * keeps it for the Advanced details.
+ */
 export function plainError(e: unknown): string {
-  if (!isRpApiError(e)) return "Something went wrong in this page. Reload it and try again.";
+  if (!isRpApiError(e)) return "Something went wrong on this page. Reload the page and try again.";
   switch (e.kind) {
     case "unreachable":
-      return "The Rocket Pool package is not answering. It may be restarting; try again in a minute.";
+      return "The Rocket Pool package is not answering. It may be restarting: try again in a minute.";
     case "timeout":
-      return "The Rocket Pool package did not answer in time.";
+      return "The Rocket Pool package did not answer in time. Try again in a minute.";
     case "invalid":
-      return "The Rocket Pool package gave an answer this page does not understand.";
+      return "The Rocket Pool package gave an answer this page doesn't understand. Reload the page; if it keeps happening, update the Rocket Pool package.";
     case "aborted":
       return "Cancelled.";
     case "smartnode":
-      return e.detail ? tidy(e.detail) : "Rocket Pool refused the request.";
+      return e.detail ? readable(e.detail) : "Rocket Pool couldn't do this right now. Try again in a minute.";
     case "http":
-      if (e.detail) return tidy(e.detail);
+      if (e.status === 404 && (!e.detail || /^not found\.?$/i.test(e.detail.trim()))) {
+        return "This version of the Rocket Pool package can't do this yet. Update the package in the AVADO Admin and try again.";
+      }
+      if (e.detail) return readable(e.detail);
       if (e.status === 503) return "Rocket Pool is still starting. Try again in a minute.";
-      if (e.status === 502) return "The Rocket Pool service is not reachable. It may still be starting.";
-      if (e.status === 504) return "The Rocket Pool service did not answer in time.";
-      return `The Rocket Pool package answered with an error (HTTP ${e.status ?? "?"}).`;
+      if (e.status === 502) return "The Rocket Pool service is not running yet. It may still be starting: try again in a minute.";
+      if (e.status === 504) return "The Rocket Pool service did not answer in time. Try again in a minute.";
+      return "The Rocket Pool package ran into a problem. Try again in a minute; if it keeps happening, contact AVADO support.";
   }
+}
+
+/** The raw error for the Advanced "Details": route, status and the server's own text. Null when there is nothing more to say. */
+export function errorDetails(e: unknown): string | null {
+  if (!isRpApiError(e)) return e instanceof Error && e.message ? e.message : null;
+  const parts = [e.path, e.kind, e.status !== undefined ? `HTTP ${e.status}` : "", e.detail ?? ""].filter(Boolean);
+  return parts.join(" · ");
+}
+
+/**
+ * A status message from the backend (not an error) as the owner reads it:
+ * known ones translated, URLs and CLI advice dropped. A technical one (codes,
+ * hashes, paths) gives "": the caller shows its own plain words instead, and
+ * the raw text only in the Advanced details.
+ */
+export function plainMessage(message: string): string {
+  if (!message.trim()) return "";
+  const text = readable(message, "");
+  return text;
+}
+
+/** A server message as the owner reads it: known ones translated, technical ones replaced by `fallback`, CLI advice dropped. */
+function readable(
+  message: string,
+  fallback = "Rocket Pool couldn't do this right now. Try again in a minute; if it keeps happening, contact AVADO support.",
+): string {
+  // Internal addresses mean nothing to an owner: "the execution client URL http://… does not answer" reads fine without it.
+  const text = tidy(message.replace(/\s*\(?https?:\/\/[^\s,;)]+\)?/gi, "").replace(/\s{2,}/g, " "));
+  const known = KNOWN.find(([re]) => re.test(text));
+  if (known) return known[1];
+  if (TECHNICAL.test(text)) return fallback;
+  return text;
 }
 
 /** Smartnode messages often end in CLI advice ("Please run 'rocketpool …'"); drop it, it doesn't apply here. */

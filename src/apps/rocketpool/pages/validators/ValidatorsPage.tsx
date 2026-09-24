@@ -36,7 +36,7 @@ import { megapoolSummary, megapoolValidatorView, minipoolView, sortMinipools, ty
 export default function ValidatorsPage() {
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Validators" description="Your minipools and megapool validators, their status, and what you can do with them." />
+      <PageHeader title="Validators" description="Your validators: what each one is doing, and what you can do with it." />
       <NodeGate>
         <Validators />
       </NodeGate>
@@ -50,7 +50,7 @@ function BeaconLink({ pubkey, label }: { pubkey: string; label: string }) {
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent underline-offset-2 hover:underline">
       {label}
-      <span className="sr-only"> (opens beaconcha.in in a new tab)</span>
+      <span className="sr-only"> (opens beaconcha.in, a website that shows every validator, in a new tab)</span>
     </a>
   );
 }
@@ -94,7 +94,7 @@ function Validators() {
     <>
       {noValidators && (
         <Callout tone="accent" title="No validators yet">
-          <p>Add a megapool validator to start staking with Rocket Pool. Each one needs a bond of a few ETH from you.</p>
+          <p>Add a validator to start staking with Rocket Pool. Each one needs about 4 ETH from you (your bond); Rocket Pool adds the rest.</p>
           <div>
             <Button size="sm" onClick={() => setAdding(true)}>
               Add a validator
@@ -137,7 +137,7 @@ function Validators() {
       {!hasMegapool && !noValidators && (
         <SectionCard
           title="Megapool"
-          description="New Rocket Pool validators are megapool validators. Your megapool is created with your first one."
+          description="New Rocket Pool validators are megapool validators. They all share one contract, your megapool, which is created with your first one."
           actions={
             <Button size="sm" onClick={() => setAdding(true)}>
               Add a validator
@@ -148,7 +148,10 @@ function Validators() {
 
       {status.minipoolCounts.total > 0 && !status.expressTicketsProvisioned && (
         <Callout tone="accent" title="Your express tickets aren't set up yet">
-          <p>Your minipools earn express tickets that let new validators skip ahead in the queue. Your node sets them up automatically when gas is low.</p>
+          <p>
+            Your minipools earned express tickets: each one lets a new validator skip ahead in Rocket Pool's waiting line. Your node sets
+            them up by itself when network fees are low, so you can also just wait.
+          </p>
           <div>
             <Button variant="secondary" size="sm" onClick={() => setFlow(provisionTicketsFlow())}>
               Set them up now
@@ -212,13 +215,14 @@ function MinipoolSection({
         Minipools
       </h2>
       <p className="text-sm text-fg-muted">
-        Your minipools keep validating as before. Rocket Pool no longer creates new ones; new validators are megapool validators.
+        Minipools are the older kind of Rocket Pool validator, one contract each. They keep validating as before; new validators are
+        megapool validators.
       </p>
       {error !== undefined && !views && <LoadError what="your minipools" error={error} onRetry={onRetry} />}
       {!views && error === undefined && <LoadingCard label="Loading your minipools" />}
       {detailsError !== undefined && views && (
         <Callout tone="warning" title="Some details could not be loaded">
-          <p>Closing and distributing may not show until they load. The page tries again by itself.</p>
+          <p>The buttons to close a minipool or pay out its rewards may be missing until they load. The page tries again by itself.</p>
         </Callout>
       )}
       {views?.map((v) => (
@@ -246,7 +250,7 @@ function MinipoolCard({
     ? "Follows the newest version automatically"
     : view.delegate.upToDate
       ? "The newest version"
-      : "An older version: your node switches it to follow the newest one automatically (one small transaction when gas is low)";
+      : "An older version: your node updates it by itself (one small transaction when network fees are low)";
   return (
     <Card className="flex flex-col gap-4" data-testid={`minipool-${mp.address.toLowerCase()}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -262,18 +266,22 @@ function MinipoolCard({
         items={[
           { label: "Your bond", value: formatEth(mp.node.depositBalance) },
           { label: "Borrowed from Rocket Pool", value: formatEth(mp.user?.depositBalance) },
-          { label: "Commission", value: `${(mp.node.fee * 100).toFixed(1).replace(/\.0$/, "")}%` },
-          { label: "Balance on the beacon chain", value: mp.validator.exists ? formatEth(mp.validator.balance) : "—" },
+          {
+            label: "Commission",
+            value: `${(mp.node.fee * 100).toFixed(1).replace(/\.0$/, "")}%`,
+            hint: "Your cut of the rewards earned on the borrowed ETH.",
+          },
+          { label: "Validator balance", value: mp.validator.exists ? formatEth(mp.validator.balance) : "—" },
           {
             label: "Rewards waiting in the minipool",
             value: formatEth(mp.nodeShareOfETHBalance),
-            hint: "Your share; paid out when distributed or closed.",
+            hint: "Your share. Paid out when you pay out its rewards or close it.",
           },
           {
             label: "Validator",
-            value: index ? <BeaconLink pubkey={mp.validatorPubkey} label={`Index ${index}`} /> : <BeaconLink pubkey={mp.validatorPubkey} label="Not on the beacon chain yet" />,
+            value: index ? <BeaconLink pubkey={mp.validatorPubkey} label={`Number ${index}`} /> : <BeaconLink pubkey={mp.validatorPubkey} label="Not started yet" />,
           },
-          { label: "Contract version", value: delegate },
+          ...(isAdvanced ? [{ label: "Contract version", value: delegate }] : []),
         ]}
       />
       {(view.canClose || view.canDistribute || view.canExit) && (
@@ -286,7 +294,7 @@ function MinipoolCard({
           )}
           {view.canDistribute && (
             <Button variant="secondary" onClick={() => onAction(distributeMinipoolFlow(mp.address))}>
-              Distribute rewards
+              Pay out rewards
             </Button>
           )}
           {view.canExit && (
@@ -326,7 +334,7 @@ function MegapoolSection({
             Your megapool <Address address={megapool.address} />
           </>
         }
-        description="All your megapool validators share this contract. Its rewards collect here until they are distributed."
+        description="All your megapool validators share this contract. Their block rewards collect here until you pay them out."
         actions={
           <Button size="sm" onClick={onAdd} disabled={sum.hasDebt}>
             Add a validator
@@ -339,24 +347,24 @@ function MegapoolSection({
             { label: "Validators", value: `${megapool.activeValidatorCount} active of ${megapool.validatorCount}` },
             { label: "Your bond", value: formatEth(megapool.nodeBond), hint: (toBigInt(megapool.nodeQueuedBond) ?? 0n) > 0n ? `plus ${formatEth(megapool.nodeQueuedBond)} for validators in the queue` : undefined },
             { label: "Rewards waiting (your share)", value: pendingNodeShare !== null ? formatEth(pendingNodeShare) : formatEth(megapool.pendingRewards) },
-            { label: "Express tickets", value: String(megapool.nodeExpressTicketCount) },
-            ...(sum.hasRefund ? [{ label: "Refund for you", value: formatEth(sum.refund) }] : []),
-            ...(sum.hasDebt ? [{ label: "Debt", value: formatEth(sum.debt) }] : []),
+            { label: "Express tickets", value: String(megapool.nodeExpressTicketCount), hint: "Each one lets a new validator skip ahead in the waiting line." },
+            ...(sum.hasRefund ? [{ label: "Refund for you", value: formatEth(sum.refund), hint: "ETH your megapool holds for you, for example a bond from a validator that left." }] : []),
+            ...(sum.hasDebt ? [{ label: "Debt", value: formatEth(sum.debt), hint: "What your megapool owes Rocket Pool, for example after a penalty." }] : []),
           ]}
         />
         {megapool.delegateExpired && (
-          <Callout tone="warning" title="Your megapool's contract version has expired">
-            <p>Rocket Pool upgrades it automatically. Until then some actions may not work.</p>
+          <Callout tone="warning" title="Your megapool needs an update">
+            <p>Rocket Pool updates it by itself; there is nothing you need to do. Until then some buttons here may not work.</p>
           </Callout>
         )}
         {sum.hasDebt && (
           <Callout tone="warning" title={`Your megapool owes ${formatEth(sum.debt)}`}>
-            <p>You can't add validators until it is repaid.</p>
+            <p>This can happen after a penalty. You can't add validators until it is repaid: press Repay debt below.</p>
           </Callout>
         )}
         <div className="flex flex-wrap gap-2 border-t border-border pt-4">
           <Button variant="secondary" onClick={() => onAction(distributeMegapoolFlow(pendingNodeShare))}>
-            Distribute rewards
+            Pay out rewards
           </Button>
           {sum.hasRefund && (
             <Button variant="secondary" onClick={() => onAction(claimRefundFlow(sum.refund))}>
@@ -386,7 +394,7 @@ function MegapoolSection({
           </div>
           <Facts
             items={[
-              { label: "Beacon chain", value: index ? <BeaconLink pubkey={v.pubKey} label={`Index ${index}`} /> : "Not on the beacon chain yet" },
+              { label: "Validator", value: index ? <BeaconLink pubkey={v.pubKey} label={`Number ${index}`} /> : "Not started yet" },
               ...(v.beaconStatus?.exists && v.beaconStatus.balance > 0
                 ? [{ label: "Balance", value: formatEth(BigInt(v.beaconStatus.balance) * 1_000_000_000n) }]
                 : []),

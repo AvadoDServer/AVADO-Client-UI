@@ -20,7 +20,7 @@ import type { BondRequirementResponse, CanDepositResponse, MegapoolDetails, Node
 import { reconcileStatusOf } from "../../api/reconcile";
 import { useRocketpoolApi } from "../../api/RocketpoolApiProvider";
 import type { SnParams } from "../../api/types";
-import { ExternalLink, Facts, Notice } from "../../components/common";
+import { ExternalLink, Facts, Notice, TechDetails } from "../../components/common";
 import { useNodeSync } from "../../data/nodeReads";
 import { MAX_DEPOSIT_COUNT, newValidatorBonds, sumWei } from "../../lib/bond";
 import { formatEth, toBigInt } from "../../lib/units";
@@ -76,11 +76,11 @@ export function creditPlan(can: CanDepositResponse, bondWei: bigint): CreditPlan
   }
   const note =
     credit > 0n
-      ? "Your credit can't all be used right now (Rocket Pool's deposit pool is low), so the whole bond is paid from the node wallet."
+      ? "Your credit can't all be used right now (Rocket Pool doesn't have enough staker ETH waiting), so the whole bond is paid from the node wallet."
       : null;
   const blocked =
     credit > 0n && wallet < bondWei
-      ? `The node wallet has ${formatEth(wallet)}, not enough for the whole bond, and your credit can't be used right now. Add ETH or try again later.`
+      ? `The node wallet has ${formatEth(wallet)}, not enough for the whole bond, and your credit can't be used right now. Add ETH to the node wallet, or try again later.`
       : null;
   return { useCredit: false, fromCredit: 0n, fromWallet: bondWei, note, blocked };
 }
@@ -88,12 +88,12 @@ export function creditPlan(can: CanDepositResponse, bondWei: bigint): CreditPlan
 /** Why the deposit can't be made, from `can-deposit` (null when it can). A missing `canDeposit` blocks. */
 export function blockedReasonFor(can: CanDepositResponse): string | null {
   if (can.canDeposit === true) return null;
-  if (can.nodeHasDebt) return "Your megapool has a debt. Repay it first (Validators page).";
+  if (can.nodeHasDebt) return "Your megapool has a debt. Repay it first, on the Validators page.";
   if (can.insufficientBalanceWithoutCredit) {
-    return "Your credit can't be used right now because Rocket Pool's deposit pool is low, and the node wallet alone doesn't have enough ETH. Add ETH or try again later.";
+    return "Your credit can't be used right now (Rocket Pool doesn't have enough staker ETH waiting), and the node wallet alone doesn't have enough ETH. Add ETH to the node wallet, or try again later.";
   }
   if (can.insufficientBalance) {
-    return `The node wallet doesn't have enough ETH for this bond: it has ${formatEth(can.nodeBalance)}. Add ETH first.`;
+    return `The node wallet doesn't have enough ETH for this bond: it has ${formatEth(can.nodeBalance)}. Add ETH to the node wallet first.`;
   }
   return defaultBlockedReason({ ...can, canDeposit: false }, CAN_DEPOSIT_ROUTE);
 }
@@ -139,7 +139,7 @@ export function NewValidatorsForm({
   const [countText, setCountText] = useState("1");
   const [ticketsText, setTicketsText] = useState<string | null>(null);
   const [checked, setChecked] = useState<Checked | null>(null);
-  const [planError, setPlanError] = useState<string | null>(null);
+  const [planError, setPlanError] = useState<unknown>(null);
   const [planning, setPlanning] = useState(false);
 
   const tickets = megapool?.nodeExpressTicketCount ?? node.expressTicketCount ?? 0;
@@ -201,7 +201,7 @@ export function NewValidatorsForm({
       .catch((e) => {
         if (!cancelled) {
           setChecked(null);
-          setPlanError(plainError(e));
+          setPlanError(e);
         }
       })
       .finally(() => {
@@ -225,13 +225,13 @@ export function NewValidatorsForm({
     <div className="flex flex-col gap-5">
       {noClient && (
         <Notice tone="danger" title="Install a consensus client first">
-          <p>Your validators need a consensus client (Nimbus, Teku, Lighthouse or Prysm) on this AVADO to run.</p>
+          <p>Your validators run inside a consensus client, one of the two Ethereum programs on your AVADO: Nimbus, Teku, Lighthouse or Prysm.</p>
           <ExternalLink href={ADMIN_STORE_URL}>Open the DappStore</ExternalLink>
         </Notice>
       )}
       {notSynced && (
         <Notice tone="warning" title="Wait until your Ethereum clients are in sync">
-          <p>Your execution and consensus clients must be fully synced before you create validators.</p>
+          <p>Your AVADO is still catching up with the Ethereum network. Create validators once that is done; Home shows the progress.</p>
         </Notice>
       )}
 
@@ -252,7 +252,7 @@ export function NewValidatorsForm({
             value={ticketsText ?? String(maxTickets)}
             onChange={(e) => setTicketsText(e.target.value)}
             error={!ticketsOk ? `Choose 0 to ${maxTickets}.` : undefined}
-            hint={`You have ${plural(tickets, "express ticket")}. Each one puts a validator in the faster queue.`}
+            hint={`You have ${plural(tickets, "express ticket")}. Each one lets a validator skip ahead in the waiting line.`}
             autoComplete="off"
           />
         )}
@@ -263,9 +263,11 @@ export function NewValidatorsForm({
           <Spinner size="sm" label="Checking" /> Working out the bond…
         </p>
       )}
-      {planError && (
-        <Notice tone="danger" title="Could not check the deposit" live>
-          <p>{planError}</p>
+      {planError !== null && (
+        <Notice tone="danger" title="Could not work out the cost" live>
+          <p>{plainError(planError)}</p>
+          <p>Change the number to check again.</p>
+          <TechDetails error={planError} />
         </Notice>
       )}
       {checked && !planning && (
@@ -338,10 +340,10 @@ export function DepositFlow({
           Makes {plural(plan.count, "new validator key")} on this AVADO and deposits your bond of{" "}
           <strong className="text-fg">{formatEth(plan.bondWei)}</strong>
           {plan.useCredit ? ` (${formatEth(plan.fromCredit)} of it from your credit)` : ""}. Rocket Pool adds the rest of each
-          validator's 32 ETH. The {plan.count === 1 ? "validator joins" : "validators join"} Rocket Pool's queue
-          {plan.expressTickets > 0 ? ` (${plan.expressTickets} with an express ticket)` : ""}; your node starts{" "}
-          {plan.count === 1 ? "it" : "them"} automatically. You can leave the queue later and get the bond back as credit. The network
-          fee below is paid from the node wallet on top of the bond.
+          validator's 32 ETH. The {plan.count === 1 ? "validator waits" : "validators wait"} in Rocket Pool's line
+          {plan.expressTickets > 0 ? ` (${plan.expressTickets} with an express ticket, which skips ahead)` : ""}; your node starts{" "}
+          {plan.count === 1 ? "it" : "them"} by itself. You can leave the line later and get the bond back as credit. The network fee
+          below is paid from the node wallet on top of the bond.
         </>
       }
       tx={{

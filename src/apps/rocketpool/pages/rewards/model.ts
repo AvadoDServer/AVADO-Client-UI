@@ -76,7 +76,7 @@ export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDis
         id: "megapool",
         kind: "megapool",
         title: "Megapool rewards",
-        text: "Execution-layer rewards (tips and MEV) collected by your megapool validators, plus any refund. Paid to your withdrawal address.",
+        text: "Block rewards (tips from the network) your megapool validators collected, plus any refund. Paid to your withdrawal address.",
         eth,
         rpl: 0n,
       });
@@ -87,8 +87,8 @@ export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDis
     items.push({
       id: "fee-distributor",
       kind: "fee-distributor",
-      title: "Fee distributor",
-      text: "Tips and MEV your minipools earned outside the smoothing pool. Your share goes to your withdrawal address.",
+      title: "Minipool block rewards",
+      text: "Block rewards (tips from the network) your minipools collected. Your share goes to your withdrawal address.",
       eth: floatEthToWei(feeDistributor.nodeShare),
       rpl: 0n,
       approx: true,
@@ -103,7 +103,7 @@ export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDis
       id: `minipool:${d.address.toLowerCase()}`,
       kind: "minipool",
       title: "Minipool rewards",
-      text: "Beacon-chain rewards paid into this minipool. Your share goes to your withdrawal address.",
+      text: "Staking rewards paid into this minipool. Your share goes to your withdrawal address.",
       eth,
       rpl: 0n,
       address: d.address,
@@ -115,8 +115,8 @@ export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDis
     items.push({
       id: "periodic",
       kind: "periodic",
-      title: "Periodic rewards",
-      text: `RPL rewards and smoothing pool ETH from ${intervals.length} reward period${intervals.length === 1 ? "" : "s"}. Paid to your withdrawal address, or the RPL can be staked again.`,
+      title: "Rocket Pool rewards",
+      text: `RPL (Rocket Pool's token) and your smoothing pool share, from ${intervals.length} reward period${intervals.length === 1 ? "" : "s"} of 28 days. Paid to your withdrawal address, or the RPL can be staked again.`,
       eth: intervals.reduce((a, i) => a + intervalEth(i), 0n),
       rpl: intervals.reduce((a, i) => a + intervalRpl(i), 0n),
       indices: intervals.map((i) => i.index),
@@ -141,7 +141,7 @@ export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDis
       id: "credit",
       kind: "credit",
       title: "Credit",
-      text: "ETH credited to your node (for example a bond back from a validator that left the queue). Withdrawn as the same value in rETH to your withdrawal address.",
+      text: "ETH Rocket Pool holds for your node, for example the bond of a validator that left the waiting line. Use it for a new validator, or withdraw it as rETH (Rocket Pool's staked-ETH token, worth the same).",
       eth: credit,
       rpl: 0n,
     });

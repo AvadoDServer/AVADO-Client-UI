@@ -36,9 +36,9 @@ export function FundStep({ address, node }: { address?: string; node?: NodeStatu
             <strong>4 ETH for each validator</strong> you want to run: your bond. Rocket Pool's stakers add the rest of the 32 ETH.
           </li>
           <li>
-            <strong>About 0.05 ETH more</strong> for network fees: registering, setting up and the node's automatic transactions.
+            <strong>About 0.05 ETH more</strong> for network fees: registering, setting up, and what the node does by itself later.
           </li>
-          <li>RPL is not needed to start.</li>
+          <li>RPL (Rocket Pool's own token) is not needed to start.</li>
         </ul>
       </div>
       {node && (

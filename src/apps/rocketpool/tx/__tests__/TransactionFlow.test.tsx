@@ -5,6 +5,7 @@ import { DemoSnError } from "../../api/fixtures";
 import { createMockRocketpoolApi, type MockRocketpoolApi, type RocketpoolMockOptions } from "../../api/mock";
 import type { CanResponse, SnEnvelope } from "../../api/models";
 import { RocketpoolApiProvider } from "../../api/RocketpoolApiProvider";
+import { MODE_STORAGE_KEY, ModeProvider } from "../../../../settings/ModeProvider";
 import { PENDING_STORAGE_KEY, PendingTxProvider, PendingTxStore, pendingKey } from "../pending";
 import { TransactionFlow, type TransactionFlowProps } from "../TransactionFlow";
 
@@ -49,11 +50,13 @@ function setup(mock: RocketpoolMockOptions | MockRocketpoolApi = {}, props: Prop
     );
   }
   const utils = render(
-    <RocketpoolApiProvider api={api}>
-      <PendingTxProvider store={store}>
-        <Page />
-      </PendingTxProvider>
-    </RocketpoolApiProvider>,
+    <ModeProvider>
+      <RocketpoolApiProvider api={api}>
+        <PendingTxProvider store={store}>
+          <Page />
+        </PendingTxProvider>
+      </RocketpoolApiProvider>
+    </ModeProvider>,
   );
   const posts = () => api.calls.filter((c) => c.method === "POST");
   const waits = () => api.calls.filter((c) => c.path === "/api/sn/wait");
@@ -78,7 +81,18 @@ function slowPosts(api: MockRocketpoolApi) {
 }
 
 describe("TransactionFlow", () => {
+  it("Simple mode: the fee in two lines, without the gas numbers", async () => {
+    setup();
+    const fee = await screen.findByTestId("tx-fee");
+    expect(within(fee).getByText("about 0.000269 ETH")).toBeInTheDocument();
+    expect(within(fee).getByText("0.000588 ETH")).toBeInTheDocument();
+    expect(within(fee).queryByText("Current base fee")).toBeNull();
+    expect(within(fee).queryByText("Gas limit")).toBeNull();
+    expect(within(fee).queryByText(/gwei/)).toBeNull();
+  });
+
   it("checks, shows the plain summary and the fee, sends only on confirm, waits, and links the explorer", async () => {
+    localStorage.setItem(MODE_STORAGE_KEY, "advanced"); // the gas numbers behind the fee show in Advanced mode
     const { api, onDone, posts } = setup({}, { tx: { canRoute: "minipool/can-refund", route: "minipool/refund", params: { address: "0xabc" } } });
     expect(screen.getByText(/Checking with Rocket Pool/)).toBeInTheDocument();
     const fee = await screen.findByTestId("tx-fee");
@@ -117,7 +131,7 @@ describe("TransactionFlow", () => {
   it("shows the waiting state with the explorer link while the tx is being mined", async () => {
     setup({ waitMs: 60_000 });
     await userEvent.click(await screen.findByRole("button", { name: "Distribute" }));
-    expect(await screen.findByText(/Sent. Waiting for it to be included/)).toBeInTheDocument();
+    expect(await screen.findByText(/Sent. Waiting for the network to confirm it/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Etherscan/ })).toHaveAttribute("href", expect.stringMatching(/^https:\/\/etherscan\.io\/tx\/0x[0-9a-f]{64}$/));
     expect(screen.getByRole("button", { name: "Close" })).toBeEnabled();
   });
@@ -338,7 +352,7 @@ describe("TransactionFlow", () => {
       ]),
     );
     const { waits, posts } = setup({ waitMs: 60_000 });
-    expect(await screen.findByText("This transaction hasn't been mined for an hour")).toBeInTheDocument();
+    expect(await screen.findByText("This transaction still isn't confirmed after an hour")).toBeInTheDocument();
     expect(screen.getByText(/only after Etherscan shows it was dropped or went through/)).toBeInTheDocument();
     expect(waits()).toHaveLength(0); // not waited on again by itself
     await userEvent.click(screen.getByRole("button", { name: "Keep waiting" }));
@@ -403,7 +417,7 @@ describe("TransactionFlow", () => {
       reads: { "node/can-deposit": { status: "success", error: "", canDeposit: false, insufficientBalance: true, gasLimits: { estimated: 0, safe: 0 } } },
     }, { tx: { canRoute: "node/can-deposit", route: "node/deposit" } });
     expect(await screen.findByText("This can't be done right now")).toBeInTheDocument();
-    expect(screen.getByText("The node wallet doesn't have enough ETH for this.")).toBeInTheDocument();
+    expect(screen.getByText("The node wallet doesn't have enough ETH for this. Add ETH to it first.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Distribute" })).not.toBeInTheDocument();
     expect(first.posts()).toHaveLength(0);
   });
@@ -569,16 +583,17 @@ describe("TransactionFlow", () => {
       expect(api.calls.some((c) => c.path.endsWith("can-exit-queue"))).toBe(false);
     });
 
-    it("M12: a stake started as wait-and-stake-rpl blocks a plain stake-rpl", async () => {
+    it("M12: a stake still on its way blocks another stake of a different amount", async () => {
       const api = createMockRocketpoolApi({ scenario: "minipool" });
       const store = new PendingTxStore({ api, storage: null });
-      store.begin({ key: pendingKey("node/wait-and-stake-rpl", { amountWei: "1" }), title: "Stake RPL", route: "node/wait-and-stake-rpl", params: { amountWei: "1" } });
+      store.begin({ key: pendingKey("node/stake-rpl", { amountWei: "1" }), title: "Stake RPL", route: "node/stake-rpl", params: { amountWei: "1" } });
       setup(api, { tx: { canRoute: "node/can-stake-rpl", route: "node/stake-rpl", params: { amountWei: "2" }, txHashField: "stakeTxHash" } }, store);
       expect(await screen.findByText(/This was started earlier/)).toBeInTheDocument();
       expect(api.calls.filter((c) => c.method === "POST")).toHaveLength(0);
     });
 
     it("a close bundle's second transaction is counted in the fee but not sent as the gas limit", async () => {
+      localStorage.setItem(MODE_STORAGE_KEY, "advanced");
       const { posts } = setup({}, {
         tx: {
           canRoute: "node/can-distribute",

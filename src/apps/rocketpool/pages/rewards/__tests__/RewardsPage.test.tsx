@@ -19,14 +19,14 @@ describe("Rewards page", () => {
   it("claims everything one confirmed transaction at a time, and stops when the owner cancels", async () => {
     const { posts } = renderPage("/rewards", { scenario: "minipool" });
     await userEvent.click(await screen.findByRole("button", { name: "Claim everything (4 transactions)" }, { timeout: 3000 }));
-    expect(await screen.findByRole("dialog", { name: /Step 1 of 4: Distribute the rewards of minipool/ })).toBeInTheDocument();
-    await confirmIn(dialog(), "Distribute");
+    expect(await screen.findByRole("dialog", { name: /Step 1 of 4: Pay out the rewards of minipool/ })).toBeInTheDocument();
+    await confirmIn(dialog(), "Pay out");
     await within(dialog()).findByText("Transaction confirmed");
     expect(posts()).toHaveLength(1);
     await userEvent.click(within(dialog()).getByRole("button", { name: "Done" }));
     // The next one opens by itself, but is not sent without its own confirm.
     expect(await screen.findByRole("dialog", { name: /Step 2 of 4/ })).toBeInTheDocument();
-    await within(dialog()).findByRole("button", { name: "Distribute" });
+    await within(dialog()).findByRole("button", { name: "Pay out" });
     expect(posts()).toHaveLength(1);
     await userEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
     expect(await screen.findByText("1 of 4 claimed. You can claim the rest below, one at a time.")).toBeInTheDocument();

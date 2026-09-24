@@ -7,6 +7,9 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Button, Card, CardDescription, CardTitle, Skeleton, StatusDot, cn } from "../../../components/ui";
 import { plainError } from "../api/errors";
+import { TechDetails } from "../components/common";
+import { adminPackageUrl } from "../../../components/shell/links";
+import { RP_PACKAGE } from "../status/problems";
 import { addressUrl } from "../lib/explorer";
 import { shortAddress } from "../lib/units";
 import { useAppStatus } from "../status/AppStatus";
@@ -63,6 +66,7 @@ export function LoadError({ what, error, onRetry }: { what: string; error: unkno
   return (
     <Callout tone="danger" title={`Could not load ${what}`} role="alert">
       <p>{plainError(error)}</p>
+      <TechDetails error={error} />
       {onRetry && (
         <div>
           <Button variant="secondary" size="sm" onClick={onRetry}>
@@ -189,14 +193,19 @@ export function NodeGate({ children }: { children: ReactNode }) {
   if (avadoFailed || !avado) {
     return (
       <Callout tone="danger" title="The Rocket Pool package is not answering">
-        <p>This page needs the Rocket Pool service. Check that the package is running in the AVADO Admin.</p>
+        <p>This page needs the Rocket Pool package, and it isn't answering. It may be restarting after an update: wait a minute. If it stays like this, restart the package in the AVADO Admin.</p>
+        <div>
+          <Button as="a" href={adminPackageUrl(RP_PACKAGE)} variant="secondary" size="sm">
+            Open the package in the AVADO Admin
+          </Button>
+        </div>
       </Callout>
     );
   }
   if (!avado.walletFilePresent) {
     return (
       <Callout tone="accent" title="Your node isn't set up yet">
-        <p>Create or restore the node wallet first.</p>
+        <p>Create a node wallet, or restore the one you already have, to see this page.</p>
         <div>
           <Button as={Link} to="/setup" size="sm">
             Set up your node
@@ -209,14 +218,9 @@ export function NodeGate({ children }: { children: ReactNode }) {
     return (
       <Callout tone="warning" title="Rocket Pool isn't ready yet">
         <p>
-          The Rocket Pool service is starting or stopped, so this page can't be shown right now. It updates by itself once the
-          service is running.
+          Rocket Pool is starting or has stopped, so this page can't be shown yet. It fills in by itself once Rocket Pool is running.
+          The message at the top of the page says what to do if it doesn't.
         </p>
-        <div>
-          <Button as={Link} to="/advanced" variant="secondary" size="sm">
-            See the service status and logs
-          </Button>
-        </div>
       </Callout>
     );
   }

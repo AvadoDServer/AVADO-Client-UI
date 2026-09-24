@@ -45,7 +45,7 @@ describe("minipools", () => {
     expect(minipoolStatus(withStatus("Withdrawable")).label).toBe("Exited");
     expect(minipoolStatus(a, beacon("active_exiting")).label).toBe("Exiting");
     expect(minipoolStatus(a, beacon("withdrawal_possible")).label).toBe("Exiting");
-    expect(minipoolStatus({ ...a, validator: { ...a.validator, exists: false } }).label).toBe("Waiting for the beacon chain");
+    expect(minipoolStatus({ ...a, validator: { ...a.validator, exists: false } }).label).toBe("Starting");
     expect(minipoolStatus({ ...a, validator: { ...a.validator, active: false } }).label).toBe("Activating");
     // Exiting: no second exit.
     expect(minipoolView(a, a.delegate, [beacon("active_exiting")], []).canExit).toBe(false);

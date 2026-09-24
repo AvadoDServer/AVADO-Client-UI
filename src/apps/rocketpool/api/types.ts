@@ -1,4 +1,4 @@
-import type { ApproveKeysResult, AvadoStatus, LegacyMnemonicArchiveResult, LogsView, ReconcileView, SnEnvelope } from "./models";
+import type { ApproveKeysResult, AvadoStatus, BackupDownload, LegacyMnemonicArchiveResult, LogsView, ReconcileView, SnEnvelope } from "./models";
 
 /** Flat request parameters: Smartnode reads strings; the backend takes a flat JSON object. */
 export type SnParams = Record<string, string | number | boolean>;
@@ -35,6 +35,13 @@ export interface RocketpoolApi {
    * accepts only exactly "ARCHIVE" (400 otherwise, 404 when there is no file).
    */
   archiveLegacyMnemonic(confirm: string): Promise<LegacyMnemonicArchiveResult>;
+  /**
+   * `POST /api/avado/backups/download {name}`: one backup as a .zip file.
+   * `name` is a backup's name from the status, or "current" for a fresh
+   * backup of the wallet, its password and the validator keys. The file holds
+   * secrets: call it only from an explicit owner action, and never keep it.
+   */
+  downloadBackup(name: string, opts?: CallOptions): Promise<BackupDownload>;
   /** `GET /api/avado/logs?tail=N`: redacted daemon log lines. */
   logs(tail?: number): Promise<LogsView>;
   /**

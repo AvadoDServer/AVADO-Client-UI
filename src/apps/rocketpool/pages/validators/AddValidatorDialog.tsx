@@ -38,8 +38,8 @@ export function AddValidatorDialog({
     >
       <div className="flex flex-col gap-4 text-sm">
         <p className="text-fg-muted">
-          Each megapool validator needs a bond from you; Rocket Pool adds the rest of its 32 ETH. RPL is optional. New validators wait in
-          Rocket Pool's queue and your node starts them automatically.
+          Each validator needs a bond of about 4 ETH from you; Rocket Pool adds the rest of its 32 ETH. You don't need RPL. New
+          validators wait in Rocket Pool's line, and your node starts them by itself.
         </p>
         <NewValidatorsForm node={node} megapool={megapool} onReview={setPlan} />
       </div>

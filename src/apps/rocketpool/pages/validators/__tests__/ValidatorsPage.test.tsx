@@ -14,7 +14,7 @@ describe("Validators page", () => {
     expect(within(a).getByText("Your bond").nextElementSibling).toHaveTextContent("8 ETH");
     expect(within(a).getByText("Borrowed from Rocket Pool").nextElementSibling).toHaveTextContent("24 ETH");
     expect(within(a).getByText("Commission").nextElementSibling).toHaveTextContent("14%");
-    expect(within(a).getByRole("link", { name: /Index 612345/ })).toHaveAttribute("href", `https://beaconcha.in/validator/0x${DEMO.pubkeyA}`);
+    expect(within(a).getByRole("link", { name: /Number 612345/ })).toHaveAttribute("href", `https://beaconcha.in/validator/0x${DEMO.pubkeyA}`);
     expect(within(a).getByRole("button", { name: "Exit…" })).toBeInTheDocument();
     expect(within(a).queryByRole("button", { name: "Close minipool" })).toBeNull();
     // No megapool yet: the way to add one.
@@ -51,9 +51,9 @@ describe("Validators page", () => {
     expect(within(d).queryByRole("button", { name: "Exit…" })).toBeNull();
     expect(within(d).queryByRole("button", { name: "Close in one bundle…" })).toBeNull(); // Advanced only
     await userEvent.click(within(d).getByRole("button", { name: "Close minipool" }));
-    expect(await screen.findByRole("dialog", { name: "Step 1 of 2: pay out your fee distributor" })).toBeInTheDocument();
-    expect(within(dialog()).getByText(/It is paid out before minipool/)).toBeInTheDocument();
-    await confirmIn(dialog(), "Distribute");
+    expect(await screen.findByRole("dialog", { name: "Step 1 of 2: pay out your minipools' block rewards" })).toBeInTheDocument();
+    expect(within(dialog()).getByText(/These rewards are paid out before minipool/)).toBeInTheDocument();
+    await confirmIn(dialog(), "Pay out");
     await within(dialog()).findByText("Transaction confirmed");
     expect(posts()).toHaveLength(1);
     await userEvent.click(within(dialog()).getByRole("button", { name: "Done" }));
@@ -72,7 +72,7 @@ describe("Validators page", () => {
     const { posts } = renderPage("/validators", { scenario: "exits" });
     const d = await card(`minipool-${DEMO.minipoolD.toLowerCase()}`);
     await userEvent.click(within(d).getByRole("button", { name: "Close minipool" }));
-    await screen.findByRole("dialog", { name: "Step 1 of 2: pay out your fee distributor" });
+    await screen.findByRole("dialog", { name: "Step 1 of 2: pay out your minipools' block rewards" });
     await userEvent.click(await within(dialog()).findByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(posts()).toHaveLength(0);
@@ -141,9 +141,9 @@ describe("Validators page", () => {
   it("distributes a minipool's rewards with the node's share in the summary", async () => {
     const { posts } = renderPage("/validators", { scenario: "minipool" });
     const a = await card(`minipool-${DEMO.minipoolA.toLowerCase()}`);
-    await userEvent.click(within(a).getByRole("button", { name: "Distribute rewards" }));
+    await userEvent.click(within(a).getByRole("button", { name: "Pay out rewards" }));
     expect(await within(dialog()).findByText(/You receive about/)).toHaveTextContent("0.0187 ETH");
-    await confirmIn(dialog(), "Distribute");
+    await confirmIn(dialog(), "Pay out");
     await within(dialog()).findByText("Transaction confirmed");
     expect(posts()[0]).toMatchObject({ path: "/api/sn/minipool/distribute-balance", params: { address: DEMO.minipoolA.toLowerCase(), gasLimit: "181500" } });
   });
@@ -179,8 +179,8 @@ describe("Validators page", () => {
     expect(within(screen.getByTestId("megapool-validator-1")).getByText("Exiting")).toBeInTheDocument();
     expect(within(screen.getByTestId("megapool-validator-1")).queryByRole("button", { name: "Exit…" })).toBeNull();
 
-    await userEvent.click(within(mega).getByRole("button", { name: "Distribute rewards" }));
-    expect(await within(dialog()).findByText(/can't be distributed while 1 validator is exiting and 1 validator is finishing an exit/)).toBeInTheDocument();
+    await userEvent.click(within(mega).getByRole("button", { name: "Pay out rewards" }));
+    expect(await within(dialog()).findByText(/can't be paid out while 1 validator is exiting and 1 validator is finishing an exit/)).toBeInTheDocument();
     await userEvent.click(within(dialog()).getByRole("button", { name: "Close" }));
 
     await userEvent.click(within(mega).getByRole("button", { name: "Repay debt" }));

@@ -27,3 +27,39 @@ export async function confirmIn(dialog: HTMLElement, name: string) {
   await waitFor(() => expect(button).toBeEnabled(), { timeout: 3000 });
   await userEvent.click(button);
 }
+
+/**
+ * Catches the files the page hands to the browser's downloads: object URLs
+ * and the temporary link's click. Nothing is saved; `restore()` puts the
+ * browser functions back.
+ */
+export function mockDownloads() {
+  const names: string[] = [];
+  const blobs: Blob[] = [];
+  const revoked: string[] = [];
+  const original = { createObjectURL: URL.createObjectURL, revokeObjectURL: URL.revokeObjectURL };
+  let n = 0;
+  Object.assign(URL, {
+    createObjectURL: (b: Blob) => {
+      blobs.push(b);
+      n += 1;
+      return `blob:demo-${n}`;
+    },
+    revokeObjectURL: (u: string) => {
+      revoked.push(u);
+    },
+  });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+    names.push(this.download);
+  });
+  return {
+    names,
+    blobs,
+    revoked,
+    restore() {
+      click.mockRestore();
+      // jsdom has no object URLs: keep a no-op revoke for a page timer that fires after the test.
+      Object.assign(URL, { createObjectURL: original.createObjectURL, revokeObjectURL: original.revokeObjectURL ?? (() => undefined) });
+    },
+  };
+}
