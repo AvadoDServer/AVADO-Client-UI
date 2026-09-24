@@ -3,6 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { renderPage } from "../../__tests__/renderPage";
 
 describe("Advanced page", () => {
+  it("wraps a key-check message with a full pubkey at phone width", async () => {
+    renderPage("/advanced", { scenario: "keys-attention" }, { advanced: true });
+    const message = await screen.findByTestId("key-check-message", {}, { timeout: 3000 });
+    expect(message).toHaveTextContent(/loaded in both Nimbus and Teku/);
+    expect(message.className).toContain("[overflow-wrap:anywhere]");
+  });
+
   it("shows the service, versions, automatic actions with their gas limit, and gas for confirmed transactions", async () => {
     renderPage("/advanced", { scenario: "minipool" }, { advanced: true });
     const service = screen.getByTestId("service");

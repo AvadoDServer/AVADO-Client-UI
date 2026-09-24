@@ -13,6 +13,7 @@ import {
 import { useRead } from "../../api/useRead";
 import { formatEth, formatRpl, parseUnits } from "../../lib/units";
 import { useAppStatus } from "../../status/AppStatus";
+import { SETUP_WITHDRAWAL_ROUTE } from "../../status/problems";
 import { TransactionFlow } from "../../tx/TransactionFlow";
 import { Address, Callout, Facts, LoadError, LoadingCard, NodeGate, PageHeader, SectionCard } from "../common";
 import { claimFlow, itemLabel } from "./actions";
@@ -160,7 +161,13 @@ function Rewards() {
         )}
         {payout.isNodeWallet && (
           <Callout tone="warning" title="Rewards go to the node wallet">
-            <p>Your withdrawal address is still the node wallet on this AVADO. Set a withdrawal address you control (a hardware wallet) from the Home page.</p>
+            <p>
+              Your withdrawal address is still the node wallet on this AVADO.{" "}
+              <Link to={SETUP_WITHDRAWAL_ROUTE} className="font-semibold text-accent underline underline-offset-2">
+                Set a withdrawal address you control
+              </Link>{" "}
+              (a hardware wallet).
+            </p>
           </Callout>
         )}
         {failed && (

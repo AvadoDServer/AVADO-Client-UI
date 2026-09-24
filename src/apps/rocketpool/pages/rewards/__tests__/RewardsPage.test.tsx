@@ -85,6 +85,7 @@ describe("Rewards page", () => {
   it("warns when rewards are paid to the hot wallet, and offers RPL management only in Advanced mode", async () => {
     renderPage("/rewards", { scenario: "mixed" });
     expect(await screen.findByText("Rewards go to the node wallet", {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Set a withdrawal address you control" })).toHaveAttribute("href", "/setup/withdrawal");
     expect(screen.queryByRole("link", { name: "Manage RPL" })).toBeNull();
     expect(screen.getByText("Switch to Advanced mode to stake, unstake or withdraw RPL.")).toBeInTheDocument();
   });

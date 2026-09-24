@@ -164,7 +164,7 @@ function KeyCheck() {
         <p className="text-sm text-fg-muted">{reconcile?.error ?? "The first check hasn't finished yet."}</p>
       ) : (
         <>
-          <p className="text-sm text-fg">{status.message}</p>
+          <p className="text-sm text-fg [overflow-wrap:anywhere]" data-testid="key-check-message">{status.message}</p>
           <Facts
             items={[
               { label: "Consensus client", value: status.client?.name ?? "None found" },

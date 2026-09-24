@@ -15,6 +15,12 @@ describe("Wallet page", () => {
     expect(screen.getByText("Withdrawal address").nextElementSibling).toHaveTextContent(DEMO.coldWallet);
   });
 
+  it("a withdrawal address that is still the node wallet links to the setup step that sets one", async () => {
+    renderPage("/wallet", { scenario: "mixed" });
+    expect(await screen.findByText(/This is still the node wallet/, {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "set one" })).toHaveAttribute("href", "/setup/withdrawal");
+  });
+
   it("exports only after EXPORT is typed; secrets are hidden until asked for and gone after closing", async () => {
     const { posts } = renderPage("/wallet", { scenario: "minipool" });
     await userEvent.click(await screen.findByRole("button", { name: "Back up the wallet…" }, { timeout: 3000 }));

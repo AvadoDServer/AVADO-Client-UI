@@ -9,7 +9,7 @@ import { useRead } from "../../api/useRead";
 import { formatDateTime } from "../../lib/time";
 import { formatEth, formatRpl, formatUnits, isZeroAddress, sameAddress } from "../../lib/units";
 import { useAppStatus } from "../../status/AppStatus";
-import { SUPPORT_EMAIL } from "../../status/problems";
+import { SETUP_WITHDRAWAL_ROUTE, SUPPORT_EMAIL } from "../../status/problems";
 import { Address, Callout, CopyButton, Facts, LoadError, LoadingCard, NodeGate, PageHeader, SectionCard } from "../common";
 import { ADMIN_PACKAGE_URL, BACKUP_DIR, describeBackups, exportFileContent } from "./backups";
 
@@ -63,14 +63,21 @@ function Wallet() {
       </SectionCard>
 
       {status && (
-        <SectionCard title="Where your rewards and bond go" description="Set when the node was set up. They can only be changed from these addresses themselves, not from the node.">
+        <SectionCard title="Where your rewards and bond go" description="Once a withdrawal address outside this AVADO is set, it can only be changed from that address itself, not from the node.">
           <Facts
             items={[
               {
                 label: "Withdrawal address",
                 value: <Address address={status.primaryWithdrawalAddress} full />,
-                hint: sameAddress(status.primaryWithdrawalAddress, address)
-                  ? "This is still the node wallet. A withdrawal address you control (a hardware wallet) is safer."
+                hint: sameAddress(status.primaryWithdrawalAddress, address) ? (
+                  <>
+                    This is still the node wallet. A withdrawal address you control (a hardware wallet) is safer:{" "}
+                    <Link to={SETUP_WITHDRAWAL_ROUTE} className="font-semibold text-accent underline underline-offset-2">
+                      set one
+                    </Link>
+                    .
+                  </>
+                )
                   : !isZeroAddress(status.pendingPrimaryWithdrawalAddress)
                     ? `Waiting to change to ${status.pendingPrimaryWithdrawalAddress}: that address must confirm it.`
                     : undefined,
