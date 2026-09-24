@@ -210,10 +210,10 @@ export function demoMnemonic(seed: number): string {
 }
 
 /** The scenario for `VITE_MOCK=1`: `?scenario=` in the page address, else VITE_MOCK_SCENARIO, else "mixed". */
-export function scenarioFromEnvironment(): MockScenarioName {
+export function scenarioFromEnvironment(search?: string): MockScenarioName {
   let fromUrl: string | null = null;
   try {
-    fromUrl = new URLSearchParams(window.location.search).get("scenario");
+    fromUrl = new URLSearchParams(search ?? window.location.search).get("scenario");
   } catch {
     /* no window */
   }

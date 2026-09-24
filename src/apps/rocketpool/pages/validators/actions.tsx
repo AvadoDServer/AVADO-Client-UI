@@ -154,7 +154,7 @@ export function distributeFeeDistributorFlow(approxShare?: bigint, title = "Pay 
     title,
     summary: (
       <p>
-        Pays out the block rewards (tips from the network) your minipools collected in their fee distributor, a contract that holds
+        Pays out the block rewards (tips paid by Ethereum users) your minipools collected in their fee distributor, a contract that holds
         them until paid out. Your share{approxShare !== undefined ? ` (about ${formatEth(approxShare)})` : ""} goes to your withdrawal
         address, the rest to Rocket Pool's stakers.
       </p>
@@ -205,7 +205,7 @@ export function closeMinipoolFlow(address: string, { bundle = false, title }: { 
       blockedReason: (can) => {
         const r = can as unknown as MinipoolCloseDetailsResponse;
         if (r.isFeeDistributorInitialized === false) {
-          return "Your node first has to set up its fee distributor (the contract that collects your minipools' block rewards). Your node does this by itself; try again later, or contact AVADO support if this stays.";
+          return "Closing a minipool needs your node's fee distributor (the contract that collects your minipools' block rewards), and it isn't set up yet. This page can't set it up: contact AVADO support.";
         }
         const d = find(can);
         if (!d) return "Rocket Pool didn't report this minipool.";
@@ -361,6 +361,38 @@ export function repayDebtFlow(debt: bigint): FlowConfig {
       blockedReason: CAN_RULES["megapool/can-repay-debt"],
     },
     confirmLabel: "Repay debt",
+  };
+}
+
+/**
+ * Update the megapool to Rocket Pool's newest contract version
+ * (`megapool/delegate-upgrade {address}`). The check answers only a gas
+ * estimate (no flag). One lock for the route: a node has one megapool.
+ */
+export function updateMegapoolFlow(megapoolAddress: string, expired: boolean): FlowConfig {
+  return {
+    title: "Update your megapool contract",
+    summary: (
+      <div className="flex flex-col gap-2">
+        <p>
+          Switches your megapool to Rocket Pool's newest contract version. Your validators, bond and rewards stay exactly as they are;
+          only the code that runs your megapool is updated.
+        </p>
+        <p>
+          {expired
+            ? "The current version has expired, so some actions don't work until it is updated. Rocket Pool will update it for you in time; this does it now."
+            : "This is optional for now: the current version keeps working until it expires. After that Rocket Pool updates it for you."}
+        </p>
+      </div>
+    ),
+    tx: {
+      canRoute: "megapool/can-delegate-upgrade",
+      route: "megapool/delegate-upgrade",
+      params: { address: megapoolAddress.toLowerCase() },
+      lockKey: pendingKey("megapool/delegate-upgrade"),
+      blockedReason: () => null,
+    },
+    confirmLabel: "Update",
   };
 }
 

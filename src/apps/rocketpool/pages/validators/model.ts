@@ -179,6 +179,17 @@ export function megapoolValidatorView(v: MegapoolValidator): MegapoolValidatorVi
   };
 }
 
+/**
+ * The megapool's contract version (its delegate): up to date when it follows
+ * the latest automatically or already is the latest. An update is offered
+ * when a newer one exists (`megapool/delegate-upgrade`).
+ */
+export function megapoolDelegate(m: Pick<MegapoolDetails, "useLatestDelegate" | "effectiveDelegateAddress" | "delegateExpired">, latestDelegate: string | undefined) {
+  const known = !!latestDelegate && !/^0x0{40}$/i.test(latestDelegate);
+  const upToDate = m.useLatestDelegate || !known || sameAddress(m.effectiveDelegateAddress, latestDelegate!);
+  return { canUpdate: !upToDate, expired: m.delegateExpired };
+}
+
 /** Totals for the megapool header. */
 export function megapoolSummary(m: MegapoolDetails) {
   const debt = toBigInt(m.nodeDebt) ?? 0n;

@@ -57,7 +57,7 @@ export function LegacyMnemonic() {
         <Notice tone="success" title={movedTo ? "The file was moved into the backups" : "The file was already moved"} live>
           <p>
             It no longer sits next to your wallet. Nothing was deleted, and your node keeps working as before. The file is still on this
-            AVADO, so keep the AVADO itself somewhere safe.
+            AVADO, and so is a copy in the backup made at the first update to version 1.0, so keep the AVADO itself somewhere safe.
           </p>
           <p>
             Your written copy of the 24 words is the only way to restore the node wallet elsewhere. If you don't have one yet, download the
@@ -100,7 +100,8 @@ export function LegacyMnemonic() {
         </li>
         <li>
           <span className="font-semibold">Move the file into the backups.</span> It then no longer sits next to your wallet. Nothing is
-          deleted and your node keeps working. The file is still on this AVADO afterwards, so this is tidying up, not full protection.
+          deleted and your node keeps working. The file is still on this AVADO afterwards (and so is a copy in the backup made at the
+          first update to version 1.0), so this is tidying up, not full protection.
         </li>
       </ol>
       <Input

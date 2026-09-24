@@ -5,7 +5,7 @@ import { DEMO, DemoSnError } from "../../../api/fixtures";
 import { createMockRocketpoolApi } from "../../../api/mock";
 import { REVOKE_AFTER_MS } from "../../../lib/download";
 import { mockDownloads, renderPage } from "../../__tests__/renderPage";
-import { BACKUP_WARNING } from "../DownloadBackup";
+import { BACKUP_WARNING, MAYBE_PHRASE_WARNING, NEVER_SEND, RESTORE_TEXT } from "../DownloadBackup";
 
 const dialog = () => screen.getByRole("dialog");
 const downloadPosts = (posts: () => Array<{ path: string; params: Record<string, unknown> }>) =>
@@ -36,6 +36,12 @@ describe("Wallet page", () => {
       const d = screen.getByRole("dialog", { name: "Download backup" });
       expect(d).toHaveTextContent(BACKUP_WARNING);
       expect(BACKUP_WARNING).toContain("Keep it somewhere safe and offline; anyone with it can move your funds.");
+      // What the file is for, and never "send it to support".
+      expect(d).toHaveTextContent(RESTORE_TEXT);
+      expect(RESTORE_TEXT).toBe("If your AVADO breaks, this file lets you move your Rocket Pool node to a new AVADO. Contact support@ava.do for the steps.");
+      expect(d).toHaveTextContent(NEVER_SEND);
+      expect(NEVER_SEND).toBe("Never send this file to anyone — AVADO support will never ask for it.");
+      expect(d).not.toHaveTextContent(/support can bring/i);
       expect(within(d).queryByRole("textbox")).toBeNull();
       expect(downloadPosts(posts)).toHaveLength(0); // nothing before the owner presses Download
 
@@ -83,6 +89,26 @@ describe("Wallet page", () => {
     } finally {
       saved.restore();
     }
+  });
+
+  it("while the old phrase file is still on the box, every backup warns that it may hold the recovery phrase", async () => {
+    renderPage("/wallet", { scenario: "mixed" });
+    await userEvent.click(await screen.findByRole("button", { name: "Download backup" }, { timeout: 3000 }));
+    expect(dialog()).toHaveTextContent(MAYBE_PHRASE_WARNING);
+    expect(dialog()).toHaveTextContent(NEVER_SEND);
+  });
+
+  it("a backup that was tidied away since the list loaded: says so, and to reload", async () => {
+    const api = createMockRocketpoolApi({ scenario: "exits" });
+    api.downloadBackup = async () => {
+      throw new RpApiError({ kind: "http", path: "/api/avado/backups/download", status: 404, detail: "There is no backup with that name." });
+    };
+    renderPage("/wallet", api);
+    const box = await screen.findByTestId("backups", {}, { timeout: 3000 });
+    await userEvent.click(within(box).getAllByRole("button", { name: /^Download / })[0]);
+    await userEvent.click(within(dialog()).getByRole("button", { name: "Download" }));
+    expect(await within(dialog()).findByText("There is no backup with that name.")).toBeInTheDocument();
+    expect(dialog()).toHaveTextContent("reload the page to see the current list");
   });
 
   it("Advanced mode also shows each backup's folder name", async () => {
@@ -145,6 +171,9 @@ describe("Wallet page", () => {
     await userEvent.type(within(dialog()).getByLabelText(/to confirm/), "EXPORT");
     await userEvent.click(show);
     expect(await screen.findByRole("dialog", { name: "Your wallet's secrets" })).toBeInTheDocument();
+    // The same rule as the download: never send it, support never asks; no "not even with support" contradiction.
+    expect(dialog()).toHaveTextContent("Never send this file or these values to anyone — AVADO support will never ask for them.");
+    expect(dialog()).toHaveTextContent(RESTORE_TEXT);
     expect(posts()).toEqual([{ method: "POST", path: "/api/sn/wallet/export", params: { typedConfirmation: "EXPORT" } }]);
     expect(screen.queryByText("demo-password-not-real", { exact: false })).toBeNull();
     await userEvent.click(within(dialog()).getByRole("button", { name: "Show the values on screen" }));
@@ -203,6 +232,6 @@ describe("Wallet page", () => {
     renderPage("/wallet", { scenario: "fresh" });
     expect(await screen.findByText("Your node isn't set up yet", {}, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.queryByTestId("backup-now")).toBeNull();
-    expect(within(screen.getByTestId("backups")).getByText(/No automatic backups yet/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("backups")).getByText(/No backups yet\. One is made by itself before the next update, and one each time you press Download backup\./)).toBeInTheDocument();
   });
 });

@@ -16,7 +16,7 @@ import { SETUP_WITHDRAWAL_ROUTE } from "../../status/problems";
 import { LegacyMnemonic } from "../home/LegacyMnemonic";
 import { Address, Callout, CopyButton, Facts, LoadError, LoadingCard, NodeGate, PageHeader, SectionCard } from "../common";
 import { describeBackups, exportFileContent } from "./backups";
-import { CURRENT_TARGET, DownloadBackupDialog, type BackupTarget } from "./DownloadBackup";
+import { CURRENT_TARGET, DownloadBackupDialog, NEVER_SEND, RESTORE_TEXT, type BackupTarget } from "./DownloadBackup";
 
 /** Wallet: the node wallet's address and balances, a one-click backup, the automatic backups, and the old recovery-phrase file. */
 export default function WalletPage() {
@@ -42,12 +42,16 @@ function BackUpNow({ onDownload }: { onDownload: (t: BackupTarget) => void }) {
   return (
     <SectionCard
       title="Back up your node wallet"
-      description="Download one file with everything needed to bring your node wallet back if this AVADO breaks."
-      actions={<Button onClick={() => onDownload(CURRENT_TARGET)}>Download backup</Button>}
+      description="Download one file that lets you move your Rocket Pool node to a new AVADO if this one breaks."
+      actions={
+        <Button onClick={() => onDownload(avado.legacyMnemonicPresent ? { ...CURRENT_TARGET, phrase: "maybe" } : CURRENT_TARGET)}>
+          Download backup
+        </Button>
+      }
       data-testid="backup-now"
     >
       <p className="text-sm text-fg-muted">
-        Keep the file offline, for example on a USB stick in a safe place. Anyone who has it can move the funds in your node wallet.
+        Keep the file offline, for example on a USB stick in a safe place. Anyone who has it can move the funds in your node wallet. {NEVER_SEND}
       </p>
     </SectionCard>
   );
@@ -194,7 +198,9 @@ function ExportDialog({ nodeAddress, onClose }: { nodeAddress: string; onClose: 
       >
         <div className="flex flex-col gap-4 text-sm">
           <Callout tone="warning" title="Keep this secret">
-            <p>Anyone with this file or these values controls your node wallet. Store it offline (for example on a USB stick in a safe place). Never share it, not even with support.</p>
+            <p>Anyone with this file or these values controls your node wallet. Store it offline (for example on a USB stick in a safe place).</p>
+            <p className="font-semibold">Never send this file or these values to anyone — AVADO support will never ask for them.</p>
+            <p>{RESTORE_TEXT}</p>
           </Callout>
           <div>
             <Button onClick={() => download(`rocketpool-wallet-${nodeAddress.toLowerCase()}.json`, exportFileContent(data, nodeAddress))}>Download the backup file</Button>
@@ -285,7 +291,9 @@ function Backups({ onDownload }: { onDownload: (t: BackupTarget) => void }) {
       data-testid="backups"
     >
       {list.length === 0 ? (
-        <p className="text-sm text-fg-muted">No automatic backups yet. The first one is made before the next update.</p>
+        <p className="text-sm text-fg-muted">
+          No backups yet. One is made by itself before the next update, and one each time you press Download backup.
+        </p>
       ) : (
         <ul className="flex flex-col gap-3">
           {list.map((b) => (
@@ -304,7 +312,8 @@ function Backups({ onDownload }: { onDownload: (t: BackupTarget) => void }) {
                   size="sm"
                   className="flex-shrink-0 self-start sm:self-center"
                   aria-label={`Download ${b.title}${b.time !== null ? ` from ${formatDateTime(b.time)}` : ""}`}
-                  onClick={() => onDownload({ name: b.name, title: b.title, phrase: b.phrase })}
+                  // While the old phrase file is still next to the wallet, any backup may include it.
+                  onClick={() => onDownload({ name: b.name, title: b.title, phrase: b.phrase === true ? true : avado.legacyMnemonicPresent ? "maybe" : b.phrase })}
                 >
                   Download
                 </Button>

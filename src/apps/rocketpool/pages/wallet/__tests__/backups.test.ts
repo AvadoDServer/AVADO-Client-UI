@@ -1,12 +1,12 @@
 import { describeBackup, describeBackups, exportFileContent, stampToMs } from "../backups";
 
 describe("backups on the box", () => {
-  it("names each kind of backup in plain words, with its time; only the old phrase file is marked as a phrase", () => {
+  it("names each kind of backup in plain words, with its time; marks the ones that hold or may hold the recovery phrase", () => {
     const at = (name: string, kind: "upgrade" | "wallet-change" = "upgrade") => describeBackup({ name, createdAt: "2026-09-01T00:00:00Z", kind });
     expect(at("legacy-20260919T081100Z")).toMatchObject({
       title: "Before the upgrade from the old package",
       name: "legacy-20260919T081100Z",
-      phrase: false,
+      phrase: "maybe", // the first upgrade from the old package copied its plain-text phrase file too
       time: Date.UTC(2026, 8, 19, 8, 11, 0),
     });
     expect(at("1.0.0-20260921T090000Z").title).toBe("Automatic backup (from version 1.0.0)");
@@ -20,6 +20,10 @@ describe("backups on the box", () => {
     expect(byKind("manual")).toBe("Downloaded by you");
     expect(at("mnemonic-archive-20260923T101500Z")).toMatchObject({ title: "Old recovery phrase file", phrase: true });
     expect(at("1.0.0-20260921T090000Z").phrase).toBe(false);
+    expect(at("legacy-20260919T081100Z").text).toContain("It may also contain your recovery phrase.");
+    // An upgrade from a 0.0.x version may hold it too; a 1.x one doesn't.
+    expect(at("0.0.107-20260921T090000Z")).toMatchObject({ phrase: "maybe", text: expect.stringContaining("may also contain your recovery phrase") });
+    expect(at("1.0.0-20260921T090000Z").text).not.toContain("recovery phrase");
     // The backend's collision suffix, and its kind even for a name the UI doesn't know.
     const mn = (name: string) => describeBackup({ name, createdAt: "2026-09-01T00:00:00Z", kind: "mnemonic-archive" });
     expect(mn("mnemonic-archive-20260923T101500Z-2")).toMatchObject({ title: "Old recovery phrase file", time: Date.UTC(2026, 8, 23, 10, 15, 0) });

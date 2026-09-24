@@ -114,6 +114,8 @@ export const DEMO = {
   minipoolB: address(11),
   minipoolC: address(12),
   delegate: address(20),
+  /** An older megapool delegate (the exits node hasn't updated to the latest yet). */
+  oldDelegate: address(21),
   pubkeyA: pubkey(1),
   pubkeyB: pubkey(2),
   pubkeyC: pubkey(3),
@@ -944,6 +946,10 @@ const MINIPOOL_E = minipool(DEMO.minipoolE, DEMO.pubkeyE, { index: "401123", bon
 
 const WINDING_MEGAPOOL: MegapoolDetails = {
   ...MEGAPOOL,
+  // An older contract version, not set to follow the latest: "Update megapool contract" shows.
+  delegate: DEMO.oldDelegate,
+  effectiveDelegateAddress: DEMO.oldDelegate,
+  useLatestDelegate: false,
   validatorCount: 4,
   activeValidatorCount: 3,
   exitingValidatorCount: 1,

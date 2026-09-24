@@ -76,7 +76,7 @@ export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDis
         id: "megapool",
         kind: "megapool",
         title: "Megapool rewards",
-        text: "Block rewards (tips from the network) your megapool validators collected, plus any refund. Paid to your withdrawal address.",
+        text: "Block rewards (tips paid by Ethereum users) your megapool validators collected, plus any refund. Paid to your withdrawal address.",
         eth,
         rpl: 0n,
       });
@@ -88,7 +88,7 @@ export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDis
       id: "fee-distributor",
       kind: "fee-distributor",
       title: "Minipool block rewards",
-      text: "Block rewards (tips from the network) your minipools collected. Your share goes to your withdrawal address.",
+      text: "Block rewards (tips paid by Ethereum users) your minipools collected. Your share goes to your withdrawal address.",
       eth: floatEthToWei(feeDistributor.nodeShare),
       rpl: 0n,
       approx: true,

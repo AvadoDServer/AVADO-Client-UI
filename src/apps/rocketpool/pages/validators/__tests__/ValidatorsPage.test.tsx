@@ -7,6 +7,28 @@ const card = (testId: string) => screen.findByTestId(testId);
 const dialog = () => screen.getByRole("dialog");
 
 describe("Validators page", () => {
+  it("I1: a megapool on an older contract version can be updated through the transaction flow; it is optional until it expires", async () => {
+    const { posts } = renderPage("/validators", { scenario: "exits" });
+    const mega = await card("megapool");
+    expect(await within(mega).findByText("A newer megapool contract is available", {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(mega).toHaveTextContent("Updating is optional for now: the current version keeps working until it expires, and after that Rocket Pool updates it for you.");
+    await userEvent.click(within(mega).getByRole("button", { name: "Update megapool contract" }));
+    const d = await screen.findByRole("dialog", { name: "Update your megapool contract" });
+    expect(d).toHaveTextContent("Your validators, bond and rewards stay exactly as they are");
+    await confirmIn(d, "Update");
+    await screen.findByText("Transaction confirmed", {}, { timeout: 8000 });
+    expect(posts().filter((p) => p.path.startsWith("/api/sn/")).map((p) => [p.path, p.params.address])).toEqual([
+      ["/api/sn/megapool/delegate-upgrade", DEMO.megapool.toLowerCase()],
+    ]);
+  });
+
+  it("I1: no update offered for a megapool that follows the newest version", async () => {
+    renderPage("/validators", { scenario: "mixed" });
+    const mega = await card("megapool");
+    await within(mega).findByText(/Your megapool/, {}, { timeout: 3000 });
+    expect(within(mega).queryByRole("button", { name: "Update megapool contract" })).toBeNull();
+  });
+
   it("lists the minipools as cards with their state and plain facts", async () => {
     renderPage("/validators", { scenario: "minipool" });
     const a = await card(`minipool-${DEMO.minipoolA.toLowerCase()}`);

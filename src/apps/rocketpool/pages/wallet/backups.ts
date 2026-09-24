@@ -20,8 +20,8 @@ export interface BackupView {
   text: string;
   /** ms, from the name when it has a time stamp, else from the folder's time. */
   time: number | null;
-  /** It holds the old package's plain-text recovery phrase. */
-  phrase: boolean;
+  /** It holds the old package's plain-text recovery phrase (true), or may hold it ("maybe"). */
+  phrase: boolean | "maybe";
 }
 
 /** "20260923T101500Z" → ms. */
@@ -69,16 +69,20 @@ export function describeBackup(b: BackupInfo): BackupView {
   if ((m = new RegExp(`^legacy-${TS}$`).exec(b.name))) {
     return {
       ...base,
+      phrase: "maybe",
       title: "Before the upgrade from the old package",
-      text: "Your node wallet, its password, your validator keys and settings, from before this version was installed. It is never deleted.",
+      text: "Your node wallet, its password, your validator keys and settings, from before this version was installed. It may also contain your recovery phrase. It is never deleted.",
       time: stampToMs(m[1]) ?? fallbackTime,
     };
   }
   if ((m = new RegExp(`^([A-Za-z0-9._+-]+)-${TS}$`).exec(b.name))) {
+    // A backup made when upgrading from a 0.0.x package may include the old plain-text phrase file.
+    const preOne = /^0\.0\./.test(m[1]);
     return {
       ...base,
+      ...(preOne ? { phrase: "maybe" as const } : {}),
       title: `Automatic backup (from version ${m[1]})`,
-      text: "Made on an update, or after new validator keys were added: your node wallet, its password and your validator keys.",
+      text: `Made on an update, or after new validator keys were added: your node wallet, its password and your validator keys.${preOne ? " It may also contain your recovery phrase." : ""}`,
       time: stampToMs(m[2]) ?? fallbackTime,
     };
   }
@@ -98,7 +102,7 @@ export function exportFileContent(e: { wallet: string; password: string; account
   return JSON.stringify(
     {
       about:
-        "AVADO Rocket Pool node wallet backup. Anyone with this file controls your node wallet and its funds: keep it offline and private. To restore, AVADO support puts 'walletFile' back as the Rocket Pool 'wallet' file and 'password' as its 'password' file.",
+        "AVADO Rocket Pool node wallet backup. Anyone with this file controls your node wallet and its funds: keep it offline and private. If your AVADO breaks, this file lets you move your Rocket Pool node to a new AVADO: contact support@ava.do for the steps. Never send this file to anyone; AVADO support will never ask for it.",
       nodeAddress,
       createdAt: now.toISOString(),
       walletFile: e.wallet,

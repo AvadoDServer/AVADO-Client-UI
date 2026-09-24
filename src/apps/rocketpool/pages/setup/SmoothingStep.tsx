@@ -40,7 +40,7 @@ export function SmoothingStep({ node, onChanged }: { node?: NodeStatus; onChange
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2 text-sm text-fg">
         <p>
-          Now and then one of your validators gets to add a block to Ethereum and earns the tips paid for it (block rewards). The{" "}
+          Now and then one of your validators gets to add a block to Ethereum and earns the tips Ethereum users paid for its transactions (block rewards). The{" "}
           <strong>smoothing pool</strong> collects these from all its members and shares them out, so instead of a rare big payout you
           get a steady share, paid with Rocket Pool's rewards every 28 days.
         </p>

@@ -26,11 +26,12 @@ import {
   leaveQueueFlow,
   provisionTicketsFlow,
   repayDebtFlow,
+  updateMegapoolFlow,
   type FlowConfig,
 } from "./actions";
 import { AddValidatorDialog } from "./AddValidatorDialog";
 import { CloseMinipoolFlow } from "./CloseMinipoolFlow";
-import { megapoolSummary, megapoolValidatorView, minipoolView, sortMinipools, type MinipoolView } from "./model";
+import { megapoolDelegate, megapoolSummary, megapoolValidatorView, minipoolView, sortMinipools, type MinipoolView } from "./model";
 
 /** Validators: minipools (the existing fleet) and the megapool, with their actions. */
 export default function ValidatorsPage() {
@@ -126,6 +127,7 @@ function Validators() {
           {details && (
             <MegapoolSection
               megapool={details}
+              latestDelegate={megapool.data?.latestDelegate}
               pendingNodeShare={toBigInt(pending.data?.rewardSplit?.NodeRewards)}
               onAction={setFlow}
               onAdd={() => setAdding(true)}
@@ -312,16 +314,19 @@ function MinipoolCard({
 
 function MegapoolSection({
   megapool,
+  latestDelegate,
   pendingNodeShare,
   onAction,
   onAdd,
 }: {
   megapool: MegapoolDetails;
+  latestDelegate: string | undefined;
   pendingNodeShare: bigint | null;
   onAction: (f: FlowConfig) => void;
   onAdd: () => void;
 }) {
   const sum = megapoolSummary(megapool);
+  const version = megapoolDelegate(megapool, latestDelegate);
   const views = megapool.validators.map(megapoolValidatorView);
   return (
     <section aria-labelledby="megapool-heading" className="flex flex-col gap-3">
@@ -352,9 +357,26 @@ function MegapoolSection({
             ...(sum.hasDebt ? [{ label: "Debt", value: formatEth(sum.debt), hint: "What your megapool owes Rocket Pool, for example after a penalty." }] : []),
           ]}
         />
-        {megapool.delegateExpired && (
-          <Callout tone="warning" title="Your megapool needs an update">
-            <p>Rocket Pool updates it by itself; there is nothing you need to do. Until then some buttons here may not work.</p>
+        {version.canUpdate && (
+          <Callout
+            tone={version.expired ? "warning" : "accent"}
+            title={version.expired ? "Your megapool's contract version has expired" : "A newer megapool contract is available"}
+          >
+            <p>
+              {version.expired
+                ? "Until it is updated, some buttons here may not work. Rocket Pool will update it for you; you can also do it now with one small transaction."
+                : "Updating is optional for now: the current version keeps working until it expires, and after that Rocket Pool updates it for you. You can update now with one small transaction."}
+            </p>
+            <div>
+              <Button variant="secondary" size="sm" onClick={() => onAction(updateMegapoolFlow(megapool.address, version.expired))}>
+                Update megapool contract
+              </Button>
+            </div>
+          </Callout>
+        )}
+        {!version.canUpdate && megapool.delegateExpired && (
+          <Callout tone="warning" title="Your megapool's contract version has expired">
+            <p>Until it is updated, some buttons here may not work. If this stays for more than a day, contact AVADO support.</p>
           </Callout>
         )}
         {sum.hasDebt && (

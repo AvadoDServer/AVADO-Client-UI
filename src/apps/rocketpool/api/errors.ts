@@ -93,6 +93,10 @@ const KNOWN: Array<[RegExp, string]> = [
 /** Text that is for a developer, not an owner: codes, hashes, internal addresses, stack traces. */
 const TECHNICAL = /0x[0-9a-f]{16,}|rpc error|\bcode\s*[=:]|json:|panic|goroutine|(?:^|\s)\/[a-z0-9_.-]+\/[a-z0-9_./-]+|\bstatus code\b|\berr(?:or)?:\s*\w+:|[{}[\]<>]/i;
 
+/** Statuses at which the backend refuses the request itself (403 CSRF, 405 method, 415 content type, 421 Host). */
+const TALKING_STATUSES: ReadonlySet<number> = new Set([403, 405, 415, 421]);
+export const TALKING_TO_AVADO = "Something went wrong talking to your AVADO. Reload the page and try again.";
+
 /**
  * The sentence(s) the UI shows for an error: what it means and what to do.
  * Never includes secrets. Known Smartnode messages are put in plain words;
@@ -113,7 +117,9 @@ export function plainError(e: unknown): string {
     case "smartnode":
       return e.detail ? readable(e.detail) : "Rocket Pool couldn't do this right now. Try again in a minute.";
     case "http":
-      if (e.status === 404 && (!e.detail || /^not found\.?$/i.test(e.detail.trim()))) {
+      // The backend's own guards (CSRF, Host, method, content type): nothing the owner did, nothing to read.
+      if (e.status !== undefined && TALKING_STATUSES.has(e.status)) return TALKING_TO_AVADO;
+      if (e.status === 404 && (!e.detail || /^(not found|unknown api route)\.?$/i.test(e.detail.trim()))) {
         return "This version of the Rocket Pool package can't do this yet. Update the package in the AVADO Admin and try again.";
       }
       if (e.detail) return readable(e.detail);

@@ -151,6 +151,23 @@ describe("plain error words", () => {
     );
   });
 
+  it("M1: the backend's own guards read as one plain sentence; the raw text stays for Advanced Details", () => {
+    const guard = (status: number, detail: string) => new RpApiError({ kind: "http", path: "/api/sn/node/deposit", status, detail });
+    for (const [status, detail] of [
+      [403, "Missing X-Avado-Request header"],
+      [403, "Cross-origin request refused"],
+      [405, "Use POST for this route"],
+      [415, "Use application/json"],
+      [421, "This API only answers requests addressed to the AVADO box"],
+    ] as const) {
+      const e = guard(status, detail);
+      expect(plainError(e)).toBe("Something went wrong talking to your AVADO. Reload the page and try again.");
+      expect(errorDetails(e)).toContain(detail);
+    }
+    // A route the backend doesn't know (e.g. removed from its allow-list): an older/newer package.
+    expect(plainError(guard(404, "Unknown API route"))).toMatch(/^This version of the Rocket Pool package can't do this yet/);
+  });
+
   it("never shows codes, hashes or internal paths; keeps plain sentences as they are", () => {
     const hashy = plainError(sn("rpc error: code = Unknown desc = 0xdeadbeefdeadbeefdeadbeef"));
     expect(hashy).toBe("Rocket Pool couldn't do this right now. Try again in a minute; if it keeps happening, contact AVADO support.");
