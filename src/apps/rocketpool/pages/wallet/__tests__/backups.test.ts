@@ -1,0 +1,39 @@
+import { describeBackup, describeBackups, exportFileContent, stampToMs } from "../backups";
+
+describe("backups on the box", () => {
+  it("names each kind of backup in plain words, with its path and time", () => {
+    const at = (name: string, kind: "upgrade" | "wallet-change" = "upgrade") => describeBackup({ name, createdAt: "2026-09-01T00:00:00Z", kind });
+    expect(at("legacy-20260919T081100Z")).toMatchObject({
+      title: "Before the upgrade from the old package",
+      path: "/rocketpool/backups/legacy-20260919T081100Z",
+      time: Date.UTC(2026, 8, 19, 8, 11, 0),
+    });
+    expect(at("1.0.0-20260921T090000Z").title).toBe("Automatic backup (from version 1.0.0)");
+    expect(at("0.0.111+b-20260921T090000Z").title).toBe("Automatic backup (from version 0.0.111+b)");
+    expect(at("20260920T120000Z-before-wallet-change-2", "wallet-change").title).toBe("Before a wallet change");
+    expect(at("mnemonic-archive-20260923T101500Z").title).toBe("Old recovery phrase file");
+    expect(at("something-else")).toMatchObject({ title: "Backup", time: Date.parse("2026-09-01T00:00:00Z") });
+    expect(describeBackup({ name: "odd", createdAt: "", kind: "upgrade" }).time).toBeNull();
+  });
+
+  it("lists newest first", () => {
+    const list = describeBackups([
+      { name: "legacy-20260919T081100Z", createdAt: "", kind: "upgrade" },
+      { name: "1.0.0-20260921T090000Z", createdAt: "", kind: "upgrade" },
+      { name: "20260920T120000Z-before-wallet-change", createdAt: "", kind: "wallet-change" },
+    ]);
+    expect(list.map((b) => b.name)).toEqual(["1.0.0-20260921T090000Z", "20260920T120000Z-before-wallet-change", "legacy-20260919T081100Z"]);
+  });
+
+  it("reads time stamps strictly", () => {
+    expect(stampToMs("20260923T101500Z")).toBe(Date.UTC(2026, 8, 23, 10, 15, 0));
+    expect(stampToMs("2026-09-23")).toBeNull();
+  });
+
+  it("the export file holds the wallet file, password and key, and says how to keep it", () => {
+    const text = exportFileContent({ wallet: '{"crypto":1}', password: "pw", accountPrivateKey: "0xkey" }, "0xabc", new Date("2026-09-23T10:00:00Z"));
+    const json = JSON.parse(text);
+    expect(json).toMatchObject({ nodeAddress: "0xabc", createdAt: "2026-09-23T10:00:00.000Z", walletFile: '{"crypto":1}', password: "pw", accountPrivateKey: "0xkey" });
+    expect(json.about).toMatch(/keep it offline and private/);
+  });
+});

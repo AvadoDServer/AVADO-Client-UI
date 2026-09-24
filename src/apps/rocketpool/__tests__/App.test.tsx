@@ -61,12 +61,12 @@ describe("Rocket Pool app", () => {
     expect(within(nav).getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("adds Advanced in Advanced mode", async () => {
+  it("adds RPL and Advanced in Advanced mode", async () => {
     localStorage.setItem(MODE_STORAGE_KEY, "advanced");
     renderAt("/", { scenario: "minipool" });
     await screen.findByText("Running");
     const nav = screen.getByRole("navigation", { name: "Main" });
-    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Home", "Validators", "Rewards", "Wallet", "Advanced"]);
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Home", "Validators", "Rewards", "Wallet", "RPL", "Advanced"]);
     expect(within(sidebar()).getByRole("button", { name: "Advanced" })).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -74,7 +74,7 @@ describe("Rocket Pool app", () => {
     localStorage.setItem(MODE_STORAGE_KEY, "advanced");
     renderAt("/", { scenario: "minipool" });
     const nav = screen.getByRole("navigation", { name: "Main" });
-    for (const name of ["Validators", "Rewards", "Wallet", "Advanced", "Home"]) {
+    for (const name of ["Validators", "Rewards", "Wallet", "RPL", "Advanced", "Home"]) {
       await userEvent.click(within(nav).getByRole("link", { name }));
       expect(screen.getByRole("heading", { level: 1, name })).toBeInTheDocument();
     }

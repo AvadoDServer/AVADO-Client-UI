@@ -36,3 +36,10 @@ export const WalletIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M16 13h.01" />
   </Icon>
 );
+
+export const RplIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="8" />
+    <path d="M9.5 16V8h3.2a2.3 2.3 0 0 1 0 4.6H9.5M12.5 12.6 15 16" />
+  </Icon>
+);
