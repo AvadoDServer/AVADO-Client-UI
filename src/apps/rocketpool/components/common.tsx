@@ -33,7 +33,7 @@ export function Notice({
   return (
     <div role={role} data-testid={testId} className={cn("flex gap-3 rounded-xl border p-4", NOTICE_BOX[tone], className)}>
       <StatusDot tone={tone} className="mt-1.5" />
-      <div className="min-w-0 flex-1 text-sm text-fg">
+      <div className="min-w-0 flex-1 text-sm text-fg [overflow-wrap:anywhere]">
         {title && <p className="font-semibold">{title}</p>}
         {children && <div className={cn("flex flex-col gap-2 break-words", title ? "mt-1" : undefined)}>{children}</div>}
       </div>
@@ -111,7 +111,7 @@ export function Facts({ rows, testId }: { rows: Array<[ReactNode, ReactNode]>; t
       {rows.map(([label, value], i) => (
         <div key={i} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 first:pt-0 last:pb-0">
           <dt className="text-fg-muted">{label}</dt>
-          <dd className="min-w-0 break-words text-right font-medium text-fg">{value}</dd>
+          <dd className="min-w-0 text-right font-medium text-fg [overflow-wrap:anywhere]">{value}</dd>
         </div>
       ))}
     </dl>

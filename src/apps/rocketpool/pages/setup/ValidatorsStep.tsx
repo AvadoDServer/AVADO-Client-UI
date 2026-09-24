@@ -33,6 +33,44 @@ export function depositParams(o: { count: number; bondWei: bigint; expressTicket
   };
 }
 
+/** Wait this long after the last change before working out the bond (ms). */
+export const PLAN_DEBOUNCE_MS = 400;
+
+export interface CreditPlan {
+  useCredit: boolean;
+  fromCredit: bigint;
+  fromWallet: bigint;
+  /** Why the credit isn't used although there is some. */
+  note: string | null;
+  /** Why the deposit can't go ahead with this split. */
+  blocked: string | null;
+}
+
+/**
+ * How the bond is paid, the way Smartnode's `nodeDeposits` does it: with
+ * `useCreditBalance`, it sends bond − the **full** credit balance. So credit is
+ * only used when all of it is usable now (the deposit pool can take it);
+ * otherwise the whole bond comes from the node wallet.
+ */
+export function creditPlan(can: CanDepositResponse, bondWei: bigint): CreditPlan {
+  const credit = toBigInt(can.creditBalance) ?? 0n;
+  const usable = toBigInt(can.usableCreditBalance) ?? 0n;
+  const wallet = toBigInt(can.nodeBalance) ?? 0n;
+  if (can.canUseCredit && credit > 0n && credit <= usable) {
+    const fromCredit = credit < bondWei ? credit : bondWei;
+    return { useCredit: true, fromCredit, fromWallet: bondWei - fromCredit, note: null, blocked: null };
+  }
+  const note =
+    credit > 0n
+      ? "Your credit can't all be used right now (Rocket Pool's deposit pool is low), so the whole bond is paid from the node wallet."
+      : null;
+  const blocked =
+    credit > 0n && wallet < bondWei
+      ? `The node wallet has ${formatEth(wallet)}, not enough for the whole bond, and your credit can't be used right now. Add ETH or try again later.`
+      : null;
+  return { useCredit: false, fromCredit: 0n, fromWallet: bondWei, note, blocked };
+}
+
 interface Plan {
   count: number;
   bondWei: bigint;
@@ -81,12 +119,18 @@ export function ValidatorsStep({ node, onChanged }: { node?: NodeStatus; onChang
       return;
     }
     let cancelled = false;
+    const abort = new AbortController();
+    const opts = { signal: abort.signal };
     setPlanning(true);
     setPlanError(null);
+    // Wait until the owner stops typing; a newer change cancels the old reads.
+    const wait = new Promise<void>((resolve) => setTimeout(resolve, PLAN_DEBOUNCE_MS));
     (async () => {
+      await wait;
+      if (cancelled) throw new Error("cancelled");
       const reqs = await Promise.all(
         Array.from({ length: count }, (_, i) =>
-          api.snGet<BondRequirementResponse>("node/get-bond-requirement", { numValidators: active + i + 1 }).then((r) => {
+          api.snGet<BondRequirementResponse>("node/get-bond-requirement", { numValidators: active + i + 1 }, opts).then((r) => {
             const v = toBigInt(r.bondRequirement);
             if (v === null) throw new Error("bad bond requirement");
             return v;
@@ -98,6 +142,7 @@ export function ValidatorsStep({ node, onChanged }: { node?: NodeStatus; onChang
       const can = await api.snGet<CanDepositResponse>(
         CAN_DEPOSIT_ROUTE,
         depositParams({ count, bondWei, expressTickets: useTickets, useCredit: false }),
+        opts,
       );
       return { count, bondWei, perValidator, can };
     })()
@@ -115,6 +160,7 @@ export function ValidatorsStep({ node, onChanged }: { node?: NodeStatus; onChang
       });
     return () => {
       cancelled = true;
+      abort.abort();
     };
   }, [api, count, countOk, useTickets, ticketsOk, bonded, active]);
 
@@ -126,10 +172,10 @@ export function ValidatorsStep({ node, onChanged }: { node?: NodeStatus; onChang
     );
   }
 
-  const useCredit = !!plan?.can.canUseCredit;
-  const usable = toBigInt(plan?.can.usableCreditBalance) ?? 0n;
-  const fromWallet = plan ? (useCredit ? (plan.bondWei > usable ? plan.bondWei - usable : 0n) : plan.bondWei) : 0n;
-  const precheck = plan ? blockedReasonFor(plan.can) : null;
+  const split = plan ? creditPlan(plan.can, plan.bondWei) : null;
+  const useCredit = !!split?.useCredit;
+  const fromWallet = split?.fromWallet ?? 0n;
+  const precheck = plan ? (blockedReasonFor(plan.can) ?? split?.blocked ?? null) : null;
   const noClient = reconcileKnown && !client;
   const notSynced = synced === false;
   const canStart = !!plan && !precheck && !noClient && !notSynced && !planning;
@@ -198,12 +244,17 @@ export function ValidatorsStep({ node, onChanged }: { node?: NodeStatus; onChang
           rows={[
             ["Validators", String(plan.count)],
             ["Your bond", formatEth(plan.bondWei)],
-            ...(useCredit ? ([["Paid from your credit", formatEth(plan.bondWei - fromWallet)]] as Array<[string, string]>) : []),
-            ["Paid from the node wallet", formatEth(fromWallet)],
+            ...(useCredit ? ([["Paid from your credit", formatEth(split!.fromCredit)]] as Array<[string, string]>) : []),
+            ["Paid from the node wallet", `${formatEth(fromWallet)} + network fee`],
             ["In the node wallet now", formatEth(plan.can.nodeBalance)],
             ...(tickets > 0 ? ([["Express tickets used", String(useTickets)]] as Array<[string, string]>) : []),
           ]}
         />
+      )}
+      {split?.note && !precheck && (
+        <Notice tone="neutral">
+          <p>{split.note}</p>
+        </Notice>
       )}
       {precheck && (
         <Notice tone="warning" title="Not possible right now" live>
@@ -237,23 +288,27 @@ export function ValidatorsStep({ node, onChanged }: { node?: NodeStatus; onChang
             <>
               Makes {plural(plan.count, "new validator key")} on this AVADO and deposits your bond of{" "}
               <strong className="text-fg">{formatEth(plan.bondWei)}</strong>. The {plan.count === 1 ? "validator joins" : "validators join"}{" "}
-              Rocket Pool's queue; you can leave the queue later and get the bond back as credit.
+              Rocket Pool's queue; you can leave the queue later and get the bond back as credit. The network fee below is paid from
+              the node wallet on top of the bond.
             </>
           }
           tx={{
             canRoute: CAN_DEPOSIT_ROUTE,
             route: DEPOSIT_ROUTE,
             params: depositParams({ count: plan.count, bondWei: plan.bondWei, expressTickets: useTickets, useCredit }),
-            blockedReason: (can) =>
-              !!can.canUseCredit !== useCredit
-                ? "Your credit balance changed since the last check. Close this and try again."
-                : blockedReasonFor(can),
+            blockedReason: (can) => {
+              const now = creditPlan(can, plan.bondWei);
+              if (now.useCredit !== useCredit || now.fromWallet !== fromWallet) {
+                return "Your credit balance changed since the last check. Close this and try again.";
+              }
+              return blockedReasonFor(can) ?? now.blocked;
+            },
             details: (can) => (
               <Facts
                 rows={[
                   ["Validators", String(plan.count)],
                   ["Bond", formatEth(plan.bondWei)],
-                  ["From the node wallet", formatEth(fromWallet)],
+                  ["From the node wallet", `${formatEth(fromWallet)} + network fee`],
                   ["In the node wallet", formatEth(can.nodeBalance)],
                 ]}
               />

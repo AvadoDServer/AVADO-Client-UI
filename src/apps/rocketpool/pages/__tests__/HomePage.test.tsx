@@ -9,7 +9,9 @@ import { DEMO } from "../../api/fixtures";
 import { createMockRocketpoolApi, type MockRocketpoolApi, type RocketpoolMockOptions } from "../../api/mock";
 import { ARCHIVE_CONFIRMATION } from "../../api/models";
 import { createRealRocketpoolApi } from "../../api/real";
-import { SLASHING_WARNING } from "../home/KeyApproval";
+import { SLASHING_WARNING, approvalOutcome } from "../home/KeyApproval";
+import { SCENARIOS, demoKey, reconcileView } from "../../api/fixtures";
+import { reconcileStatusOf } from "../../api/reconcile";
 
 function Where() {
   const loc = useLocation();
@@ -96,6 +98,7 @@ describe("Home", () => {
     await userEvent.dblClick(button);
 
     expect(await within(box).findByText("Approved 1 key")).toBeInTheDocument();
+    await waitFor(() => expect(within(box).getByTestId("approval-outcome")).toHaveTextContent("Loaded into Teku."));
     const approvals = api.calls.filter((c) => c.path === "/api/avado/reconcile/approve");
     expect(approvals).toEqual([{ method: "POST", path: "/api/avado/reconcile/approve", params: { pubkeys: [DEMO.megaPubkey2], confirm: "LOAD" } }]);
     // The status is read again: the key now counts as loaded, nothing waits any more.
@@ -139,6 +142,15 @@ describe("Home", () => {
     expect(within(waiting).getByText("They can't be loaded right now, even after you approve:")).toBeInTheDocument();
     expect(within(waiting).getByText(/Teku 0.0.75 is too old/)).toBeInTheDocument();
     expect(within(waiting).getByRole("button", { name: "Load 2 validator keys into Teku" })).toBeDisabled();
+    // Long pubkeys in the backend's message wrap anywhere (no sideways scrolling on a phone).
+    expect(within(box).getByText(/is loaded in both Nimbus and Teku/).className).toContain("[overflow-wrap:anywhere]");
+    // Approving while the old Teku blocks loading says so, instead of promising "a few minutes".
+    await userEvent.type(within(waiting).getByLabelText(/to confirm/), "LOAD");
+    await userEvent.click(within(waiting).getByRole("button", { name: "Load 2 validator keys into Teku" }));
+    const outcome = await within(box).findByTestId("approval-outcome");
+    await waitFor(() => expect(outcome).toHaveTextContent("Rocket Pool can't load them yet. They load once this is fixed:"));
+    expect(outcome).toHaveTextContent("Teku 0.0.75 is too old");
+    expect(outcome).not.toHaveTextContent("within a few minutes");
     // The shell's red banner is there too.
     expect(await screen.findByText("A validator key is loaded in two clients — this can get it slashed")).toBeInTheDocument();
   });
@@ -189,6 +201,18 @@ describe("Home", () => {
     const fixes = await screen.findByRole("region", { name: "Things to fix" });
     expect(within(fixes).getByText("Confirm your new withdrawal address")).toBeInTheDocument();
     expect(within(fixes).getByRole("link", { name: "How to confirm" })).toHaveAttribute("href", "/setup/withdrawal");
+  });
+});
+
+describe("what approving keys will really do", () => {
+  it("settling keys: the 20-minute safety wait and its time; otherwise a few minutes", () => {
+    const settling = reconcileStatusOf(
+      reconcileView({ state: "attention", client: { id: "teku", name: "Teku", package: "teku.avado.dnp.dappnode.eth" }, keys: [demoKey(DEMO.megaPubkey2, "megapool", "1", "settling", "megapool", DEMO.megapool)] }),
+    )!;
+    const o = approvalOutcome(settling, [DEMO.megaPubkey2], "Teku");
+    expect(o.text).toMatch(/^Keys load after a 20-minute safety wait \(around [^)]*\d{2}[^)]*\)\.$/);
+    const waiting = reconcileStatusOf(SCENARIOS.mixed.reconcile)!;
+    expect(approvalOutcome(waiting, [DEMO.megaPubkey2], "Teku").text).toMatch(/within a few minutes/);
   });
 });
 

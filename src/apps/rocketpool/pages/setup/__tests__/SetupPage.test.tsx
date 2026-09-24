@@ -6,8 +6,9 @@ import { AppRoutes, Providers } from "../../../App";
 import { DEMO, DemoSnError, reconcileView } from "../../../api/fixtures";
 import { createMockRocketpoolApi, type MockRocketpoolApi, type RocketpoolMockOptions } from "../../../api/mock";
 import { pendingKey } from "../../../tx/pending";
-import { depositParams } from "../ValidatorsStep";
-import { withdrawalAddressProblem } from "../WithdrawalStep";
+import { PLAN_DEBOUNCE_MS, creditPlan, depositParams } from "../ValidatorsStep";
+import { withdrawalAddressProblem, withdrawalAddressWarning } from "../WithdrawalStep";
+import type { CanDepositResponse } from "../../../api/models";
 import { walletError } from "../walletCalls";
 import { RpApiError } from "../../../api/errors";
 
@@ -61,6 +62,16 @@ describe("Setup wizard", () => {
     renderSetup("/setup", { scenario: "unregistered" });
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/setup/register"));
     expect(stepStatus("Add ETH")).toBe("Done");
+  });
+
+  it("the layout can shrink to a phone: one minmax(0,1fr) column, the step list scrolls inside itself", async () => {
+    renderSetup("/setup/wallet", { scenario: "fresh" });
+    const layout = await screen.findByTestId("setup-layout");
+    expect(layout.className).toContain("grid-cols-[minmax(0,1fr)]");
+    expect(layout.className).toContain("lg:grid-cols-[16rem_minmax(0,1fr)]");
+    const nav = screen.getByRole("navigation", { name: "Setup steps" });
+    expect(nav.className).toContain("min-w-0");
+    expect(nav.querySelector("ol")!.className).toContain("overflow-x-auto");
   });
 
   it("a locked step says what comes first", async () => {
@@ -225,6 +236,13 @@ describe("Setup wizard", () => {
       expect(withdrawalAddressProblem(DEMO.nodeAddress.toUpperCase().replace("0X", "0x"), node)).toMatch(/node wallet/);
       expect(withdrawalAddressProblem(`0x${"0".repeat(40)}`, node)).toMatch(/empty address/);
       expect(withdrawalAddressProblem(` ${DEMO.coldWallet} `, node)).toBeNull();
+      // EIP-55: a correct mixed-case address passes; one flipped letter is a typo; one-case addresses pass with a caution.
+      expect(withdrawalAddressProblem("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", node)).toBeNull();
+      expect(withdrawalAddressWarning("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed")).toBeNull();
+      expect(withdrawalAddressProblem("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD", node)).toBe(
+        "This address has a typo (its checksum doesn't match). Copy it again from your wallet.",
+      );
+      expect(withdrawalAddressWarning(DEMO.coldWallet)).toMatch(/typos can't be detected/);
     });
 
     it("sets a cold wallet with confirm=false and explains the confirmation on the Rocket Pool site", async () => {
@@ -289,7 +307,7 @@ describe("Setup wizard", () => {
       await user.type(count, "2");
       const plan = (label: string) => within(screen.getByTestId("deposit-plan")).getByText(label).nextElementSibling?.textContent;
       await waitFor(() => expect(plan("Your bond")).toBe("8 ETH"));
-      expect(plan("Paid from the node wallet")).toBe("8 ETH");
+      expect(plan("Paid from the node wallet")).toBe("8 ETH + network fee");
       expect(plan("In the node wallet now")).toBe("8.35 ETH");
       const bondReads = api.calls.filter((c) => c.path === "/api/sn/node/get-bond-requirement").map((c) => c.params.numValidators);
       expect(bondReads).toEqual(expect.arrayContaining([1, 2]));
@@ -314,6 +332,42 @@ describe("Setup wizard", () => {
       });
       await user.click(await within(dialog).findByRole("button", { name: "Done" }, { timeout: 3000 }));
       expect(await screen.findByText("2 validators created")).toBeInTheDocument();
+    });
+
+    it("pays with credit only the way Smartnode does: the full credit, and only when all of it is usable", () => {
+      const E = 10n ** 18n;
+      const can = (o: Partial<CanDepositResponse>) =>
+        ({ status: "success", error: "", canDeposit: true, nodeBalance: "5000000000000000000", creditBalance: 0, insufficientBalance: false, invalidAmount: false, depositDisabled: false, ...o }) as CanDepositResponse;
+      expect(creditPlan(can({}), 4n * E)).toMatchObject({ useCredit: false, fromWallet: 4n * E, note: null, blocked: null });
+      expect(creditPlan(can({ canUseCredit: true, creditBalance: "1000000000000000000", usableCreditBalance: "1000000000000000000" }), 4n * E)).toMatchObject({
+        useCredit: true,
+        fromCredit: E,
+        fromWallet: 3n * E,
+      });
+      expect(creditPlan(can({ canUseCredit: true, creditBalance: "6000000000000000000", usableCreditBalance: "6000000000000000000" }), 4n * E)).toMatchObject({
+        useCredit: true,
+        fromWallet: 0n,
+      });
+      // Credit 3, only 1 usable: Smartnode would subtract all 3, so the credit is not used.
+      const partly = creditPlan(can({ canUseCredit: true, creditBalance: "3000000000000000000", usableCreditBalance: "1000000000000000000" }), 4n * E);
+      expect(partly).toMatchObject({ useCredit: false, fromWallet: 4n * E, blocked: null });
+      expect(partly.note).toMatch(/deposit pool is low/);
+      const short = creditPlan(can({ canUseCredit: true, nodeBalance: "2000000000000000000", creditBalance: "3000000000000000000", usableCreditBalance: "1000000000000000000" }), 4n * E);
+      expect(short.blocked).toMatch(/not enough for the whole bond/);
+    });
+
+    it("waits until typing stops before reading the bond (one set of reads for the final count)", async () => {
+      const { api, user } = renderSetup("/setup/validators", { scenario: "new-node" });
+      const count = await screen.findByLabelText("How many validators");
+      await waitFor(() => expect(screen.getByTestId("deposit-plan")).toBeInTheDocument(), { timeout: 2000 });
+      const before = api.calls.filter((c) => c.path === "/api/sn/node/get-bond-requirement").length;
+      await user.clear(count);
+      await user.type(count, "12");
+      await waitFor(() => expect(within(screen.getByTestId("deposit-plan")).getByText("Validators").nextElementSibling?.textContent).toBe("12"), {
+        timeout: PLAN_DEBOUNCE_MS * 5,
+      });
+      const reads = api.calls.filter((c) => c.path === "/api/sn/node/get-bond-requirement").slice(before);
+      expect(reads.map((c) => c.params.numValidators)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
     });
 
     it("the deposit's pending lock is the route alone, whatever the amount (one deposit at a time)", () => {

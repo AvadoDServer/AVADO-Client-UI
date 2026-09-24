@@ -3,6 +3,7 @@ import { Button, Input } from "../../../../components/ui";
 import type { CanSetWithdrawalAddressResponse, NodeStatus } from "../../api/models";
 import { Address, AddressLink, ExternalLink, Notice } from "../../components/common";
 import { isAddress } from "../../lib/explorer";
+import { checksumState } from "../../lib/checksum";
 import { isZeroAddress, sameAddress } from "../../lib/units";
 import { CONFIRM_WITHDRAWAL_URL } from "../../status/problems";
 import { TransactionFlow, defaultBlockedReason } from "../../tx/TransactionFlow";
@@ -14,7 +15,15 @@ export function withdrawalAddressProblem(input: string, node: Pick<NodeStatus, "
   if (!isAddress(a)) return "Not an Ethereum address: it starts with 0x followed by 40 characters (0-9, a-f).";
   if (isZeroAddress(a)) return "That is the empty address.";
   if (sameAddress(a, node.accountAddress)) return "That is this AVADO's node wallet. Use a wallet you control outside the AVADO.";
+  if (checksumState(a) === "invalid") return "This address has a typo (its checksum doesn't match). Copy it again from your wallet.";
   return null;
+}
+
+/** A caution for an address that is fine but can't be checked for typos (all one case). */
+export function withdrawalAddressWarning(input: string): string | null {
+  return checksumState(input.trim()) === "unchecked"
+    ? "This address is written in one case only, so typos can't be detected. Compare it character by character with your wallet."
+    : null;
 }
 
 function ConfirmSteps({ address }: { address: string }) {
@@ -108,7 +117,7 @@ export function WithdrawalStep({ node, onChanged }: { node?: NodeStatus; onChang
           onChange={(e) => setInput(e.target.value)}
           onBlur={() => setTouched(true)}
           error={touched && problem ? problem : undefined}
-          hint="Copy it from your wallet app. Don't type it by hand."
+          hint={(!problem && withdrawalAddressWarning(input)) || "Copy it from your wallet app. Don't type it by hand."}
           placeholder="0x…"
           autoComplete="off"
           spellCheck={false}

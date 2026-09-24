@@ -31,7 +31,7 @@ function NodeFixes({ problems }: { problems: Problem<string>[] }) {
             <StatusDot tone={p.tone} className="mt-1.5" />
             <div className="min-w-0">
               <p className="text-[0.9375rem] font-semibold leading-snug text-fg">{p.title}</p>
-              <p className="mt-0.5 break-words text-sm text-fg">{p.body}</p>
+              <p className="mt-0.5 text-sm text-fg [overflow-wrap:anywhere]">{p.body}</p>
             </div>
           </div>
           {p.action.to && (
@@ -170,7 +170,7 @@ export default function HomePage() {
         </p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[repeat(2,minmax(0,1fr))]">
         <Card as="section" aria-labelledby="health-title" className="flex flex-col gap-3">
           <CardTitle id="health-title">Node health</CardTitle>
           <div className="flex flex-wrap items-center gap-3 text-sm text-fg" data-testid="service-status">

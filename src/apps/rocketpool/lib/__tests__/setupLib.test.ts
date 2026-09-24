@@ -161,3 +161,24 @@ describe("setup steps", () => {
     expect(nextStepId("validators")).toBeNull();
   });
 });
+
+describe("EIP-55 checksum", () => {
+  it("matches the EIP's test vectors and tells typos from unchecked addresses", async () => {
+    const { checksumState, toChecksumAddress } = await import("../checksum");
+    const vectors = [
+      "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+      "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+      "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+      "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+    ];
+    for (const v of vectors) {
+      expect(toChecksumAddress(v.toLowerCase())).toBe(v);
+      expect(checksumState(v)).toBe("valid");
+    }
+    // One letter's case flipped: a wrong checksum.
+    expect(checksumState("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD")).toBe("invalid");
+    expect(checksumState(vectors[0].toLowerCase())).toBe("unchecked");
+    expect(checksumState(`0x${vectors[0].slice(2).toUpperCase()}`)).toBe("unchecked");
+    expect(checksumState("0x123")).toBe("not-address");
+  });
+});

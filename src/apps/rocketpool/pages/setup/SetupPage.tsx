@@ -23,7 +23,7 @@ import { WithdrawalStep } from "./WithdrawalStep";
 
 const STATUS_TEXT: Record<StepStatus, { tone: StatusTone; label: string }> = {
   done: { tone: "success", label: "Done" },
-  pending: { tone: "accent", label: "Waiting for you" },
+  pending: { tone: "warning", label: "Waiting for you" },
   open: { tone: "warning", label: "To do" },
   optional: { tone: "neutral", label: "Optional" },
   locked: { tone: "neutral", label: "Later" },
@@ -115,8 +115,8 @@ export default function SetupPage() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="font-display text-4xl font-bold tracking-tight text-fg">Set up your node</h1>
-      <div className="grid gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
-        <nav aria-label="Setup steps">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]" data-testid="setup-layout">
+        <nav aria-label="Setup steps" className="min-w-0">
           <ol className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
             {SETUP_STEPS.map((s, i) => {
               const st = STATUS_TEXT[statuses[s.id]];
@@ -147,7 +147,7 @@ export default function SetupPage() {
             })}
           </ol>
         </nav>
-        <Card as="section" aria-labelledby="setup-step-title" className="flex min-w-0 flex-col gap-5">
+        <Card as="section" aria-labelledby="setup-step-title" className="flex min-w-0 flex-col gap-5 [overflow-wrap:anywhere]">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
               Step {index + 1} of {SETUP_STEPS.length}

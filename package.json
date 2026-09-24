@@ -22,6 +22,7 @@
     "@fontsource/jetbrains-mono": "^5",
     "@fontsource/public-sans": "^5",
     "@fontsource/sen": "^5",
+    "@noble/hashes": "1.8.0",
     "ansi_up": "^6.0.6",
     "qrcode-generator": "2.0.4",
     "react": "^18.3.1",

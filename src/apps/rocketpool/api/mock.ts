@@ -97,6 +97,22 @@ function withApproved(view: ReconcileView, approved: ReadonlySet<string>): Recon
   const waiting = s.awaitingApproval as string[];
   const loaded = waiting.filter((k) => approved.has(k));
   if (loaded.length === 0) return view;
+  // Like the backend: approved keys that can't be loaded now wait as import-blocked.
+  if (((s.importBlockedReasons as string[] | undefined) ?? []).length > 0) {
+    return {
+      ...view,
+      status: {
+        ...s,
+        trigger: "request",
+        startedAt: "2026-09-23T10:00:58Z",
+        finishedAt: "2026-09-23T10:01:00Z",
+        awaitingApproval: waiting.filter((k) => !approved.has(k)),
+        validators: (s.validators as Array<Record<string, unknown>>).map((v) =>
+          loaded.includes(v.pubkey as string) ? { ...v, state: "import-blocked" } : v,
+        ),
+      },
+    };
+  }
   const keys = s.keys as { total: number; inSync: number; imported: number; summary: string };
   const inSync = keys.inSync + loaded.length;
   const stillWaiting = waiting.filter((k) => !approved.has(k));

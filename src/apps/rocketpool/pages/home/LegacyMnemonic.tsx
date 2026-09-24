@@ -60,7 +60,10 @@ export function LegacyMnemonic() {
           ) : (
             <p>It had already been moved or removed.</p>
           )}
-          <p>Keep your own written copy of the recovery phrase somewhere safe: it is the only way to restore the node wallet elsewhere.</p>
+          <p>
+            It is still plain text in the backups folder on this AVADO, as is the copy in the backup made at the first update to version 1.0.
+            Keep your own written copy of the recovery phrase somewhere safe: it is the only way to restore the node wallet elsewhere.
+          </p>
         </Notice>
       </Card>
     );
@@ -78,7 +81,9 @@ export function LegacyMnemonic() {
       <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-fg">
         <li>
           <span className="font-semibold">Make sure you have your own copy</span> of the recovery phrase, written on paper and kept safe.
-          The previous version never showed it to you: if you don't have it, contact{" "}
+          The previous version never showed it to you. If you ever downloaded its backup file (<span className="font-mono">rocket-pool-backup.zip</span>),
+          the phrase is in the file named <span className="font-mono">mnemonic</span> inside it: write it down from there, then keep that zip
+          file as safe as the phrase itself, or delete it. If you have neither, contact{" "}
           <a className="font-semibold text-accent underline underline-offset-2" href={`mailto:${SUPPORT_EMAIL}`}>
             {SUPPORT_EMAIL}
           </a>{" "}
@@ -86,7 +91,8 @@ export function LegacyMnemonic() {
         </li>
         <li>
           <span className="font-semibold">Move the file into the backups folder.</span> It then no longer sits next to the wallet, and
-          nothing is deleted: it stays on this AVADO in the backups folder, so it can't be lost.
+          nothing is deleted, so it can't be lost. This is tidying up, not full protection: the moved copy is still plain text in the
+          backups folder on this AVADO, and so is the copy in the backup made when this package was first updated to version 1.0.
         </li>
       </ol>
       <Input

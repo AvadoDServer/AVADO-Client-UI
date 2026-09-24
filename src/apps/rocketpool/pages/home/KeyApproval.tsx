@@ -32,7 +32,7 @@ function keyLabel(v: ReconcileKey | undefined): string {
 function KeyList({ keys, status, extra }: { keys: string[]; status: ReconcileStatus; extra?: (v: ReconcileKey | undefined) => string | null }) {
   const byKey = new Map(status.validators.map((v) => [v.pubkey, v]));
   return (
-    <ul className="flex flex-col gap-1.5 text-sm">
+    <ul className="flex min-w-0 flex-col gap-1.5 text-sm [overflow-wrap:anywhere]">
       {keys.map((pk) => {
         const v = byKey.get(pk);
         const href = validatorUrl(pk);
@@ -57,6 +57,8 @@ function KeyList({ keys, status, extra }: { keys: string[]; status: ReconcileSta
 
 interface Approved {
   count: number;
+  /** The keys sent (normalised, as in the status). */
+  pubkeys: string[];
   /** The key check's `finishedAt` when the approval was sent: a newer one means it ran since. */
   before: string | null;
 }
@@ -96,7 +98,7 @@ export function KeyApproval() {
     try {
       // The owner's typed text goes to the backend as is: it checks it again.
       const res = await api.approveKeys(awaiting, typed.trim());
-      setApproved({ count: res.approved, before: status.finishedAt });
+      setApproved({ count: res.approved, pubkeys: [...awaiting], before: status.finishedAt });
       setTyped("");
       await refresh();
     } catch (e) {
@@ -108,12 +110,13 @@ export function KeyApproval() {
   };
 
   const ranSince = approved && status.finishedAt && status.finishedAt !== approved.before;
+  const outcome = approved ? approvalOutcome(status, approved.pubkeys, clientName) : null;
 
   return (
     <Card as="section" aria-labelledby="validator-keys-title" className="flex flex-col gap-4" data-testid="key-approval">
       <div>
         <CardTitle id="validator-keys-title">Validator keys</CardTitle>
-        <CardDescription>{status.message}</CardDescription>
+        <CardDescription className="[overflow-wrap:anywhere]">{status.message}</CardDescription>
       </div>
 
       {twice.length > 0 && (
@@ -214,8 +217,15 @@ export function KeyApproval() {
       )}
 
       {approved && (
-        <Notice tone="success" title={`Approved ${plural(approved.count, "key")}`} live>
-          <p>Rocket Pool loads {approved.count === 1 ? "it" : "them"} into {clientName} on its next check, within a few minutes.</p>
+        <Notice tone={outcome!.tone} title={`Approved ${plural(approved.count, "key")}`} live testId="approval-outcome">
+          <p>{outcome!.text}</p>
+          {outcome!.reasons.length > 0 && (
+            <ul className="list-disc pl-5">
+              {outcome!.reasons.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          )}
           {ranSince && (
             <p>
               Checked again{timeOf(status.finishedAt ?? undefined) ? ` at ${timeOf(status.finishedAt ?? undefined)}` : ""}: {status.message}
@@ -225,6 +235,44 @@ export function KeyApproval() {
       )}
     </Card>
   );
+}
+
+/** How long the backend waits before loading a key it has never seen in a client (T3 SETTLE_MS). */
+export const SETTLE_MINUTES = 20;
+
+/**
+ * What will really happen to approved keys, from the latest status: loaded,
+ * blocked (and why), waiting out the safety delay (until when), or the next check.
+ */
+export function approvalOutcome(
+  status: ReconcileStatus,
+  pubkeys: string[],
+  clientName: string,
+): { tone: "success" | "warning" | "accent"; text: string; reasons: string[] } {
+  const mine = status.validators.filter((v) => pubkeys.includes(v.pubkey));
+  const them = pubkeys.length === 1 ? "it" : "them";
+  const running = mine.filter((v) => v.state === "loaded" || v.state === "imported");
+  if (mine.length > 0 && running.length === mine.length) {
+    return { tone: "success", text: `Loaded into ${clientName}.`, reasons: [] };
+  }
+  if (status.importBlockedReasons.length > 0) {
+    return {
+      tone: "warning",
+      text: `Rocket Pool can't load ${them} yet. ${pubkeys.length === 1 ? "It loads" : "They load"} once this is fixed:`,
+      reasons: status.importBlockedReasons.slice(0, 5),
+    };
+  }
+  const settling = mine.filter((v) => v.state === "settling");
+  if (settling.length > 0) {
+    const times = settling.map((v) => timeOf(v.settlesAt)).filter((t): t is string => !!t).sort();
+    const when = times.length ? ` (around ${times[times.length - 1]})` : "";
+    return { tone: "accent", text: `Keys load after a ${SETTLE_MINUTES}-minute safety wait${when}.`, reasons: [] };
+  }
+  return {
+    tone: "accent",
+    text: `Rocket Pool loads ${them} into ${clientName} within a few minutes. A key that was never seen in a client first gets a ${SETTLE_MINUTES}-minute safety wait.`,
+    reasons: [],
+  };
 }
 
 export default KeyApproval;
