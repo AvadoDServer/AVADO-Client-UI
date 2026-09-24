@@ -37,6 +37,15 @@ describe("findProblems", () => {
   });
 
   describe("execution client", () => {
+    it("counts the Lighthouse-only candidates for Lighthouse, not for Nimbus", () => {
+      const reth = up("dappmanager.dnp.dappnode.eth", "reth-mainnet.avado.dnp.dappnode.eth");
+      const lighthouse = { client: "lighthouse" as const, packageName: "lighthouse.avado.dnp.dappnode.eth" };
+      const rethSettings = { ...base.settings, execution_engine: "reth-mainnet.avado.dnp.dappnode.eth" };
+      expect(ids({ ...lighthouse, settings: rethSettings, packages: reth })).toEqual([]);
+      expect(ids({ packages: reth })).toContain("no-execution-client");
+      expect(one({ ...lighthouse, packages: [] }, "no-execution-client").body).toContain("Geth, Nethermind or Reth");
+    });
+
     it("flags a box with none of the network's candidates installed, linking to the DappStore", () => {
       const p = one({ packages: up("dappmanager.dnp.dappnode.eth") }, "no-execution-client");
       expect(p.tone).toBe("danger");

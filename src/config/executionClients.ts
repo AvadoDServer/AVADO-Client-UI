@@ -2,7 +2,8 @@
  * Execution-engine candidates per network, offered on the Settings page's
  * execution-client picker.
  *
- * This list must mirror the `EE_CANDIDATES` case statement in
+ * The candidates without `clients` are offered to every client. Their list
+ * must mirror the `EE_CANDIDATES` case statement in
  * `AVADO-DNP-Nimbus/build/startNimbus.sh:19-35`, which the entrypoint uses to
  * auto-detect (fresh install) or fail over (existing install, only when the
  * configured engine's hostname stops resolving and exactly one other
@@ -14,8 +15,14 @@
  * Networks with no case in the script (`hoodi`, and any future network) get
  * an empty candidate list here too, matching the script's `*) EE_CANDIDATES=""`
  * fallback.
+ *
+ * Candidates with `clients` are offered to those clients only. Lighthouse has
+ * no auto-detection in its start script; its picker offers the engines its
+ * previous wizard offered (AVADO-DNP-Lighthouse
+ * `build/wizard/src/components/SettingsForm.tsx`): the shared ones plus Reth
+ * on mainnet and Nethermind and Reth on Holesky.
  */
-import type { Network } from "./clientConfig";
+import type { ClientName, Network } from "./clientConfig";
 
 export interface ExecutionClientCandidate {
   network: Network;
@@ -27,6 +34,8 @@ export interface ExecutionClientCandidate {
   title: string;
   /** Engine API URL written to `ee_endpoint` when this candidate is picked (startNimbus.sh's `--el=`). */
   eeEndpoint: string;
+  /** Only these clients offer this candidate; every client when absent. */
+  clients?: ClientName[];
 }
 
 export const EXECUTION_CLIENTS: ExecutionClientCandidate[] = [
@@ -68,6 +77,31 @@ export const EXECUTION_CLIENTS: ExecutionClientCandidate[] = [
     title: "Geth",
     eeEndpoint: "http://holesky-geth.my.ava.do:8551",
   },
+  // Lighthouse only — its previous wizard's execution-engine list
+  {
+    network: "mainnet",
+    packageName: "reth-mainnet.avado.dnp.dappnode.eth",
+    name: "Reth",
+    title: "Reth",
+    eeEndpoint: "http://reth-mainnet.my.ava.do:8551",
+    clients: ["lighthouse"],
+  },
+  {
+    network: "holesky",
+    packageName: "nethermind-holesky.avado.dnp.dappnode.eth",
+    name: "Nethermind (Holesky testnet)",
+    title: "Nethermind",
+    eeEndpoint: "http://nethermind-holesky.my.ava.do:8551",
+    clients: ["lighthouse"],
+  },
+  {
+    network: "holesky",
+    packageName: "reth-holesky.avado.dnp.dappnode.eth",
+    name: "Reth (Holesky testnet)",
+    title: "Reth",
+    eeEndpoint: "http://reth-holesky.my.ava.do:8551",
+    clients: ["lighthouse"],
+  },
   // gnosis — startNimbus.sh:30
   {
     network: "gnosis",
@@ -78,9 +112,14 @@ export const EXECUTION_CLIENTS: ExecutionClientCandidate[] = [
   },
 ];
 
-/** The candidates offered for one network, in the order shown to the owner. */
-export function executionClientsForNetwork(network: Network): ExecutionClientCandidate[] {
-  return EXECUTION_CLIENTS.filter((c) => c.network === network);
+/**
+ * The candidates one client offers on one network, in the order shown to the
+ * owner. Without a client, only the candidates every client offers.
+ */
+export function executionClientsForNetwork(network: Network, client?: ClientName): ExecutionClientCandidate[] {
+  return EXECUTION_CLIENTS.filter(
+    (c) => c.network === network && (!c.clients || (client !== undefined && c.clients.includes(client))),
+  );
 }
 
 /** Look up a candidate by package name, regardless of network. */

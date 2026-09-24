@@ -129,6 +129,32 @@ describe("SettingsPage — an old settings.json missing fields", () => {
   });
 });
 
+describe("SettingsPage — Lighthouse execution clients", () => {
+  it("offers Reth on mainnet and saves its engine endpoint", async () => {
+    const user = userEvent.setup();
+    const packages = [...MOCK_PACKAGES, "reth-mainnet.avado.dnp.dappnode.eth"];
+    const api = createMockApi({ packages });
+    renderPage(api, { client: "lighthouse", network: "mainnet" });
+    await waitForLoaded();
+
+    expect(screen.getByRole("radio", { name: "Geth" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Nethermind" })).toBeDisabled();
+    await user.click(screen.getByRole("radio", { name: "Reth" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await screen.findByText(/Settings saved/);
+
+    const saved = await api.backend.getSettings();
+    expect(saved.execution_engine).toBe("reth-mainnet.avado.dnp.dappnode.eth");
+    expect(saved.ee_endpoint).toBe("http://reth-mainnet.my.ava.do:8551");
+  });
+
+  it("does not offer Reth to Nimbus", async () => {
+    renderPage(createMockApi({ packages: MOCK_PACKAGES }), { client: "nimbus", network: "mainnet" });
+    await waitForLoaded();
+    expect(screen.queryByRole("radio", { name: "Reth" })).not.toBeInTheDocument();
+  });
+});
+
 describe("SettingsPage — validation", () => {
   it("requires a default fee recipient", async () => {
     const user = userEvent.setup();

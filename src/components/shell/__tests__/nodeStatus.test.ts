@@ -69,6 +69,18 @@ describe("clientServiceState", () => {
   it("falls back to the one process that isn't the package's own server", () => {
     expect(clientServiceState([proc("teku-beacon", "STOPPED"), proc("monitor", "RUNNING")], "teku")).toBe("stopped");
   });
+  it("reads Lighthouse's beacon-node program (lighthouse-bn), not the validator client", () => {
+    const lighthouse = (bn: string, vc: string) => [
+      proc("lighthouse-bn", bn),
+      proc("lighthouse-vc", vc),
+      proc("server", "RUNNING"),
+      proc("wizard", "RUNNING"),
+    ];
+    expect(clientServiceState(lighthouse("STOPPED", "RUNNING"), "lighthouse")).toBe("stopped");
+    expect(clientServiceState(lighthouse("FATAL", "RUNNING"), "lighthouse")).toBe("stopped");
+    expect(clientServiceState(lighthouse("RUNNING", "STOPPED"), "lighthouse")).toBe("starting");
+    expect(clientServiceState(lighthouse("BACKOFF", "RUNNING"), "lighthouse")).toBe("starting");
+  });
   it("is unknown when it can't tell", () => {
     expect(clientServiceState([], "nimbus")).toBeUndefined();
     expect(clientServiceState([proc("a", "STOPPED"), proc("b", "RUNNING")], "nimbus")).toBeUndefined();

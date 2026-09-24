@@ -34,12 +34,23 @@ const STOPPED = new Set(["STOPPED", "EXITED", "FATAL"]);
 const STARTING = new Set(["RUNNING", "STARTING", "BACKOFF"]);
 
 /**
- * The client process's state from supervisord: the process named after the
- * client, else the only process that isn't a helper. "starting" covers a
- * running process whose beacon API isn't up yet. Undefined when unclear.
+ * The supervisord program that serves the beacon API, when it isn't named
+ * after the client. Lighthouse runs its beacon node and validator client as
+ * two programs (`lighthouse-bn`, `lighthouse-vc`); the status strip follows
+ * the beacon node.
+ */
+const BEACON_PROCESS: Partial<Record<ClientName, string>> = {
+  lighthouse: "lighthouse-bn",
+};
+
+/**
+ * The client process's state from supervisord: the client's beacon-node
+ * process (named after the client unless `BEACON_PROCESS` says otherwise),
+ * else the only process that isn't a helper. "starting" covers a running
+ * process whose beacon API isn't up yet. Undefined when unclear.
  */
 export function clientServiceState(processes: ProcessInfo[], client: ClientName): ServiceState | undefined {
-  const own = processes.find((p) => p.name === client);
+  const own = processes.find((p) => p.name === (BEACON_PROCESS[client] ?? client));
   const others = processes.filter((p) => !HELPER_PROCESSES.has(p.name));
   const proc = own ?? (others.length === 1 ? others[0] : undefined);
   if (!proc) return undefined;

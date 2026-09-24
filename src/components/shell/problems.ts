@@ -97,7 +97,7 @@ export function findProblems(i: ProblemInputs): Problem[] {
   if (i.packages) {
     const states = new Map(i.packages.map((p) => [p.name, p.running]));
     const installed = (n: string) => states.has(n);
-    const candidates = executionClientsForNetwork(i.network);
+    const candidates = executionClientsForNetwork(i.network, i.client);
     const installedCandidates = candidates.filter((c) => installed(c.packageName));
     if (candidates.length > 0 && installedCandidates.length === 0) {
       executionProblem = true;
