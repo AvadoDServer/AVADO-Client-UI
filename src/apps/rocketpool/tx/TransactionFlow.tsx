@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Button, Input, Modal, Spinner, StatusDot, cn } from "../../../components/ui";
+import { useMode } from "../../../settings/ModeProvider";
+import { TechDetails } from "../components/common";
 import { isDefinitelyNotSent, isOutcomeUnknown, plainError } from "../api/errors";
 import type { CanResponse, GasLimits, SnEnvelope, TxResponse } from "../api/models";
 import { useRocketpoolApi } from "../api/RocketpoolApiProvider";
@@ -108,12 +110,12 @@ interface Checked<C> {
 
 type Phase<C> =
   | { k: "checking"; stale?: boolean }
-  | { k: "check-error"; message: string }
+  | { k: "check-error"; message: string; error: unknown }
   | { k: "blocked"; reason: string }
   /** `quote` is null only for an off-chain action (no fee). */
   | { k: "ready"; can: C; quote: GasQuote | null; spec: Checked<C>; checkedAt: number; stale?: boolean }
   /** The write was refused: `certain` when the backend refused before the daemon saw it. */
-  | { k: "send-failed"; message: string; certain: boolean }
+  | { k: "send-failed"; message: string; certain: boolean; error: unknown }
   /** Showing the app's record of this action (sending, sent, unclear, lost, done, failed). */
   | { k: "tracked" };
 
@@ -126,10 +128,10 @@ function typedMatches(typed: string, required: string | undefined, ignoreCase: b
 
 /** Smartnode's reason flags on `can-X` answers, in plain words. */
 const REASONS: Array<[string, string]> = [
-  ["insufficientBalance", "The node wallet doesn't have enough ETH for this."],
+  ["insufficientBalance", "The node wallet doesn't have enough ETH for this. Add ETH to it first."],
   ["insufficientRplBalance", "The node wallet doesn't have enough RPL for this."],
   ["depositDisabled", "Rocket Pool isn't taking new deposits right now."],
-  ["nodeHasDebt", "Your node has a debt to repay first."],
+  ["nodeHasDebt", "Your megapool has a debt to repay first (on the Validators page)."],
   ["invalidAmount", "This amount isn't allowed."],
   ["alreadyRegistered", "This node is already registered."],
   ["registrationDisabled", "Rocket Pool isn't registering new nodes right now."],
@@ -147,7 +149,7 @@ export function defaultBlockedReason(can: CanResponse, canRoute: string): string
   const flag = canFlag(canRoute);
   if (!flag || can[flag] !== false) return null;
   const reason = REASONS.find(([k]) => can[k] === true);
-  return reason ? reason[1] : "Rocket Pool says this can't be done right now.";
+  return reason ? reason[1] : "Rocket Pool says this can't be done right now. Try again later.";
 }
 
 function TxLink({ hash }: { hash?: string }) {
@@ -294,7 +296,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
         }
         setPhase({ k: "ready", can, quote, spec: frozen, checkedAt: Date.now(), stale });
       } catch (e) {
-        if (id === run.current) setPhase({ k: "check-error", message: plainError(e) });
+        if (id === run.current) setPhase({ k: "check-error", message: plainError(e), error: e });
       }
     },
     [api, pending],
@@ -369,7 +371,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
         pending.markUnknown(k, plainError(e));
       } else {
         pending.markNotSent(k);
-        if (id === run.current) setPhase({ k: "send-failed", message: plainError(e), certain: isDefinitelyNotSent(e) });
+        if (id === run.current) setPhase({ k: "send-failed", message: plainError(e), certain: isDefinitelyNotSent(e), error: e });
       }
       return;
     }
@@ -503,13 +505,16 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
 
           {phase.k === "check-error" && (
             <Note tone="danger" title="Could not check this transaction" noteRef={noteRef}>
-              {phase.message}
+              <p>{phase.message}</p>
+              <p>Nothing was sent. Press Check again to retry.</p>
+              <TechDetails error={phase.error} />
             </Note>
           )}
 
           {phase.k === "blocked" && (
             <Note tone="warning" title="This can't be done right now" noteRef={noteRef}>
-              {phase.reason}
+              <p>{phase.reason}</p>
+              <p>Nothing was sent and no fee was paid.</p>
             </Note>
           )}
 
@@ -517,7 +522,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
             <>
               {phase.stale && (
                 <p className="mt-4 text-sm font-medium text-fg" role="status">
-                  The estimate was more than a minute old, so it was checked again. Review it and confirm.
+                  The fee estimate was more than a minute old, so it was checked again. Look it over and confirm.
                 </p>
               )}
               {phase.spec.details && <div className="mt-4 text-sm text-fg">{phase.spec.details(phase.can)}</div>}
@@ -549,6 +554,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
             <Note tone="danger" title="Not sent" noteRef={noteRef}>
               <p>{phase.message}</p>
               <p>{phase.certain ? "Nothing was sent and no fee was paid." : "It was most likely not sent, and no fee was paid for it."}</p>
+              <TechDetails error={phase.error} />
             </Note>
           )}
         </>
@@ -563,13 +569,33 @@ function NoFeeBox() {
     <div className="mt-4 rounded-xl border border-border bg-surface p-4 text-sm" data-testid="tx-no-fee">
       <p className="font-medium text-fg">No network fee</p>
       <p className="mt-1 text-xs text-fg-muted">
-        This is a message signed by your node and handed to the beacon chain, not an Ethereum transaction.
+        Your node signs an exit message and hands it to the network. It isn't a transaction, so there is nothing to pay.
       </p>
     </div>
   );
 }
 
 function FeeBox({ quote, extraLabel }: { quote: GasQuote; extraLabel?: string }) {
+  const { isAdvanced } = useMode();
+  if (!isAdvanced) {
+    return (
+      <div className="mt-4 rounded-xl border border-border bg-surface p-4 text-sm" data-testid="tx-fee">
+        <dl>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <dt className="font-medium text-fg">Network fee</dt>
+            <dd className="font-semibold text-fg">about {formatGasCost(quote.estimatedCostWei)}</dd>
+          </div>
+          <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-fg-muted">
+            <dt>At most</dt>
+            <dd>{formatGasCost(quote.maxCostWei)}</dd>
+          </div>
+        </dl>
+        <p className="mt-2 text-xs text-fg-muted">
+          Paid from your node wallet to the Ethereum network, not to AVADO or Rocket Pool. It never costs more than &ldquo;at most&rdquo;.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="mt-4 rounded-xl border border-border bg-surface p-4 text-sm" data-testid="tx-fee">
       <dl>
@@ -632,10 +658,10 @@ function EntryNote({
   );
   if (overdue) {
     return (
-      <Note tone="warning" title="This transaction hasn't been mined for an hour" noteRef={noteRef}>
+      <Note tone="warning" title="This transaction still isn't confirmed after an hour" noteRef={noteRef}>
         <p>
-          It may be stuck (for example because the network fee rose above its limit) or dropped by the network. Check it on
-          Etherscan.
+          It may be stuck (for example because network fees rose above its limit) or dropped by the network. Check it on Etherscan,
+          a website that shows every Ethereum transaction.
         </p>
         <TxLink hash={entry.txHash} />
         <p>
@@ -687,7 +713,7 @@ function EntryNote({
       );
     case "sent":
       return (
-        <Note tone="accent" title="Sent. Waiting for it to be included in a block…" noteRef={noteRef}>
+        <Note tone="accent" title="Sent. Waiting for the network to confirm it…" noteRef={noteRef}>
           <p className="flex items-center gap-2">
             <Spinner size="sm" label="Waiting" /> This usually takes under a minute. You can close this window; the
             transaction continues and this page keeps following it.
@@ -701,8 +727,8 @@ function EntryNote({
         <Note tone="warning" title="We don't know if it was sent" noteRef={noteRef}>
           {entry.message && <p>{entry.message}</p>}
           <p>
-            Don't try again yet: it may already be on its way. Check your node wallet's recent transactions on Etherscan.
-            After {MINUTES} minutes you can stop tracking it here.
+            Don't try again yet: it may already be on its way. Check your node wallet's recent transactions on Etherscan (a website
+            that shows every Ethereum transaction). After {MINUTES} minutes you can stop tracking it here.
           </p>
           {earlier}
         </Note>
@@ -719,14 +745,14 @@ function EntryNote({
     case "done":
       return (
         <Note tone="success" title="Transaction confirmed" noteRef={noteRef}>
-          <p>It is included in a block and went through.</p>
+          <p>The network confirmed it. It went through.</p>
           <TxLink hash={entry.txHash} />
         </Note>
       );
     case "failed":
       return (
         <Note tone="danger" title="The transaction failed" noteRef={noteRef}>
-          <p>It was included in a block but did not go through. The network fee for it was still paid.</p>
+          <p>The network processed it, but it did not go through, so nothing changed. The network fee for it was still paid. If you don't know why, contact AVADO support before trying again.</p>
           <TxLink hash={entry.txHash} />
         </Note>
       );

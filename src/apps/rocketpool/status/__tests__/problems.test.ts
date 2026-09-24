@@ -1,6 +1,6 @@
 import { DEMO, SCENARIOS, demoKey, reconcileView } from "../../api/fixtures";
 import type { AvadoStatus, NodeStatus, ReconcileView } from "../../api/models";
-import { findNodeProblems, findPendingProblems, findStatusProblems } from "../problems";
+import { findNodeProblems, findPendingProblems, findStatusProblems, forMode } from "../problems";
 import type { PendingTx } from "../../tx/pending";
 
 const running = SCENARIOS.minipool.avado;
@@ -26,15 +26,25 @@ describe("status banners", () => {
     const p = findStatusProblems({ avado: s.avado, reconcile: s.reconcile });
     expect(ids(p)).toEqual(["startup-error"]);
     expect(p[0]).toMatchObject({ tone: "danger", title: "Rocket Pool could not start", action: { to: "/advanced" } });
-    expect(p[0].body).toContain("could not load its settings");
-    expect(p[0].details).toHaveLength(2);
+    // The startup error in plain words: the internal URL is left out of the banner.
+    expect(p[0].body).toContain("could not load its settings: the execution client URL does not answer.");
+    expect(p[0].body).not.toContain("http://");
+    // Simple mode: no log lines, and a step the owner can take; Advanced: the raw error and the log lines, and the logs page.
+    const simple = forMode(p[0], false);
+    expect(simple.details ?? []).toEqual([]);
+    expect(simple.action).toEqual({ label: "Open the package", href: "http://my.ava.do/#/packages/rocketpool.avado.dnp.dappnode.eth" });
+    const advanced = forMode(p[0], true);
+    expect(advanced.details).toHaveLength(3);
+    expect(advanced.details?.[0]).toContain("http://ethchain-geth.my.ava.do:8545");
+    expect(advanced.action).toEqual({ label: "See the logs", to: "/advanced" });
   });
 
   it("a stopped daemon without a startup error", () => {
     for (const state of ["FATAL", "BACKOFF", "EXITED", "STOPPED"]) {
       const p = findStatusProblems({ avado: with_({ daemon: { state }, apiReachable: false, daemonErrors: ["a", "b", "c", "d"] }) });
       expect(ids(p)).toEqual(["daemon-stopped"]);
-      expect(p[0].details).toEqual(["b", "c", "d"]);
+      expect(forMode(p[0], true).details).toEqual(["b", "c", "d"]);
+      expect(forMode(p[0], false).details ?? []).toEqual([]);
     }
   });
 
@@ -64,7 +74,7 @@ describe("status banners", () => {
     const p = findStatusProblems({ avado: with_({ legacyMnemonicPresent: true }) });
     expect(ids(p)).toEqual(["legacy-mnemonic"]);
     // Explained and moved away on Home (typed ARCHIVE).
-    expect(p[0].action).toEqual({ label: "Review", to: "/" });
+    expect(p[0].action).toEqual({ label: "Fix this", to: "/" });
   });
 
   it("mixed node: a key waiting for the owner's approval, most serious first", () => {
@@ -73,7 +83,7 @@ describe("status banners", () => {
     expect(ids(p)).toEqual(["legacy-mnemonic", "keys-awaiting-approval"]);
     expect(p[1].title).toBe("1 validator key needs your approval");
     expect(p[1].body).toBe(
-      "It is not loaded in Teku yet. Load it only if this validator is not running anywhere else: running a key on two machines gets it slashed.",
+      "It is not running in Teku yet. Start it only if this validator is not running anywhere else: running a key on two machines gets it slashed (a heavy penalty).",
     );
     expect(p[1].action).toEqual({ label: "Review keys", to: "/" });
   });
@@ -89,7 +99,7 @@ describe("status banners", () => {
   it("plural approval banner", () => {
     const p = findStatusProblems({ avado: running, reconcile: view({ state: "attention", client: TEKU, keys: [k(1, "awaiting-approval"), k(2, "awaiting-approval")] }) });
     expect(p.map((x) => x.title)).toEqual(["2 validator keys need your approval"]);
-    expect(p[0].body).toMatch(/^They are not loaded in Teku yet. Load them only if these validators are not running anywhere else/);
+    expect(p[0].body).toMatch(/^They are not running in Teku yet. Start them only if these validators are not running anywhere else/);
   });
 
   it("no client: the loop's own explanation of the client choice", () => {
@@ -118,8 +128,11 @@ describe("status banners", () => {
       ),
     });
     expect(blocked[0].title).toBe("2 validator keys not running in Teku");
-    expect(blocked[0].body).toMatch(/could not be checked, so nothing was loaded into Teku/);
-    expect(blocked[0].details).toEqual(["Keys were not imported: the keys in Prysm could not be checked."]);
+    expect(blocked[0].body).toMatch(/couldn't be checked, so to be safe nothing was loaded into Teku/);
+    // The key check's own error text is a detail for Advanced mode; Simple mode offers support instead of the Advanced page.
+    expect(forMode(blocked[0], true).details).toEqual(["Keys were not imported: the keys in Prysm could not be checked."]);
+    expect(forMode(blocked[0], false).details).toEqual([]);
+    expect(forMode(blocked[0], false).action).toEqual({ label: "Contact AVADO support", href: "mailto:support@ava.do" });
     expect(blocked).toHaveLength(1); // the errors are not repeated in a second banner
   });
 
@@ -128,7 +141,8 @@ describe("status banners", () => {
       avado: running,
       reconcile: view({ state: "attention", client: TEKU, keys: [k(0, "loaded")] }, { feeRecipients: { total: 1, ok: 0, fixed: 0, failed: 1 } }),
     });
-    expect(fee.map((x) => x.title)).toEqual(["Fee recipient could not be set for 1 validator"]);
+    expect(fee.map((x) => x.title)).toEqual(["Block rewards may go to the wrong address for 1 validator"]);
+    expect(fee[0].body).toContain('(the "fee recipient")');
 
     const failed = findStatusProblems({
       avado: running,
@@ -139,8 +153,9 @@ describe("status banners", () => {
     });
     expect(ids(failed)).toEqual(["reconcile-failed"]);
     expect(failed[0].tone).toBe("danger");
-    expect(failed[0].body).toBe("Could not read the validator keys from Teku. Is it running?");
-    expect(failed[0].details).toEqual(["Teku keymanager: connect ECONNREFUSED"]);
+    expect(failed[0].body).toMatch(/^Every few minutes Rocket Pool checks that your validators run in Teku\. The last check failed/);
+    expect(forMode(failed[0], true).details).toEqual(["Could not read the validator keys from Teku. Is it running?", "Teku keymanager: connect ECONNREFUSED"]);
+    expect(forMode(failed[0], false).details ?? []).toEqual([]);
 
     const other = findStatusProblems({
       avado: running,
@@ -176,7 +191,8 @@ describe("status banners", () => {
     });
     expect(ids(p)).toEqual(["keys-awaiting-approval", "keys-settling"]);
     expect(p[0].details).toEqual(["The keys in Prysm could not be checked."]);
-    expect(p[1]).toMatchObject({ tone: "accent", title: "1 validator key will be loaded soon" });
+    expect(p[1]).toMatchObject({ tone: "accent", title: "1 validator key will start soon" });
+    expect(forMode(p[1], false).action).toEqual({ label: "See on Home", to: "/" });
   });
 
   it("an old client and unknown key states count as not running", () => {
@@ -188,7 +204,8 @@ describe("status banners", () => {
       ),
     });
     expect(p[0].title).toBe("1 validator key not running in Teku");
-    expect(p[0].body).toMatch(/^Update Teku from the AVADO Admin/);
+    expect(p[0].body).toMatch(/^Update Teku in the AVADO Admin/);
+    expect(forMode(p[0], false).action).toEqual({ label: "Open Teku", href: "http://my.ava.do/#/packages/teku.avado.dnp.dappnode.eth" });
     expect(p[0].details).toEqual(["Update Teku before loading keys."]);
 
     const unknown = view({ state: "attention", client: TEKU, keys: [k(1, "loaded")] }, {});
@@ -200,7 +217,8 @@ describe("status banners", () => {
     const r = view({ state: "attention", client: TEKU, keys: [k(1, "loaded")] }, { version: 3, state: "degraded", message: "Something new." });
     const p = findStatusProblems({ avado: running, reconcile: r });
     expect(ids(p)).toEqual(["reconcile-newer"]);
-    expect(p[0].body).toBe("Something new.");
+    expect(p[0].body).toBe("Rocket Pool reported something this page can't show yet. Reload the page; if this stays, contact AVADO support.");
+    expect(forMode(p[0], true).details).toEqual(["Something new."]);
   });
 
   it("says nothing while the loop waits (no wallet, starting, syncing), or while the daemon isn't ready, or for a garbled file", () => {

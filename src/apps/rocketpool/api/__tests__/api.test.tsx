@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { createFetchMock, networkDown } from "../../../../api/__tests__/fetchMock";
-import { RpApiError, isOutcomeUnknown, isTxReverted, plainError } from "../errors";
+import { RpApiError, errorDetails, isOutcomeUnknown, isTxReverted, plainError } from "../errors";
 import { createMockRocketpoolApi } from "../mock";
 import {
   AVADO_REQUEST_HEADER,
@@ -51,10 +51,10 @@ describe("real Rocket Pool API", () => {
 
   it("always sends a JSON body on a POST, also without parameters (reconcile run too)", async () => {
     const f = createFetchMock()
-      .on("POST", "/api/sn/wallet/rebuild", ok())
+      .on("POST", "/api/sn/node/provision-express-tickets", ok())
       .on("POST", "/api/avado/reconcile/run", { status: 202, json: { status: "success" } });
     const api = createRealRocketpoolApi(f.fetch);
-    await api.snPost("wallet/rebuild");
+    await api.snPost("node/provision-express-tickets");
     await api.requestReconcile();
     expect(f.calls.map((c) => [c.rawBody, c.headers["x-avado-request"]])).toEqual([
       ["{}", "1"],
@@ -109,11 +109,14 @@ describe("real Rocket Pool API", () => {
 
     const noWallet = await caught(api.snGet("node/status"));
     expect(noWallet).toMatchObject({ kind: "http", status: 500 });
-    expect(plainError(noWallet)).toBe("The node wallet has not been initialized.");
+    // Known Smartnode messages in plain words, with the next step; the CLI advice is never shown.
+    expect(plainError(noWallet)).toBe("There is no node wallet on this AVADO yet. Set up your node first.");
 
     const envelope = await caught(api.snGet("node/sync"));
     expect(envelope).toMatchObject({ kind: "smartnode", detail: "EC not synced" });
-    expect(plainError(envelope)).toBe("EC not synced.");
+    expect(plainError(envelope)).toBe("Your Ethereum clients are still catching up with the network. Try again once they are in sync (Home shows their progress).");
+    // The raw text stays available for the Advanced details.
+    expect(errorDetails(envelope)).toBe("/api/sn/node/sync · smartnode · HTTP 200 · EC not synced");
 
     const down = await caught(api.snGet("version"));
     expect(down).toMatchObject({ kind: "http", status: 502 });
@@ -130,16 +133,17 @@ describe("real Rocket Pool API", () => {
     expect(plainError(exists)).toBe("This AVADO already has a Rocket Pool wallet. Contact support@ava.do if you need to change it.");
   });
 
-  it("gives up after its time limit: 60 s for reads, 150 s for writes, 65 min for wait and wallet recovery", async () => {
+  it("gives up after its time limit: 60 s for reads, 150 s for writes, 65 min for wait, wallet recovery and deposits", async () => {
     vi.useFakeTimers();
     try {
       const f = createFetchMock()
         .on("GET", "/api/sn/node/status", "hang")
         .on("POST", "/api/sn/node/distribute", "hang")
         .on("GET", `/api/sn/wait?txHash=${HASH}`, "hang")
-        .on("POST", "/api/sn/wallet/recover", "hang");
+        .on("POST", "/api/sn/wallet/recover", "hang")
+        .on("POST", "/api/sn/node/deposit", "hang");
       const api = createRealRocketpoolApi(f.fetch);
-      const settled: Record<string, RpApiError | "pending"> = { read: "pending", write: "pending", wait: "pending", recover: "pending" };
+      const settled: Record<string, RpApiError | "pending"> = { read: "pending", write: "pending", wait: "pending", recover: "pending", deposit: "pending" };
       const track = (name: string, p: Promise<unknown>) =>
         p.catch((e: RpApiError) => {
           settled[name] = e;
@@ -148,6 +152,8 @@ describe("real Rocket Pool API", () => {
       void track("write", api.snPost("node/distribute"));
       void track("wait", waitForTx(api, HASH));
       void track("recover", api.snPost("wallet/recover", { mnemonic: "x" }));
+      // The backend waits for a deposit as long as for a wallet recovery (and records the new keys): the page must not give up first.
+      void track("deposit", api.snPost("node/deposit", { count: "1" }));
 
       await vi.advanceTimersByTimeAsync(READ_TIMEOUT_MS);
       expect(settled.read).toMatchObject({ kind: "timeout" });
@@ -156,9 +162,11 @@ describe("real Rocket Pool API", () => {
       expect(settled.write).toMatchObject({ kind: "timeout" });
       expect(settled.wait).toBe("pending");
       expect(settled.recover).toBe("pending");
+      expect(settled.deposit).toBe("pending");
       await vi.advanceTimersByTimeAsync(LONG_TIMEOUT_MS - WRITE_TIMEOUT_MS);
       expect(settled.wait).toMatchObject({ kind: "timeout" });
       expect(settled.recover).toMatchObject({ kind: "timeout" });
+      expect(settled.deposit).toMatchObject({ kind: "timeout" });
     } finally {
       vi.useRealTimers();
     }

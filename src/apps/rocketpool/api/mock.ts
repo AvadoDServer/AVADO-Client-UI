@@ -16,14 +16,18 @@
  *    `wallet/recover` saves it; the `fresh` node then reads as `unregistered`.
  *  - Approved keys read as loaded; an archived legacy recovery-phrase file is gone.
  *  - `node/get-bond-requirement?numValidators=N` answers N × 4 ETH.
+ *  - A backup download answers a tiny empty .zip (`DEMO_BACKUP_ZIP`), for
+ *    "current" (while there is a wallet) and for every listed backup.
  */
 import { RpApiError } from "./errors";
 import { DEMO, DemoSnError, SCENARIOS, demoHex, isScenarioName, type MockScenario, type MockScenarioName } from "./fixtures";
 import {
   APPROVE_CONFIRMATION,
   ARCHIVE_CONFIRMATION,
+  CURRENT_BACKUP,
   type ApproveKeysResult,
   type AvadoStatus,
+  type BackupDownload,
   type LegacyMnemonicArchiveResult,
   type LogsView,
   type ReconcileView,
@@ -34,6 +38,7 @@ import { canFlag } from "./sn";
 
 export { canFlag };
 import {
+  AVADO_BACKUP_DOWNLOAD_PATH,
   AVADO_LEGACY_MNEMONIC_ARCHIVE_PATH,
   AVADO_LOGS_PATH,
   AVADO_RECONCILE_APPROVE_PATH,
@@ -42,6 +47,8 @@ import {
   AVADO_STATUS_PATH,
   SN_PREFIX,
   assertRoute,
+  backupFileName,
+  isBackupName,
 } from "./real";
 import type { CallOptions, RocketpoolApi, SnParams } from "./types";
 
@@ -178,6 +185,14 @@ export const DEMO_GAS_LIMITS = { estimated: 145_000, safe: 217_500 } as const;
 /** Demo bond per megapool validator (the answer of `node/get-bond-requirement` is N × this). */
 export const DEMO_BOND_PER_VALIDATOR_WEI = 4n * 10n ** 18n;
 
+/** An empty .zip archive (only its end-of-directory record): what the demo "downloads". */
+export const DEMO_BACKUP_ZIP = new Uint8Array([0x50, 0x4b, 0x05, 0x06, ...new Array<number>(18).fill(0)]);
+/** The backend's own refusals (backups/download). */
+export const NO_BACKUP = "There is no backup with that name.";
+export const NO_WALLET_TO_BACK_UP = "There is no wallet to back up yet.";
+/** The name the demo's fresh backup gets, as the backend names it (`<ts>-manual-download`). */
+export const DEMO_MANUAL_BACKUP = "20260923T103000Z-manual-download";
+
 /** The backup folder the demo moves the legacy recovery-phrase file into. */
 export const DEMO_MNEMONIC_ARCHIVE = "mnemonic-archive-20260923T101500Z";
 
@@ -195,10 +210,10 @@ export function demoMnemonic(seed: number): string {
 }
 
 /** The scenario for `VITE_MOCK=1`: `?scenario=` in the page address, else VITE_MOCK_SCENARIO, else "mixed". */
-export function scenarioFromEnvironment(): MockScenarioName {
+export function scenarioFromEnvironment(search?: string): MockScenarioName {
   let fromUrl: string | null = null;
   try {
-    fromUrl = new URLSearchParams(window.location.search).get("scenario");
+    fromUrl = new URLSearchParams(search ?? window.location.search).get("scenario");
   } catch {
     /* no window */
   }
@@ -221,6 +236,8 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
   const approved = new Set<string>();
   /** The legacy recovery-phrase file was moved into this backup (then the status no longer reports it). */
   let mnemonicArchive: string | null = null;
+  /** A fresh backup was downloaded: the backend keeps a copy, listed from then on. */
+  let manualBackup = false;
 
   const delay = async (ms = latencyMs, signal?: AbortSignal, path?: string) => {
     if (ms > 0 || signal?.aborted) await sleep(ms, signal, path);
@@ -263,6 +280,7 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
         avado.legacyMnemonicPresent = false;
         avado.backups = [{ name: mnemonicArchive, createdAt: "2026-09-23T10:15:00Z", kind: "mnemonic-archive" }, ...avado.backups];
       }
+      if (manualBackup) avado.backups = [{ name: DEMO_MANUAL_BACKUP, createdAt: "2026-09-23T10:30:00Z", kind: "manual" }, ...avado.backups];
       if (!avado.walletFilePresent) avado.passwordFilePresent = passwordSet;
       return avado;
     },
@@ -298,6 +316,23 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
       if (mnemonicArchive || !scenario.avado.legacyMnemonicPresent) fail(path, new DemoSnError(404, NO_LEGACY_MNEMONIC));
       mnemonicArchive = DEMO_MNEMONIC_ARCHIVE;
       return { status: "success", error: "", archived: true, name: mnemonicArchive } as LegacyMnemonicArchiveResult;
+    },
+
+    async downloadBackup(name: string, opts: CallOptions = {}) {
+      const path = AVADO_BACKUP_DOWNLOAD_PATH;
+      await enter("POST", path, { name });
+      await delay(latencyMs * 2, opts.signal, path);
+      if (!isBackupName(name)) fail(path, new DemoSnError(400, "name must be a backup's name or \"current\"."));
+      if (name === CURRENT_BACKUP) {
+        if (!scenario.avado.walletFilePresent) fail(path, new DemoSnError(404, NO_WALLET_TO_BACK_UP));
+        manualBackup = true;
+      } else {
+        const listed = scenario.avado.backups.some((b) => b.name === name) || name === mnemonicArchive || (manualBackup && name === DEMO_MANUAL_BACKUP);
+        if (!listed) fail(path, new DemoSnError(404, NO_BACKUP));
+      }
+      // The backend's file name: the node address's first 8 hex characters and the UTC date.
+      const fileName = backupFileName(name, `attachment; filename="avado-rocketpool-backup-${DEMO.nodeAddress.slice(2, 10).toLowerCase()}-20260923.zip"`);
+      return { blob: new Blob([DEMO_BACKUP_ZIP], { type: "application/zip" }), fileName } as BackupDownload;
     },
 
     async logs(tail = 200) {

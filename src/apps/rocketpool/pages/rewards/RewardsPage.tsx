@@ -145,7 +145,7 @@ function Rewards() {
         {stillLoading ? (
           <p className="text-sm text-fg-muted">Checking what your node has earned…</p>
         ) : items.length === 0 ? (
-          <p className="text-sm text-fg-muted">There is nothing to claim right now. Rewards are counted every 28 days (a reward period).</p>
+          <p className="text-sm text-fg-muted">There is nothing to claim right now. Rocket Pool counts rewards every 28 days; new ones show up here then.</p>
         ) : (
           <>
             <p className="font-display text-2xl font-bold text-fg" data-testid="claim-total">
@@ -162,7 +162,7 @@ function Rewards() {
         {payout.isNodeWallet && (
           <Callout tone="warning" title="Rewards go to the node wallet">
             <p>
-              Your withdrawal address is still the node wallet on this AVADO.{" "}
+              Your withdrawal address (where rewards are paid) is still the node wallet on this AVADO.{" "}
               <Link to={SETUP_WITHDRAWAL_ROUTE} className="font-semibold text-accent underline underline-offset-2">
                 Set a withdrawal address you control
               </Link>{" "}
@@ -172,7 +172,7 @@ function Rewards() {
         )}
         {failed && (
           <Callout tone="warning" title="Some rewards could not be checked">
-            <p>The list may be incomplete. It is checked again every minute.</p>
+            <p>The list may be missing something. The page checks again every minute by itself.</p>
           </Callout>
         )}
         {!stillLoading && ethOnBehalfElsewhere(status) > 0n && (
@@ -185,7 +185,7 @@ function Rewards() {
         )}
         {blocked.length > 0 && (
           <Callout tone="accent" title={`${blocked.length} reward period${blocked.length === 1 ? " isn't" : "s aren't"} ready to claim yet`}>
-            <p>Your node is still downloading the rewards file for {blocked.length === 1 ? "it" : "them"}. Try again later.</p>
+            <p>Your node is still getting the details for {blocked.length === 1 ? "it" : "them"}. This happens by itself; check back later.</p>
           </Callout>
         )}
         {sequence?.stopped && (
@@ -235,14 +235,14 @@ function Rewards() {
                       value={restakeText}
                       onChange={(e) => setRestakeText(e.target.value)}
                       error={restakeError}
-                      hint="Leave empty to stake all of it. Staked RPL earns a share of rewards; unstaking takes 28 days."
+                      hint="Leave empty to stake all of it. Staked RPL earns more RPL rewards; getting it back out takes 28 days."
                     />
                   )}
                 </div>
               )}
               <div>
                 <Button variant="secondary" size="sm" onClick={() => setOpen(item)} disabled={running || (item.kind === "periodic" && !!restakeError)}>
-                  {item.kind === "periodic" ? (restake ? "Claim and stake" : "Claim") : item.kind === "credit" || item.kind === "eth-on-behalf" ? "Withdraw" : item.kind === "unclaimed" ? "Claim" : "Distribute"}
+                  {item.kind === "periodic" ? (restake ? "Claim and stake" : "Claim") : item.kind === "credit" || item.kind === "eth-on-behalf" ? "Withdraw" : item.kind === "unclaimed" ? "Claim" : "Pay out"}
                 </Button>
               </div>
             </Card>
@@ -250,19 +250,22 @@ function Rewards() {
         </section>
       )}
 
-      <SectionCard title="Smoothing pool" description="Pooling tips and MEV with other Rocket Pool nodes, paid out with the periodic rewards.">
+      <SectionCard
+        title="Smoothing pool"
+        description="Rocket Pool nodes can share their block rewards in the smoothing pool, so each gets a steady share instead of rare big payouts. The share is paid with the Rocket Pool rewards above."
+      >
         <p className="text-sm text-fg">
           {status.feeRecipientInfo.isInSmoothingPool
-            ? "Your node is in the smoothing pool: its tips and MEV are shared and your part is included in the periodic rewards above."
+            ? "Your node is in the smoothing pool: its block rewards are shared, and your part is included in the Rocket Pool rewards."
             : status.feeRecipientInfo.isInOptOutCooldown
-              ? "Your node is leaving the smoothing pool. Until that is final, its tips still go to the pool."
-              : "Your node is not in the smoothing pool: its tips and MEV go to its own fee distributor or megapool, listed above when there is something to collect."}
+              ? "Your node is leaving the smoothing pool. Until that is final, its block rewards still go to the pool."
+              : "Your node is not in the smoothing pool: it keeps its own block rewards, listed above when there is something to collect."}
         </p>
       </SectionCard>
 
       <SectionCard
         title="Staked RPL"
-        description="RPL is optional for megapool validators. Staked RPL earns a share of the RPL rewards."
+        description="RPL is Rocket Pool's own token. You don't need it for new validators; staked RPL earns extra RPL rewards."
         actions={
           isAdvanced ? (
             <Button as={Link} to="/rpl" variant="secondary" size="sm">
@@ -273,7 +276,7 @@ function Rewards() {
       >
         <Facts
           items={[
-            { label: "Staked (legacy, for minipools)", value: formatRpl(status.rplStakeLegacy) },
+            { label: "Staked for minipools", value: formatRpl(status.rplStakeLegacy) },
             { label: "Staked on your megapool", value: formatRpl(status.rplStakeMegapool) },
             { label: "In the node wallet", value: formatRpl(status.accountBalances.rpl) },
           ]}

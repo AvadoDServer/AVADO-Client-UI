@@ -30,7 +30,8 @@ export function parseAvadoStatus(raw: unknown): AvadoStatus | null {
   const daemon = isObject(raw.daemon) ? raw.daemon : {};
   const backups: BackupInfo[] = (Array.isArray(raw.backups) ? raw.backups : []).flatMap((b) => {
     if (!isObject(b) || !str(b.name)) return [];
-    const kind: BackupInfo["kind"] = b.kind === "wallet-change" || b.kind === "mnemonic-archive" ? b.kind : "upgrade";
+    const known: ReadonlyArray<BackupInfo["kind"]> = ["wallet-change", "wallet-create", "manual", "mnemonic-archive"];
+    const kind: BackupInfo["kind"] = known.includes(b.kind as BackupInfo["kind"]) ? (b.kind as BackupInfo["kind"]) : "upgrade";
     return [{ name: b.name as string, createdAt: str(b.createdAt) ?? "", kind }];
   });
   return {

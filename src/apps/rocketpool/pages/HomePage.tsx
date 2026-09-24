@@ -5,7 +5,7 @@ import { plainError } from "../api/errors";
 import type { MegapoolValidator, NodeStatus, NodeSync, RewardsInfo } from "../api/models";
 import { reconcileStatusOf } from "../api/reconcile";
 import { isMock } from "../api/RocketpoolApiProvider";
-import { AutoTxNotice, Facts } from "../components/common";
+import { AutoTxNotice, Facts, TechDetails } from "../components/common";
 import { useMegapoolStatus, useNodeReadable, useNodeStatus, useNodeSync, useRewardsInfo } from "../data/nodeReads";
 import { formatEth, formatRpl, formatUnits, toBigInt } from "../lib/units";
 import { useAppStatus } from "../status/AppStatus";
@@ -92,10 +92,10 @@ function SetupCallout({ walletReady, node }: { walletReady: boolean; node?: Node
     label = "Start setup";
   } else if (node && !node.registered) {
     title = "Finish setting up your node";
-    text = "Your node wallet is ready. Next: add ETH and register the node with Rocket Pool.";
+    text = "Your node wallet is ready. Next: add ETH to it and register your node with Rocket Pool.";
   } else if (node && node.registered && (node.minipoolCounts?.total ?? 0) === 0 && !node.megapoolDeployed) {
     title = "Create your first validators";
-    text = "Your node is registered. Create megapool validators with a bond of about 4 ETH each.";
+    text = "Your node is registered. Start validating: each validator needs about 4 ETH from you.";
     label = "Create validators";
     to = "/setup/validators";
   }
@@ -140,7 +140,7 @@ export default function HomePage() {
   const mp = megapoolCounts(mega.data?.megapoolDetails.validators);
   const minipools = node?.minipoolCounts;
   const unclaimed = unclaimedRewards(rewards.data);
-  const nodeError = readable && nodePoll.error !== undefined && !nodePoll.data ? plainError(nodePoll.error) : null;
+  const nodeFailed = readable && nodePoll.error !== undefined && !nodePoll.data;
   const credit = toBigInt(node?.creditBalance) ?? 0n;
   const feeDistributor =
     node && node.feeRecipientInfo.hasMinipools && !node.feeRecipientInfo.isInSmoothingPool ? toBigInt(node.feeDistributorBalance) : null;
@@ -164,10 +164,11 @@ export default function HomePage() {
       <KeyApproval />
       <LegacyMnemonic />
       <NodeFixes problems={problems} />
-      {nodeError && (
-        <p className="text-sm text-danger-text" role="alert">
-          Could not read your node: {nodeError}
-        </p>
+      {nodeFailed && (
+        <div className="flex flex-col gap-1 text-sm text-danger-text" role="alert">
+          <p>Could not read your node. {plainError(nodePoll.error)}</p>
+          <TechDetails error={nodePoll.error} />
+        </div>
       )}
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[repeat(2,minmax(0,1fr))]">
@@ -189,10 +190,11 @@ export default function HomePage() {
               ["Consensus client", <StatusPill key="c" status={readable ? syncPill(sync.data?.bcStatus) : { tone: "neutral", label: "Unknown" }} />],
               [
                 "Validator keys",
-                keyCheck?.client ? `${keyCheck.keys.summary || "0/0"} in sync with ${keyCheck.client.name}` : keyCheck?.state === "waiting" || !keyCheck ? "Not checked yet" : "No consensus client",
+                keyCheck?.client ? `${keyCheck.keys.summary || "0/0"} running in ${keyCheck.client.name}` : keyCheck?.state === "waiting" || !keyCheck ? "Not checked yet" : "No consensus client",
               ],
             ]}
           />
+          <CardDescription>The execution and consensus clients are the two Ethereum programs on your AVADO that your validators run on.</CardDescription>
           {version && <CardDescription>Package version {version}</CardDescription>}
         </Card>
 
@@ -202,15 +204,18 @@ export default function HomePage() {
             {node && <CardLink to="/wallet">Wallet</CardLink>}
           </div>
           {node ? (
-            <Facts
-              testId="balances"
-              rows={[
-                ["ETH", formatEth(node.accountBalances.eth)],
-                ["RPL", formatRpl(node.accountBalances.rpl)],
-                ["rETH", reth === null ? "—" : `${formatUnits(reth)} rETH`],
-                ...(credit > 0n ? ([["Credit for new validators", formatEth(credit)]] as Array<[string, string]>) : []),
-              ]}
-            />
+            <>
+              <Facts
+                testId="balances"
+                rows={[
+                  ["ETH", formatEth(node.accountBalances.eth)],
+                  ["RPL", formatRpl(node.accountBalances.rpl)],
+                  ["rETH", reth === null ? "—" : `${formatUnits(reth)} rETH`],
+                  ...(credit > 0n ? ([["Credit for new validators", formatEth(credit)]] as Array<[string, string]>) : []),
+                ]}
+              />
+              <CardDescription>RPL is Rocket Pool's own token, and rETH its staked-ETH token. You don't need either to start new validators.</CardDescription>
+            </>
           ) : (
             <CardDescription>{walletReady ? "Shows here once Rocket Pool answers." : "No node wallet yet."}</CardDescription>
           )}
@@ -229,6 +234,9 @@ export default function HomePage() {
                 ["Megapool validators", megaText],
               ]}
             />
+          ) : null}
+          {registered ? (
+            <CardDescription>Minipools are the older kind of Rocket Pool validator. New validators are megapool validators.</CardDescription>
           ) : (
             <CardDescription>{node ? "Register your node to create validators." : "None yet."}</CardDescription>
           )}
@@ -243,13 +251,13 @@ export default function HomePage() {
             <Facts
               testId="rewards-summary"
               rows={[
-                ["Periodic rewards to claim", unclaimed.intervals === 0 ? "None" : `${formatRpl(unclaimed.rpl)} and ${formatEth(unclaimed.eth)}`],
-                ...(feeDistributor !== null && feeDistributor > 0n ? ([["Waiting in your fee distributor", formatEth(feeDistributor)]] as Array<[string, string]>) : []),
-                ...(megaPending !== null && megaPending > 0n ? ([["Waiting in your megapool", formatEth(megaPending)]] as Array<[string, string]>) : []),
+                ["Rocket Pool rewards to claim", unclaimed.intervals === 0 ? "None" : `${formatRpl(unclaimed.rpl)} and ${formatEth(unclaimed.eth)}`],
+                ...(feeDistributor !== null && feeDistributor > 0n ? ([["Block rewards waiting (minipools)", formatEth(feeDistributor)]] as Array<[string, string]>) : []),
+                ...(megaPending !== null && megaPending > 0n ? ([["Block rewards waiting (megapool)", formatEth(megaPending)]] as Array<[string, string]>) : []),
               ]}
             />
           ) : (
-            <CardDescription>{registered ? (rewards.error !== undefined ? plainError(rewards.error) : "Checking…") : "None yet."}</CardDescription>
+            <CardDescription>{registered ? (rewards.error !== undefined ? `Could not check your rewards. ${plainError(rewards.error)}` : "Checking…") : "None yet."}</CardDescription>
           )}
         </Card>
       </div>

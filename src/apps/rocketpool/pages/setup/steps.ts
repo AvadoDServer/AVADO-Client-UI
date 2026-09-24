@@ -19,7 +19,7 @@ export const SETUP_STEPS: readonly SetupStep[] = [
   { id: "fund", title: "Add ETH", hint: "For the bond and network fees" },
   { id: "register", title: "Register", hint: "Join Rocket Pool" },
   { id: "withdrawal", title: "Withdrawal address", hint: "Where your ETH goes" },
-  { id: "smoothing", title: "Smoothing pool", hint: "Optional" },
+  { id: "smoothing", title: "Smoothing pool", hint: "Optional: share rewards" },
   { id: "validators", title: "Validators", hint: "Start staking" },
 ];
 

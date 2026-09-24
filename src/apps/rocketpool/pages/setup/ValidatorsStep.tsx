@@ -34,8 +34,8 @@ export function ValidatorsStep({ node, onChanged }: { node?: NodeStatus; onChang
           earn the rewards on your bond plus a commission on theirs.
         </p>
         <p>
-          New validators wait in Rocket Pool's queue. When their turn comes, your node stakes them automatically. Their keys are made on
-          this AVADO and loaded into your consensus client for you.
+          New validators wait in Rocket Pool's line. When their turn comes, your node starts them by itself. Everything they need is made
+          on this AVADO and set up for you.
         </p>
       </div>
 
@@ -44,9 +44,8 @@ export function ValidatorsStep({ node, onChanged }: { node?: NodeStatus; onChang
       {created !== null && (
         <Notice tone="success" title={`${plural(created, "validator")} created`} live>
           <p>
-            {created === 1 ? "It is" : "They are"} in Rocket Pool's queue now. Your node stakes {created === 1 ? "it" : "them"} automatically
-            when {created === 1 ? "its" : "their"} turn comes, and the keys are loaded into {client?.name ?? "your consensus client"} for
-            you.
+            {created === 1 ? "It is" : "They are"} waiting in Rocket Pool's line now. Your node starts {created === 1 ? "it" : "them"} by
+            itself when {created === 1 ? "its" : "their"} turn comes, in {client?.name ?? "your consensus client"}.
           </p>
         </Notice>
       )}

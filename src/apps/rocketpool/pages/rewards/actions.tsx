@@ -17,13 +17,13 @@ export function claimFlow(item: ClaimItem, { nodeAddress, restakeRpl = 0n }: { n
       // A restake never quietly turns into a plain claim: an amount above the claimed RPL is refused below.
       const restake = restakeRpl > 0n ? restakeRpl : 0n;
       return {
-        title: restake > 0n ? "Claim your rewards and stake RPL" : "Claim your periodic rewards",
+        title: restake > 0n ? "Claim your rewards and stake RPL" : "Claim your Rocket Pool rewards",
         summary: (
           <div className="flex flex-col gap-2">
             <p>
               Claims {formatRpl(item.rpl)}
               {item.eth > 0n ? ` and ${formatEth(item.eth)}` : ""} from {item.indices?.length ?? 0} reward period
-              {item.indices?.length === 1 ? "" : "s"}.
+              {item.indices?.length === 1 ? "" : "s"} (Rocket Pool counts rewards every 28 days).
             </p>
             {restake > 0n ? (
               <p>

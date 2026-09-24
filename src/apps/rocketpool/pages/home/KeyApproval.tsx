@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
 import { Button, Card, CardDescription, CardTitle, Input } from "../../../../components/ui";
 import { adminPackageUrl } from "../../../../components/shell/links";
-import { plainError } from "../../api/errors";
+import { plainError, plainMessage } from "../../api/errors";
+import { useMode } from "../../../../settings/ModeProvider";
 import { APPROVE_CONFIRMATION, type ReconcileKey, type ReconcileStatus } from "../../api/models";
 import { reconcileStatusOf } from "../../api/reconcile";
 import { useRocketpoolApi } from "../../api/RocketpoolApiProvider";
-import { ExternalLink, Notice } from "../../components/common";
+import { ExternalLink, Notice, TechDetails } from "../../components/common";
 import { validatorUrl } from "../../lib/explorer";
 import { shortAddress } from "../../lib/units";
 import { useAppStatus } from "../../status/AppStatus";
@@ -74,7 +75,8 @@ export function KeyApproval() {
   const status = reconcileStatusOf(reconcile);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const { isAdvanced } = useMode();
   const [approved, setApproved] = useState<Approved | null>(null);
   const sending = useRef(false);
 
@@ -102,7 +104,7 @@ export function KeyApproval() {
       setTyped("");
       await refresh();
     } catch (e) {
-      setError(plainError(e));
+      setError(e);
     } finally {
       sending.current = false;
       setBusy(false);
@@ -116,7 +118,10 @@ export function KeyApproval() {
     <Card as="section" aria-labelledby="validator-keys-title" className="flex flex-col gap-4" data-testid="key-approval">
       <div>
         <CardTitle id="validator-keys-title">Validator keys</CardTitle>
-        <CardDescription className="[overflow-wrap:anywhere]">{status.message}</CardDescription>
+        <CardDescription className="[overflow-wrap:anywhere]">
+          Your validators sign their work with these keys, inside {clientName}.
+          {(isAdvanced ? status.message : plainMessage(status.message)) ? ` ${isAdvanced ? status.message : plainMessage(status.message)}` : ""}
+        </CardDescription>
       </div>
 
       {twice.length > 0 && (
@@ -155,8 +160,8 @@ export function KeyApproval() {
       {settling.length > 0 && (
         <Notice tone="accent" title={`${plural(settling.length, "key")} will be loaded soon`}>
           <p>
-            To be safe from double signing, Rocket Pool first waits a while to make sure {settling.length === 1 ? "it isn't" : "they aren't"}{" "}
-            running anywhere else.
+            To be safe, Rocket Pool first waits a while to make sure {settling.length === 1 ? "it isn't" : "they aren't"} running anywhere
+            else. There is nothing you need to do.
           </p>
           <KeyList
             keys={settling.map((v) => v.pubkey)}
@@ -172,10 +177,10 @@ export function KeyApproval() {
       {n > 0 && (
         <div className="flex flex-col gap-3" data-testid="awaiting-approval">
           <p className="text-sm font-semibold text-fg">
-            {plural(n, "key")} {n === 1 ? "is" : "are"} not loaded in {clientName} and {n === 1 ? "waits" : "wait"} for your approval
+            {plural(n, "validator key")} {n === 1 ? "is" : "are"} waiting for your OK to start in {clientName}
           </p>
           <KeyList keys={awaiting} status={status} />
-          {status.clientChoice?.why && <p className="text-sm text-fg-muted">Why {clientName}: {status.clientChoice.why}</p>}
+          {isAdvanced && status.clientChoice?.why && <p className="text-sm text-fg-muted">Why {clientName}: {status.clientChoice.why}</p>}
           <Notice tone="warning" title={SLASHING_WARNING}>
             <p>
               For example, if you moved these validators to another machine or service, don't load them here. Rocket Pool keeps checking
@@ -186,7 +191,7 @@ export function KeyApproval() {
             <Notice tone="neutral" title="They can't be loaded right now, even after you approve:">
               <ul className="list-disc pl-5">
                 {status.importBlockedReasons.map((r) => (
-                  <li key={r}>{r}</li>
+                  <li key={r}>{plainMessage(r) || "Something on this AVADO needs attention first; AVADO support can help."}</li>
                 ))}
               </ul>
             </Notice>
@@ -208,9 +213,10 @@ export function KeyApproval() {
               Load {plural(n, "validator key")} into {clientName}
             </Button>
           </div>
-          {error && (
+          {error !== null && (
             <Notice tone="danger" title="Not approved" live>
-              <p>{error}</p>
+              <p>{plainError(error)}</p>
+              <TechDetails error={error} />
             </Notice>
           )}
         </div>
@@ -222,13 +228,14 @@ export function KeyApproval() {
           {outcome!.reasons.length > 0 && (
             <ul className="list-disc pl-5">
               {outcome!.reasons.map((r) => (
-                <li key={r}>{r}</li>
+                <li key={r}>{plainMessage(r) || "Something on this AVADO needs attention first; AVADO support can help."}</li>
               ))}
             </ul>
           )}
           {ranSince && (
             <p>
-              Checked again{timeOf(status.finishedAt ?? undefined) ? ` at ${timeOf(status.finishedAt ?? undefined)}` : ""}: {status.message}
+              Checked again{timeOf(status.finishedAt ?? undefined) ? ` at ${timeOf(status.finishedAt ?? undefined)}` : ""}.
+              {plainMessage(status.message) ? ` ${plainMessage(status.message)}` : ""}
             </p>
           )}
         </Notice>

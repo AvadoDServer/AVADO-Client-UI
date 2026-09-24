@@ -24,7 +24,7 @@ describe("the old recovery-phrase file (backend archive endpoint)", () => {
     const f = createFetchMock().on("POST", "/api/avado/legacy-mnemonic/archive", { status: 404, json: { status: "error", error: "Not found" } });
     const e = await createRealRocketpoolApi(f.fetch).archiveLegacyMnemonic("ARCHIVE").catch((x: RpApiError) => x);
     expect(e).toMatchObject({ kind: "http", status: 404 });
-    expect(plainError(e)).toBe("Not found.");
+    expect(plainError(e)).toBe("This version of the Rocket Pool package can't do this yet. Update the package in the AVADO Admin and try again.");
   });
 
   it("mock: the backend's checks; afterwards the file is no longer reported and the backup is listed", async () => {
@@ -41,17 +41,19 @@ describe("the old recovery-phrase file (backend archive endpoint)", () => {
 });
 
 describe("backup kinds in the status", () => {
-  it("keeps the backend's three kinds (task 9 adds mnemonic-archive); anything else reads as an upgrade backup", () => {
+  it("keeps the backend's kinds (mnemonic-archive, wallet-create, manual too); anything else reads as an upgrade backup", () => {
     const status = parseAvadoStatus({
       daemon: { state: "RUNNING" },
       backups: [
         { name: "mnemonic-archive-20260923T101500Z", createdAt: "2026-09-23T10:15:00Z", kind: "mnemonic-archive" },
         { name: "20260920T120000Z-before-wallet-change", createdAt: "", kind: "wallet-change" },
         { name: "1.0.0-20260921T090000Z", createdAt: "", kind: "upgrade" },
+        { name: "20260923T101500Z-after-wallet-create", createdAt: "", kind: "wallet-create" },
+        { name: "20260923T103000Z-manual-download", createdAt: "", kind: "manual" },
         { name: "odd", createdAt: "", kind: "something-new" },
       ],
     })!;
-    expect(status.backups.map((b) => b.kind)).toEqual(["mnemonic-archive", "wallet-change", "upgrade", "upgrade"]);
+    expect(status.backups.map((b) => b.kind)).toEqual(["mnemonic-archive", "wallet-change", "upgrade", "wallet-create", "manual", "upgrade"]);
   });
 });
 

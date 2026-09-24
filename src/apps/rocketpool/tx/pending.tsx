@@ -78,11 +78,11 @@ export function lockParams(route: string): readonly string[] {
 
 /**
  * Write routes that end in the same on-chain action share one lock:
- * `wait-and-stake-rpl` stakes exactly like `stake-rpl`, and
  * `claim-and-stake-rewards` claims the same periods as `claim-rewards`.
+ * (The backend no longer allows `wait-and-stake-rpl`; staking RPL is
+ * approve, then `stake-rpl`, each with its own lock.)
  */
 export const LOCK_ALIASES: Readonly<Record<string, string>> = Object.freeze({
-  "node/wait-and-stake-rpl": "node/stake-rpl",
   "node/claim-and-stake-rewards": "node/claim-rewards",
 });
 
@@ -327,7 +327,7 @@ export class PendingTxStore {
       () => this.settle(key, controller, hash, "done"),
       (err: unknown) => {
         if (controller.signal.aborted || (isRpApiError(err) && err.kind === "aborted")) return;
-        if (isTxReverted(err)) this.settle(key, controller, hash, "failed", "It was included in a block but did not go through.");
+        if (isTxReverted(err)) this.settle(key, controller, hash, "failed", "The network processed it, but it did not go through.");
         else this.settle(key, controller, hash, "lost", plainError(err));
       },
     );

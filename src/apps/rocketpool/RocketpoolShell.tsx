@@ -5,7 +5,7 @@ import { useMode } from "../../settings/ModeProvider";
 import { APP_TITLE, RocketpoolIdentity } from "./identity";
 import { visibleRpNavItems } from "./nav";
 import { AppStatusProvider, useAppStatus } from "./status/AppStatus";
-import { findPendingProblems } from "./status/problems";
+import { findPendingProblems, forMode } from "./status/problems";
 import { usePendingTxs } from "./tx/pending";
 
 function Frame() {
@@ -15,10 +15,10 @@ function Frame() {
   const problems = useMemo(() => {
     const all = [...statusProblems, ...findPendingProblems(pending.list(), (k) => pending.isOverdue(k))];
     const order = { danger: 0, warning: 1, accent: 2 } as const;
-    return all.sort((a, b) => order[a.tone] - order[b.tone]);
+    return all.sort((a, b) => order[a.tone] - order[b.tone]).map((p) => forMode(p, isAdvanced));
     // pending.getVersion() changes whenever the store does
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusProblems, pending, pending.getVersion()]);
+  }, [statusProblems, pending, pending.getVersion(), isAdvanced]);
   return (
     <ShellFrame
       brand={<RocketpoolIdentity />}

@@ -10,7 +10,7 @@
  */
 import type { CanResponse } from "../api/models";
 
-const GENERIC = "Rocket Pool says this can't be done right now.";
+const GENERIC = "Rocket Pool says this can't be done right now. Try again later.";
 
 type Reasons = Array<[flag: string, reason: string]>;
 
@@ -35,7 +35,7 @@ export const CAN_RULES = {
   "megapool/can-exit-queue": blockedUnless("canExit", [], "This validator can't leave the queue right now."),
   "megapool/can-distribute": blockedUnless("canDistribute", [
     ["megapoolNotDeployed", "Your node has no megapool yet."],
-  ], "The megapool can't be distributed right now (for example while a validator is exiting or locked)."),
+  ], "Your megapool rewards can't be paid out right now (for example while a validator is leaving). Try again later."),
   "megapool/can-claim-refund": blockedUnless("canClaim", [], "There is no refund to claim right now."),
   "megapool/can-repay-debt": blockedUnless("canRepay", [
     ["notEnoughDebt", "Your megapool doesn't owe that much."],

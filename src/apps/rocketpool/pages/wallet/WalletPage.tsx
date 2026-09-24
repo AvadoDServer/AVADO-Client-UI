@@ -1,34 +1,65 @@
 import { useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Button, Card, Input, Modal } from "../../../../components/ui";
+import { useMode } from "../../../../settings/ModeProvider";
 import { plainError } from "../../api/errors";
-import { ARCHIVE_CONFIRMATION, type WalletExport } from "../../api/models";
+import type { WalletExport } from "../../api/models";
 import { useRocketpoolApi } from "../../api/RocketpoolApiProvider";
 import { EXPORT_CONFIRMATION, exportWallet, getNodeStatus, getWalletStatus } from "../../api/sn";
 import { useRead } from "../../api/useRead";
+import { TechDetails } from "../../components/common";
+import { saveFile } from "../../lib/download";
 import { formatDateTime } from "../../lib/time";
 import { formatEth, formatRpl, formatUnits, isZeroAddress, sameAddress } from "../../lib/units";
 import { useAppStatus } from "../../status/AppStatus";
-import { SETUP_WITHDRAWAL_ROUTE, SUPPORT_EMAIL } from "../../status/problems";
+import { SETUP_WITHDRAWAL_ROUTE } from "../../status/problems";
+import { LegacyMnemonic } from "../home/LegacyMnemonic";
 import { Address, Callout, CopyButton, Facts, LoadError, LoadingCard, NodeGate, PageHeader, SectionCard } from "../common";
-import { ADMIN_PACKAGE_URL, BACKUP_DIR, describeBackups, exportFileContent } from "./backups";
+import { describeBackups, exportFileContent } from "./backups";
+import { CURRENT_TARGET, DownloadBackupDialog, NEVER_SEND, RESTORE_TEXT, type BackupTarget } from "./DownloadBackup";
 
-/** Wallet: the node wallet's address and balances, a backup export, the backups on the box, and the old recovery-phrase file. */
+/** Wallet: the node wallet's address and balances, a one-click backup, the automatic backups, and the old recovery-phrase file. */
 export default function WalletPage() {
+  const [download, setDownload] = useState<BackupTarget | null>(null);
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Wallet" description="Your node wallet, its backup, and where your rewards are paid." />
-      <OldPhraseFile />
+      <PageHeader title="Wallet" description="Your node wallet, its backups, and where your rewards are paid." />
+      <LegacyMnemonic />
+      <BackUpNow onDownload={setDownload} />
       <NodeGate>
         <Wallet />
       </NodeGate>
-      <Backups />
+      <Backups onDownload={setDownload} />
+      {download && <DownloadBackupDialog key={download.name} target={download} onClose={() => setDownload(null)} />}
     </div>
+  );
+}
+
+/** The one-click backup: a fresh file with the wallet, its password and the validator keys. Works even while Rocket Pool is stopped. */
+function BackUpNow({ onDownload }: { onDownload: (t: BackupTarget) => void }) {
+  const { avado } = useAppStatus();
+  if (!avado?.walletFilePresent) return null;
+  return (
+    <SectionCard
+      title="Back up your node wallet"
+      description="Download one file that lets you move your Rocket Pool node to a new AVADO if this one breaks."
+      actions={
+        <Button onClick={() => onDownload(avado.legacyMnemonicPresent ? { ...CURRENT_TARGET, phrase: "maybe" } : CURRENT_TARGET)}>
+          Download backup
+        </Button>
+      }
+      data-testid="backup-now"
+    >
+      <p className="text-sm text-fg-muted">
+        Keep the file offline, for example on a USB stick in a safe place. Anyone who has it can move the funds in your node wallet. {NEVER_SEND}
+      </p>
+    </SectionCard>
   );
 }
 
 function Wallet() {
   const { daemonReady } = useAppStatus();
+  const { isAdvanced } = useMode();
   const wallet = useRead(getWalletStatus, { enabled: daemonReady });
   const node = useRead(getNodeStatus, { enabled: daemonReady });
   const [exporting, setExporting] = useState(false);
@@ -40,7 +71,11 @@ function Wallet() {
 
   return (
     <>
-      <SectionCard title="Node wallet" description="The wallet on this AVADO that runs your Rocket Pool node and pays the network fees." data-testid="node-wallet">
+      <SectionCard
+        title="Node wallet"
+        description="The wallet on this AVADO that runs your Rocket Pool node and pays its network fees."
+        data-testid="node-wallet"
+      >
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="break-all font-mono text-fg">{address}</span>
           <CopyButton text={address} label="Copy address" />
@@ -50,20 +85,23 @@ function Wallet() {
           <Facts
             items={[
               { label: "ETH", value: formatEth(status.accountBalances.eth) },
-              { label: "RPL", value: formatRpl(status.accountBalances.rpl) },
-              { label: "rETH", value: `${formatUnits(status.accountBalances.reth)} rETH` },
+              { label: "RPL", value: formatRpl(status.accountBalances.rpl), hint: "Rocket Pool's own token." },
+              { label: "rETH", value: `${formatUnits(status.accountBalances.reth)} rETH`, hint: "Rocket Pool's staked-ETH token." },
             ]}
           />
         )}
         {wallet.data.isMasquerading && (
           <Callout tone="warning" title="Viewing another node">
-            <p>Rocket Pool is showing another node's address (read-only). Nothing can be sent from here.</p>
+            <p>Rocket Pool is showing another node's address, for viewing only. Nothing can be sent from here.</p>
           </Callout>
         )}
       </SectionCard>
 
       {status && (
-        <SectionCard title="Where your rewards and bond go" description="Once a withdrawal address outside this AVADO is set, it can only be changed from that address itself, not from the node.">
+        <SectionCard
+          title="Where your rewards and bond go"
+          description="Your withdrawal address is the wallet your staked ETH and rewards are paid to. Once it is a wallet outside this AVADO, only that wallet can change it."
+        >
           <Facts
             items={[
               {
@@ -71,7 +109,7 @@ function Wallet() {
                 value: <Address address={status.primaryWithdrawalAddress} full />,
                 hint: sameAddress(status.primaryWithdrawalAddress, address) ? (
                   <>
-                    This is still the node wallet. A withdrawal address you control (a hardware wallet) is safer:{" "}
+                    This is still the node wallet. A wallet you control yourself (a hardware wallet is best) is safer:{" "}
                     <Link to={SETUP_WITHDRAWAL_ROUTE} className="font-semibold text-accent underline underline-offset-2">
                       set one
                     </Link>
@@ -79,7 +117,7 @@ function Wallet() {
                   </>
                 )
                   : !isZeroAddress(status.pendingPrimaryWithdrawalAddress)
-                    ? `Waiting to change to ${status.pendingPrimaryWithdrawalAddress}: that address must confirm it.`
+                    ? `Waiting to change to ${status.pendingPrimaryWithdrawalAddress}: that wallet still has to confirm it.`
                     : undefined,
               },
               {
@@ -91,19 +129,17 @@ function Wallet() {
         </SectionCard>
       )}
 
-      <SectionCard
-        title="Back up the wallet"
-        description="Download the wallet file, its password and the node account key. Keep it offline: anyone with it controls the node wallet."
-        actions={
-          <Button variant="secondary" onClick={() => setExporting(true)} disabled={wallet.data.isMasquerading}>
-            Back up the wallet…
-          </Button>
-        }
-      >
-        <p className="text-sm text-fg-muted">
-          The validator keys can be recreated from the wallet. The package also keeps automatic backups on this AVADO (listed below).
-        </p>
-      </SectionCard>
+      {isAdvanced && (
+        <SectionCard
+          title="Show the wallet's secrets"
+          description="Shows the wallet file, its password and the node account's private key on screen, for moving the wallet by hand."
+          actions={
+            <Button variant="secondary" onClick={() => setExporting(true)} disabled={wallet.data.isMasquerading}>
+              Show the secrets…
+            </Button>
+          }
+        />
+      )}
 
       {exporting && <ExportDialog nodeAddress={address} onClose={() => setExporting(false)} />}
     </>
@@ -112,21 +148,10 @@ function Wallet() {
 
 /* ------------------------------------------------------------------ */
 
-type ExportPhase = { k: "confirm" } | { k: "busy" } | { k: "error"; message: string } | { k: "done"; data: WalletExport };
+type ExportPhase = { k: "confirm" } | { k: "busy" } | { k: "error"; error: unknown } | { k: "done"; data: WalletExport };
 
 function download(name: string, content: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
-  try {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  saveFile(new Blob([content], { type: "application/json" }), name);
 }
 
 /**
@@ -151,7 +176,7 @@ function ExportDialog({ nodeAddress, onClose }: { nodeAddress: string; onClose: 
       const data = await exportWallet(api, typed.trim());
       setPhase({ k: "done", data });
     } catch (err) {
-      setPhase({ k: "error", message: plainError(err) });
+      setPhase({ k: "error", error: err });
     } finally {
       inFlight.current = false;
     }
@@ -163,7 +188,7 @@ function ExportDialog({ nodeAddress, onClose }: { nodeAddress: string; onClose: 
       <Modal
         open
         onClose={onClose}
-        title="Your wallet backup"
+        title="Your wallet's secrets"
         size="lg"
         footer={
           <Button variant="secondary" onClick={onClose}>
@@ -173,7 +198,9 @@ function ExportDialog({ nodeAddress, onClose }: { nodeAddress: string; onClose: 
       >
         <div className="flex flex-col gap-4 text-sm">
           <Callout tone="warning" title="Keep this secret">
-            <p>Anyone with this file or these values controls your node wallet. Store it offline (for example on a USB stick in a safe place). Never share it, not even with support.</p>
+            <p>Anyone with this file or these values controls your node wallet. Store it offline (for example on a USB stick in a safe place).</p>
+            <p className="font-semibold">Never send this file or these values to anyone — AVADO support will never ask for them.</p>
+            <p>{RESTORE_TEXT}</p>
           </Callout>
           <div>
             <Button onClick={() => download(`rocketpool-wallet-${nodeAddress.toLowerCase()}.json`, exportFileContent(data, nodeAddress))}>Download the backup file</Button>
@@ -210,7 +237,7 @@ function ExportDialog({ nodeAddress, onClose }: { nodeAddress: string; onClose: 
       open
       onClose={busy ? undefined : onClose}
       closeOnBackdrop={!busy}
-      title="Back up the node wallet"
+      title="Show the wallet's secrets"
       size="md"
       footer={
         <>
@@ -218,14 +245,14 @@ function ExportDialog({ nodeAddress, onClose }: { nodeAddress: string; onClose: 
             Cancel
           </Button>
           <Button type="submit" form="export-form" disabled={!matches} loading={busy}>
-            Show the backup
+            Show the secrets
           </Button>
         </>
       }
     >
       <form id="export-form" onSubmit={submit} className="flex flex-col gap-4 text-sm">
         <Callout tone="warning" title="This shows secrets">
-          <p>The backup contains the wallet file, its password and the private key of the node account. Anyone who sees them can take the funds in the node wallet.</p>
+          <p>This shows the wallet file, its password and the private key of the node account. Anyone who sees them can take the funds in the node wallet.</p>
           <p>Make sure nobody is watching your screen.</p>
         </Callout>
         <Input
@@ -240,8 +267,9 @@ function ExportDialog({ nodeAddress, onClose }: { nodeAddress: string; onClose: 
           spellCheck={false}
         />
         {phase.k === "error" && (
-          <Callout tone="danger" title="The backup could not be made" role="alert">
-            <p>{phase.message}</p>
+          <Callout tone="danger" title="The secrets could not be shown" role="alert">
+            <p>{plainError(phase.error)}</p>
+            <TechDetails error={phase.error} />
           </Callout>
         )}
       </form>
@@ -251,168 +279,49 @@ function ExportDialog({ nodeAddress, onClose }: { nodeAddress: string; onClose: 
 
 /* ------------------------------------------------------------------ */
 
-function Backups() {
+function Backups({ onDownload }: { onDownload: (t: BackupTarget) => void }) {
   const { avado } = useAppStatus();
+  const { isAdvanced } = useMode();
   if (!avado) return null;
   const list = describeBackups(avado.backups);
   return (
     <SectionCard
-      title="Backups on this AVADO"
-      description={
-        <>
-          Made automatically by the package, in <span className="font-mono">{BACKUP_DIR}</span> inside the Rocket Pool package. They are
-          never deleted by a wallet change.
-        </>
-      }
+      title="Automatic backups"
+      description="The package makes these by itself on this AVADO: before updates, when the wallet is set up or changed, and when you download a backup. It keeps the most recent ones, and the first ones for good. Download one to keep a copy somewhere else."
       data-testid="backups"
     >
       {list.length === 0 ? (
-        <p className="text-sm text-fg-muted">No backups yet. One is made automatically before every update.</p>
+        <p className="text-sm text-fg-muted">
+          No backups yet. One is made by itself before the next update, and one each time you press Download backup.
+        </p>
       ) : (
         <ul className="flex flex-col gap-3">
           {list.map((b) => (
             <li key={b.name}>
-              <Card padding="sm" className="flex flex-col gap-1 bg-bg-subtle">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="font-semibold text-fg">{b.title}</p>
-                  {b.time !== null && <p className="text-xs text-fg-muted">{formatDateTime(b.time)}</p>}
+              <Card padding="sm" className="flex flex-col gap-2 bg-bg-subtle sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="font-semibold text-fg">{b.title}</p>
+                    {b.time !== null && <p className="text-xs text-fg-muted">{formatDateTime(b.time)}</p>}
+                  </div>
+                  <p className="text-sm text-fg-muted">{b.text}</p>
+                  {isAdvanced && <p className="break-all font-mono text-xs text-fg-muted">{b.name}</p>}
                 </div>
-                <p className="text-sm text-fg-muted">{b.text}</p>
-                <p className="break-all font-mono text-xs text-fg">{b.path}</p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="flex-shrink-0 self-start sm:self-center"
+                  aria-label={`Download ${b.title}${b.time !== null ? ` from ${formatDateTime(b.time)}` : ""}`}
+                  // While the old phrase file is still next to the wallet, any backup may include it.
+                  onClick={() => onDownload({ name: b.name, title: b.title, phrase: b.phrase === true ? true : avado.legacyMnemonicPresent ? "maybe" : b.phrase })}
+                >
+                  Download
+                </Button>
               </Card>
             </li>
           ))}
         </ul>
       )}
-      <p className="text-xs text-fg-muted">
-        To download one, open the{" "}
-        <a href={ADMIN_PACKAGE_URL} target="_blank" rel="noopener noreferrer" className="text-accent underline-offset-2 hover:underline">
-          Rocket Pool package in the AVADO Admin<span className="sr-only"> (opens in a new tab)</span>
-        </a>
-        , go to File manager → Download from DApp, and enter its path.
-      </p>
     </SectionCard>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-
-/** The old package kept the recovery phrase in a plain file: explain it and offer to move it into the backups. */
-function OldPhraseFile() {
-  const { avado, refresh } = useAppStatus();
-  const [open, setOpen] = useState(false);
-  const [moved, setMoved] = useState<string | null>(null);
-  if (moved) {
-    return (
-      <Callout tone="success" title="The recovery phrase file was moved" role="status">
-        <p>
-          It is now in <span className="font-mono">{`${BACKUP_DIR}/${moved}`}</span>, out of the data folder. Keep your written copy
-          of the recovery phrase somewhere safe.
-        </p>
-      </Callout>
-    );
-  }
-  if (!avado?.legacyMnemonicPresent) return null;
-  return (
-    <>
-      <Callout tone="warning" title="The old recovery phrase file is still on this AVADO">
-        <p>
-          The old Rocket Pool package saved your wallet's recovery phrase (24 words) unencrypted on this AVADO. Anyone with access to
-          the box could read it.
-        </p>
-        <p>
-          First make sure you have the recovery phrase written down safely. The old package never showed it to you: if you have no copy,
-          see the steps on the{" "}
-          <Link to="/" className="font-semibold text-accent underline underline-offset-2">
-            Home page
-          </Link>{" "}
-          or contact {SUPPORT_EMAIL} first. Then move the file out of the data folder into the backups
-          folder.
-        </p>
-        <div>
-          <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-            Move the file…
-          </Button>
-        </div>
-      </Callout>
-      {open && (
-        <ArchiveDialog
-          onClose={() => setOpen(false)}
-          onMoved={(name) => {
-            setOpen(false);
-            setMoved(name);
-            void refresh();
-          }}
-        />
-      )}
-    </>
-  );
-}
-
-function ArchiveDialog({ onClose, onMoved }: { onClose: () => void; onMoved: (name: string) => void }) {
-  const api = useRocketpoolApi();
-  const [typed, setTyped] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const inFlight = useRef(false);
-  const matches = typed.trim() === ARCHIVE_CONFIRMATION;
-
-  const submit = async (e?: FormEvent) => {
-    e?.preventDefault();
-    if (!matches || inFlight.current) return;
-    inFlight.current = true;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await api.archiveLegacyMnemonic(typed.trim());
-      onMoved(r.name);
-    } catch (err) {
-      setError(plainError(err));
-      inFlight.current = false;
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal
-      open
-      onClose={busy ? undefined : onClose}
-      closeOnBackdrop={!busy}
-      title="Move the recovery phrase file"
-      size="md"
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button type="submit" form="archive-form" disabled={!matches} loading={busy}>
-            Move the file
-          </Button>
-        </>
-      }
-    >
-      <form id="archive-form" onSubmit={submit} className="flex flex-col gap-4 text-sm">
-        <p>
-          The file is moved into <span className="font-mono">{BACKUP_DIR}</span> on this AVADO: it is not deleted, and the wallet keeps
-          working as before. It is still on the box, so keep the AVADO itself safe.
-        </p>
-        <Input
-          label={
-            <>
-              Type <span className="font-mono font-semibold text-fg">{ARCHIVE_CONFIRMATION}</span> to confirm
-            </>
-          }
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          autoComplete="off"
-          spellCheck={false}
-        />
-        {error && (
-          <Callout tone="danger" title="The file could not be moved" role="alert">
-            <p>{error}</p>
-          </Callout>
-        )}
-      </form>
-    </Modal>
   );
 }

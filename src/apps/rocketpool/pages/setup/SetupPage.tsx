@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { Button, Card, CardTitle, StatusDot, cn, type StatusTone } from "../../../../components/ui";
 import { plainError } from "../../api/errors";
+import { TechDetails } from "../../components/common";
 import { useNodeReadable, useNodeStatus } from "../../data/nodeReads";
 import { useAppStatus } from "../../status/AppStatus";
 import { FundStep } from "./FundStep";
@@ -77,7 +78,7 @@ export default function SetupPage() {
   } else if (avadoFailed || !daemonReady) {
     body = (
       <p className="text-sm text-fg">
-        Rocket Pool isn't ready yet (see the message above). Setup continues here once it is running.
+        Rocket Pool isn't ready yet (the message at the top says why). Setup continues here by itself once it is running.
       </p>
     );
   } else if (blocker) {
@@ -92,13 +93,14 @@ export default function SetupPage() {
       </div>
     );
   } else {
-    const nodeError = walletReady && nodePoll.error !== undefined && !nodePoll.data ? plainError(nodePoll.error) : null;
+    const nodeFailed = walletReady && nodePoll.error !== undefined && !nodePoll.data;
     body = (
       <>
-        {nodeError && current !== "wallet" && (
-          <p className="mb-4 text-sm text-danger-text" role="alert">
-            Could not read your node: {nodeError}
-          </p>
+        {nodeFailed && current !== "wallet" && (
+          <div className="mb-4 flex flex-col gap-1 text-sm text-danger-text" role="alert">
+            <p>Could not read your node. {plainError(nodePoll.error)}</p>
+            <TechDetails error={nodePoll.error} />
+          </div>
         )}
         {current === "wallet" && <WalletStep walletReady={walletReady} address={node?.accountAddress} />}
         {current === "fund" && <FundStep address={node?.accountAddress} node={node} />}

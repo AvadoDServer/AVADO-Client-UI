@@ -12,7 +12,7 @@ import { useAppStatus } from "../../status/AppStatus";
 import { serviceStatus } from "../../status/daemon";
 import { DEFAULT_PRIORITY_FEE_WEI } from "../../tx/gas";
 import { Callout, Facts, PageHeader, SectionCard } from "../common";
-import { AUTOMATIC_ACTIONS, daemonSettings, underThreshold } from "./automatic";
+import { AUTOMATIC_ACTIONS, daemonSettings, gweiToWei, underThreshold } from "./automatic";
 
 /** Advanced: the daemon, versions, automatic actions and their gas limits, gas, the key check, and the logs. */
 export default function AdvancedPage() {
@@ -105,6 +105,12 @@ function AutomaticActions() {
           ]}
         />
         <Callout tone="neutral">
+          {gweiToWei(values.autoTxGasThreshold) === 0n ? (
+            <p>
+              A limit of 0 turns the optional automatic actions off (such as paying out minipool balances). The essential ones, such as
+              starting new validators, still go through.
+            </p>
+          ) : (
           <p>
             In practice they go ahead soon after they are needed: the network fee on Ethereum is usually well below {values.autoTxGasThreshold}{" "}
             gwei.
@@ -116,6 +122,7 @@ function AutomaticActions() {
               </>
             )}
           </p>
+          )}
         </Callout>
         {!reported && <p className="text-xs text-fg-muted">These are the package's settings, applied on every start.</p>}
       </SectionCard>

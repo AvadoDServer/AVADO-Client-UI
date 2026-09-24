@@ -42,7 +42,7 @@ describe("Rocket Pool app", () => {
     expect(await within(status).findByText("Running", {}, { timeout: 3000 })).toBeInTheDocument();
     // The default demo node (mixed) has two banners.
     const problems = await screen.findByRole("region", { name: "Problems" }, { timeout: 3000 });
-    expect(within(problems).getByText("Your recovery phrase is stored in a plain file")).toBeInTheDocument();
+    expect(within(problems).getByText("Your recovery phrase is saved in an unprotected file")).toBeInTheDocument();
     expect(within(problems).getByText("1 validator key needs your approval")).toBeInTheDocument();
     // No calls to the network in the mock.
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -87,14 +87,27 @@ describe("Rocket Pool app", () => {
     expect(screen.queryByRole("region", { name: "Problems" })).not.toBeInTheDocument();
   });
 
-  it("a daemon that failed to start: the error with its log lines, and Stopped", async () => {
+  it("a daemon that failed to start, Simple mode: the error in plain words, no log lines, and a step the owner can take", async () => {
     renderAt("/", { scenario: "daemon-failed" });
     const problems = await screen.findByRole("region", { name: "Problems" });
     expect(within(problems).getByText("Rocket Pool could not start")).toBeInTheDocument();
     expect(within(problems).getByText(/could not load its settings/)).toBeInTheDocument();
-    expect(within(problems).getAllByRole("listitem")).toHaveLength(2);
-    expect(within(problems).getByRole("link", { name: "See the logs" })).toHaveAttribute("href", "/advanced");
+    expect(within(problems).queryAllByRole("listitem")).toHaveLength(0);
+    expect(within(problems).queryByText(/http:\/\//)).toBeNull();
+    expect(within(problems).getByRole("link", { name: "Open the package" })).toHaveAttribute(
+      "href",
+      "http://my.ava.do/#/packages/rocketpool.avado.dnp.dappnode.eth",
+    );
     expect(within(screen.getByTestId("service-status")).getByText("Stopped")).toBeInTheDocument();
+  });
+
+  it("a daemon that failed to start, Advanced mode: the raw error and its log lines, and the logs", async () => {
+    localStorage.setItem(MODE_STORAGE_KEY, "advanced");
+    renderAt("/", { scenario: "daemon-failed" });
+    const problems = await screen.findByRole("region", { name: "Problems" });
+    expect(within(problems).getAllByRole("listitem")).toHaveLength(3);
+    expect(within(problems).getByText(/http:\/\/ethchain-geth/)).toBeInTheDocument();
+    expect(within(problems).getByRole("link", { name: "See the logs" })).toHaveAttribute("href", "/advanced");
   });
 
   it("a fresh node is sent to setup", async () => {

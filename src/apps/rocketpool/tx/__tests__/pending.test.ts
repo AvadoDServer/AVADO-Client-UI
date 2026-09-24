@@ -1,5 +1,5 @@
 import { createMockRocketpoolApi } from "../../api/mock";
-import { DISMISS_AFTER_MS, OVERDUE_AFTER_MS, PENDING_STORAGE_KEY, PendingTxStore, pendingKey } from "../pending";
+import { DISMISS_AFTER_MS, LOCK_ALIASES, OVERDUE_AFTER_MS, PENDING_STORAGE_KEY, PendingTxStore, pendingKey } from "../pending";
 
 /** An in-memory Storage (one per test; a "reload" is a new store on the same storage). */
 function memoryStorage() {
@@ -29,16 +29,17 @@ describe("pending transactions", () => {
     expect(pendingKey("megapool/exit-queue", { validatorIndex: 7 })).not.toBe(pendingKey("megapool/exit-queue", { validatorIndex: 8 }));
   });
 
-  it("M12: one spelling per target, and stake-rpl / wait-and-stake-rpl share one lock", () => {
+  it("M12: one spelling per target; claim-and-stake shares the claim's lock; staking RPL has one lock whatever the amount", () => {
     expect(pendingKey("megapool/exit-validator", { validatorId: "007" })).toBe(pendingKey("megapool/exit-validator", { validatorId: 7 }));
     expect(pendingKey("megapool/exit-validator", { validatorId: " 7 " })).toBe(pendingKey("megapool/exit-validator", { validatorId: "7" }));
-    expect(pendingKey("node/wait-and-stake-rpl", { amountWei: "5", approvalTxHash: HASH })).toBe(pendingKey("node/stake-rpl", { amountWei: "9" }));
-    expect(pendingKey("node/wait-and-stake-rpl")).toBe("node/stake-rpl");
+    expect(pendingKey("node/stake-rpl", { amountWei: "5", approvalTxHash: HASH })).toBe(pendingKey("node/stake-rpl", { amountWei: "9" }));
     expect(pendingKey("node/stake-rpl-approve-rpl")).not.toBe("node/stake-rpl");
+    // The backend no longer allows wait-and-stake-rpl: no alias for it.
+    expect(LOCK_ALIASES).toEqual({ "node/claim-and-stake-rewards": "node/claim-rewards" });
     // Claiming and claiming-and-staking the same reward periods is one action.
     expect(pendingKey("node/claim-and-stake-rewards", { indices: "42,43", stakeAmount: "1" })).toBe(pendingKey("node/claim-rewards", { indices: "42,43" }));
     const store = new PendingTxStore({ api: createMockRocketpoolApi(), storage: null });
-    expect(store.begin({ key: pendingKey("node/wait-and-stake-rpl"), title: "Stake", route: "node/wait-and-stake-rpl", params: {} })).toBe(true);
+    expect(store.begin({ key: pendingKey("node/stake-rpl", { amountWei: "2" }), title: "Stake", route: "node/stake-rpl", params: {} })).toBe(true);
     expect(store.begin({ key: pendingKey("node/stake-rpl", { amountWei: "1" }), title: "Stake", route: "node/stake-rpl", params: {} })).toBe(false);
   });
 

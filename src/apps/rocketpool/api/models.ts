@@ -491,8 +491,11 @@ export interface DaemonState {
 export interface BackupInfo {
   name: string;
   createdAt: string;
-  /** "mnemonic-archive": the old plaintext recovery-phrase file, moved there by `POST /api/avado/legacy-mnemonic/archive`. */
-  kind: "upgrade" | "wallet-change" | "mnemonic-archive";
+  /**
+   * "mnemonic-archive": the old plaintext recovery-phrase file, moved there by `POST /api/avado/legacy-mnemonic/archive`.
+   * "wallet-create": made right after the wallet was first saved. "manual": made for a download of "current".
+   */
+  kind: "upgrade" | "wallet-change" | "wallet-create" | "manual" | "mnemonic-archive";
 }
 
 /** `GET /api/avado/status`. */
@@ -676,6 +679,16 @@ export interface LegacyMnemonicArchiveResult extends SnEnvelope {
   archived: boolean;
   /** The backup folder it was moved into, e.g. "mnemonic-archive-20260923T101500Z". */
   name: string;
+}
+
+/** `name` for `POST /api/avado/backups/download` that makes a fresh backup of the wallet, its password and the validator keys. */
+export const CURRENT_BACKUP = "current";
+
+/** `POST /api/avado/backups/download`: the backup as a .zip file, ready to save. */
+export interface BackupDownload {
+  blob: Blob;
+  /** A safe file name for the owner's downloads folder, e.g. "rocketpool-backup-20260923T101500Z.zip". */
+  fileName: string;
 }
 
 /** `GET /api/avado/logs?tail=N`. */
