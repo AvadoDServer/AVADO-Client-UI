@@ -40,10 +40,11 @@ adapters (`src/apps/rocketpool/api/mock.ts`) with a demo node from
 `src/apps/rocketpool/api/fixtures.ts`: add `?scenario=minipool`, `mixed`
 (the default), `fresh` (no wallet), `unregistered` (wallet, not registered),
 `new-node` (registered, no validators), `keys-attention` (every key-check
-state) or `daemon-failed` to the address, e.g.
-`http://localhost:5173/?scenario=fresh#/setup`. In `fresh`, creating or
-restoring a wallet leads on to `unregistered`, and registering that leads on
-to `new-node`, so the whole setup wizard can be walked through. Its own Vite and Tailwind
+state), `daemon-failed` or `exits` (a minipool ready to close, megapool
+validators exiting, a debt, a refund, credit and unstaking RPL) to the
+address, e.g. `http://localhost:5173/?scenario=fresh#/setup`. In `fresh`,
+creating or restoring a wallet leads on to `unregistered`, and registering
+that leads on to `new-node`, so the whole setup wizard can be walked through. Its own Vite and Tailwind
 configs (`vite.rocketpool.config.ts`, `tailwind.rocketpool.config.ts`) keep
 it out of the client build: `tailwind.config.ts` skips `src/apps/**`, so
 `dist/` is the same with or without it. Both apps use the shared shell

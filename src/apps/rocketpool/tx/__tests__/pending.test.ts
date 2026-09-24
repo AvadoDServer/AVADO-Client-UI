@@ -29,6 +29,40 @@ describe("pending transactions", () => {
     expect(pendingKey("megapool/exit-queue", { validatorIndex: 7 })).not.toBe(pendingKey("megapool/exit-queue", { validatorIndex: 8 }));
   });
 
+  it("M12: one spelling per target, and stake-rpl / wait-and-stake-rpl share one lock", () => {
+    expect(pendingKey("megapool/exit-validator", { validatorId: "007" })).toBe(pendingKey("megapool/exit-validator", { validatorId: 7 }));
+    expect(pendingKey("megapool/exit-validator", { validatorId: " 7 " })).toBe(pendingKey("megapool/exit-validator", { validatorId: "7" }));
+    expect(pendingKey("node/wait-and-stake-rpl", { amountWei: "5", approvalTxHash: HASH })).toBe(pendingKey("node/stake-rpl", { amountWei: "9" }));
+    expect(pendingKey("node/wait-and-stake-rpl")).toBe("node/stake-rpl");
+    expect(pendingKey("node/stake-rpl-approve-rpl")).not.toBe("node/stake-rpl");
+    // Claiming and claiming-and-staking the same reward periods is one action.
+    expect(pendingKey("node/claim-and-stake-rewards", { indices: "42,43", stakeAmount: "1" })).toBe(pendingKey("node/claim-rewards", { indices: "42,43" }));
+    const store = new PendingTxStore({ api: createMockRocketpoolApi(), storage: null });
+    expect(store.begin({ key: pendingKey("node/wait-and-stake-rpl"), title: "Stake", route: "node/wait-and-stake-rpl", params: {} })).toBe(true);
+    expect(store.begin({ key: pendingKey("node/stake-rpl", { amountWei: "1" }), title: "Stake", route: "node/stake-rpl", params: {} })).toBe(false);
+  });
+
+  it("an off-chain action (a signed exit) is finished at once: done in memory, gone from storage, unlocked after it's seen", () => {
+    const storage = memoryStorage();
+    const store = new PendingTxStore({ api: createMockRocketpoolApi(), storage });
+    const key = pendingKey("minipool/exit", { address: "0xa" });
+    const exit = { key, title: "Exit", route: "minipool/exit", params: { address: "0xa" }, page: "/validators" };
+    store.markFinished(key); // nothing to finish yet
+    expect(store.get(key)).toBeUndefined();
+    expect(store.begin(exit)).toBe(true);
+    expect(storage.data.has(PENDING_STORAGE_KEY)).toBe(true);
+    store.markFinished(key);
+    expect(store.get(key)?.state).toBe("done");
+    expect(store.isBlocking(key)).toBe(false);
+    expect(storage.data.has(PENDING_STORAGE_KEY)).toBe(false);
+    expect(store.dismiss(key)).toBe(true);
+    expect(store.begin(exit)).toBe(true);
+    // An entry that is not sending (e.g. unclear) is never marked done.
+    store.markUnknown(key, "No answer");
+    store.markFinished(key);
+    expect(store.get(key)?.state).toBe("unknown");
+  });
+
   it("records before sending and refuses the same action while it's in flight, saved in storage", () => {
     const storage = memoryStorage();
     const store = new PendingTxStore({ api: createMockRocketpoolApi(), storage });

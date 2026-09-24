@@ -170,10 +170,16 @@ export function txHashField(route: string): string {
   return "txHash";
 }
 
+/** Write routes that sign a beacon-chain message instead of sending a transaction (Smartnode answers without a hash). */
+export const OFF_CHAIN_ROUTES: ReadonlySet<string> = new Set(["minipool/exit", "megapool/exit-validator"]);
+
 export const DEMO_GAS_LIMITS = { estimated: 145_000, safe: 217_500 } as const;
 
 /** Demo bond per megapool validator (the answer of `node/get-bond-requirement` is N × this). */
 export const DEMO_BOND_PER_VALIDATOR_WEI = 4n * 10n ** 18n;
+
+/** The backup folder the demo moves the legacy recovery-phrase file into. */
+export const DEMO_MNEMONIC_ARCHIVE = "mnemonic-archive-20260923T101500Z";
 
 /** Words for demo recovery phrases: real BIP-39 words, but the phrases are not real wallets. */
 const DEMO_WORDS = [
@@ -211,9 +217,10 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
   let txCount = 0;
   let initCount = 0;
   let passwordSet = initial.avado.passwordFilePresent;
-  let legacyArchived = false;
   /** Keys the owner approved in this mock: the next status shows them loaded. */
   const approved = new Set<string>();
+  /** The legacy recovery-phrase file was moved into this backup (then the status no longer reports it). */
+  let mnemonicArchive: string | null = null;
 
   const delay = async (ms = latencyMs, signal?: AbortSignal, path?: string) => {
     if (ms > 0 || signal?.aborted) await sleep(ms, signal, path);
@@ -251,7 +258,11 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
     async avadoStatus() {
       await enter("GET", AVADO_STATUS_PATH);
       const avado = clone(scenario.avado) as AvadoStatus;
-      if (legacyArchived) avado.legacyMnemonicPresent = false;
+      if (mnemonicArchive) {
+        // As the backend: the file is gone and the archive is listed with its own kind.
+        avado.legacyMnemonicPresent = false;
+        avado.backups = [{ name: mnemonicArchive, createdAt: "2026-09-23T10:15:00Z", kind: "mnemonic-archive" }, ...avado.backups];
+      }
       if (!avado.walletFilePresent) avado.passwordFilePresent = passwordSet;
       return avado;
     },
@@ -284,9 +295,9 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
       const path = AVADO_LEGACY_MNEMONIC_ARCHIVE_PATH;
       await enter("POST", path, { confirm });
       if (confirm !== ARCHIVE_CONFIRMATION) fail(path, new DemoSnError(400, ARCHIVE_REFUSED));
-      if (legacyArchived || !scenario.avado.legacyMnemonicPresent) fail(path, new DemoSnError(404, NO_LEGACY_MNEMONIC));
-      legacyArchived = true;
-      return { status: "success", error: "", archived: true, name: "mnemonic-archive-20260924T101500Z" } as LegacyMnemonicArchiveResult;
+      if (mnemonicArchive || !scenario.avado.legacyMnemonicPresent) fail(path, new DemoSnError(404, NO_LEGACY_MNEMONIC));
+      mnemonicArchive = DEMO_MNEMONIC_ARCHIVE;
+      return { status: "success", error: "", archived: true, name: mnemonicArchive } as LegacyMnemonicArchiveResult;
     },
 
     async logs(tail = 200) {
@@ -368,6 +379,8 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
         return { status: "success", error: "", accountAddress: DEMO.nodeAddress, validatorKeys: [] } as unknown as T;
       }
       if (route.startsWith("wallet/")) return { status: "success", error: "" } as T;
+      // Voluntary exits are signed messages to the beacon chain: no transaction, no hash.
+      if (OFF_CHAIN_ROUTES.has(route)) return { status: "success", error: "" } as T;
 
       txCount += 1;
       // The one transaction the setup demo follows through: registering.

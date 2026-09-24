@@ -28,7 +28,7 @@ async function rejection(p: Promise<unknown>): Promise<RpApiError> {
 
 describe("demo fixtures", () => {
   it("has the demo nodes", () => {
-    expect([...MOCK_SCENARIOS]).toEqual(["minipool", "mixed", "fresh", "unregistered", "new-node", "keys-attention", "daemon-failed"]);
+    expect([...MOCK_SCENARIOS]).toEqual(["minipool", "mixed", "fresh", "unregistered", "new-node", "keys-attention", "daemon-failed", "exits"]);
     for (const name of MOCK_SCENARIOS) expect(SCENARIOS[name].name).toBe(name);
   });
 

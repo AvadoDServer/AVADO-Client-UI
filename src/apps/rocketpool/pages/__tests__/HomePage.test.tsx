@@ -169,7 +169,7 @@ describe("Home", () => {
     await userEvent.type(within(box).getByLabelText(/to confirm/), ARCHIVE_CONFIRMATION);
     await userEvent.dblClick(button);
     expect(await within(box).findByText("The file is no longer in the Rocket Pool data folder")).toBeInTheDocument();
-    expect(box).toHaveTextContent("backups/mnemonic-archive-20260924T101500Z");
+    expect(box).toHaveTextContent("backups/mnemonic-archive-20260923T101500Z");
     expect(box).toHaveTextContent("Nothing was deleted.");
     expect(api.calls.filter((c) => c.path === "/api/avado/legacy-mnemonic/archive")).toEqual([
       { method: "POST", path: "/api/avado/legacy-mnemonic/archive", params: { confirm: "ARCHIVE" } },

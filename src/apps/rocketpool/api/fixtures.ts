@@ -16,6 +16,9 @@
  *    awaiting approval (with a reason they can't load yet), a key settling,
  *    a key loaded in two clients, and one waiting for a Teku update.
  *  - `daemon-failed`: the daemon would not start (bad settings); its API is down.
+ *  - `exits`: winding down: a minipool exited and ready to close, one still
+ *    staking; a megapool with validators exiting, locked and queued, a debt,
+ *    a refund and credit; RPL unstaking.
  *
  * Big integers follow the wire format: a number when it is a safe integer,
  * else a string with the exact digits.
@@ -73,7 +76,7 @@ export class DemoSnError {
   ) {}
 }
 
-export type MockScenarioName = "minipool" | "mixed" | "fresh" | "unregistered" | "new-node" | "keys-attention" | "daemon-failed";
+export type MockScenarioName = "minipool" | "mixed" | "fresh" | "unregistered" | "new-node" | "keys-attention" | "daemon-failed" | "exits";
 
 export const MOCK_SCENARIOS: readonly MockScenarioName[] = [
   "minipool",
@@ -83,6 +86,7 @@ export const MOCK_SCENARIOS: readonly MockScenarioName[] = [
   "new-node",
   "keys-attention",
   "daemon-failed",
+  "exits",
 ];
 
 export interface MockScenario {
@@ -115,9 +119,13 @@ export const DEMO = {
   pubkeyC: pubkey(3),
   megaPubkey1: pubkey(4),
   megaPubkey2: pubkey(5),
-  megaPubkey3: pubkey(6),
-  megaPubkey4: pubkey(7),
-  megaPubkey5: pubkey(8),
+  minipoolD: address(13),
+  minipoolE: address(14),
+  pubkeyD: pubkey(6),
+  pubkeyE: pubkey(7),
+  megaPubkey3: pubkey(8),
+  megaPubkey4: pubkey(9),
+  megaPubkey5: pubkey(10),
 } as const;
 
 const NOW = "2026-09-23T10:00:00Z";
@@ -219,25 +227,33 @@ const beacon = (key: string, index: string, status: string, balance: number, act
   exists: status !== "",
 });
 
-function megaValidator(id: number, key: string, state: "active" | "queued"): MegapoolValidator {
-  const active = state === "active";
+type MegaState = "active" | "queued" | "exiting" | "locked" | "exited";
+
+function megaValidator(id: number, key: string, state: MegaState, index = 2_104_551 + id): MegapoolValidator {
+  const onBeacon = state !== "queued";
+  const beaconState = { active: "active_ongoing", queued: "", exiting: "active_exiting", locked: "withdrawal_possible", exited: "withdrawal_done" }[state];
   return {
     validatorId: id,
     pubKey: key,
-    staked: active,
-    exited: false,
-    inQueue: !active,
-    queuePosition: active ? 0 : 214,
+    staked: onBeacon,
+    exited: state === "exited",
+    inQueue: state === "queued",
+    queuePosition: state === "queued" ? 214 : 0,
     inPrestake: false,
-    expressUsed: active,
+    expressUsed: state === "active",
     dissolved: false,
-    exiting: false,
-    locked: false,
-    validatorIndex: active ? 2_104_551 : 0,
-    exitBalance: 0,
-    withdrawableEpoch: 0,
-    activated: active,
-    beaconStatus: active ? beacon(key, "2104551", "active_ongoing", 32_004_812_331, 401_220) : beacon(key, "", "", 0, 0),
+    exiting: state === "exiting",
+    locked: state === "locked",
+    validatorIndex: onBeacon ? index : 0,
+    exitBalance: state === "exited" ? 32_011_204_118 : 0,
+    withdrawableEpoch: state === "exiting" || state === "locked" ? 413_056 : 0,
+    activated: onBeacon,
+    beaconStatus: onBeacon
+      ? {
+          ...beacon(key, String(index), beaconState, state === "exited" ? 0 : 32_004_812_331, 401_220),
+          ...(state === "exiting" || state === "locked" ? { exit_epoch: 412_800, withdrawable_epoch: 413_056 } : {}),
+        }
+      : beacon(key, "", "", 0, 0),
   };
 }
 
@@ -310,9 +326,10 @@ function nodeStatus(o: {
   unclaimed: string;
   registered?: boolean;
   pendingWithdrawal?: string;
+  extra?: Partial<NodeStatus>;
 }): NodeStatus {
   const hasMegapool = o.megapool.deployed && o.megapool.validatorCount > 0;
-  return {
+  const status: NodeStatus = {
     status: "success",
     error: "",
     warning: "",
@@ -359,7 +376,11 @@ function nodeStatus(o: {
     ethOnBehalfBalance: 0,
     unclaimedRewards: eth(o.unclaimed),
     reducedBond: 0,
+    rplStakeThresholdFraction: 0.15,
+    nodeRPLLocked: 0,
+    latestBlockTime: NOW,
   };
+  return { ...status, ...o.extra };
 }
 
 const interval = (index: number, rpl: string, ethAmount: string) => ({
@@ -553,6 +574,95 @@ export function reconcileView(o: {
 
 
 /* ------------------------------------------------------------------ */
+/* Screens: minipool details, rewards, RPL (Task 7)                     */
+/* ------------------------------------------------------------------ */
+
+const GAS = { estimated: 145_000, safe: 217_500 };
+
+/** A `can-X` answer with Smartnode's real flag names and a gas estimate. */
+export const can = (flags: Record<string, unknown>, gasLimits: { estimated: number; safe: number } = GAS) => ({
+  status: "success",
+  error: "",
+  ...flags,
+  gasLimits,
+});
+
+function closeDetail(mp: MinipoolDetails, o: { canClose: boolean; beaconState: string; balance?: string; nodeShare?: string; distributed?: boolean }) {
+  return {
+    address: mp.address,
+    isFinalized: false,
+    minipoolStatus: mp.status.status,
+    minipoolVersion: 3,
+    distributed: o.distributed ?? false,
+    canClose: o.canClose,
+    balance: eth(o.balance ?? "0.0412"),
+    refund: 0,
+    userDepositBalance: mp.user?.depositBalance ?? 0,
+    beaconState: o.beaconState,
+    nodeShare: eth(o.nodeShare ?? "0"),
+    gasLimits: o.canClose ? { estimated: 182_000, safe: 273_000 } : { estimated: 0, safe: 0 },
+  };
+}
+
+function distributeDetail(mp: MinipoolDetails, o: { canDistribute: boolean; balance?: string; nodeShare?: string }) {
+  return {
+    address: mp.address,
+    balance: eth(o.balance ?? "0.0412"),
+    refund: 0,
+    nodeShareOfBalance: eth(o.nodeShare ?? "0.0187"),
+    minipoolVersion: 3,
+    status: mp.status.status,
+    isFinalized: false,
+    canDistribute: o.canDistribute,
+    gasLimits: o.canDistribute ? { estimated: 121_000, safe: 181_500 } : { estimated: 0, safe: 0 },
+  };
+}
+
+const closeDetails = (details: ReturnType<typeof closeDetail>[]) => ({
+  status: "success",
+  error: "",
+  expressTicketsProvisioned: true,
+  isFeeDistributorInitialized: true,
+  details,
+});
+
+const pendingRewards = (node: string, refund = "0") => ({
+  status: "success",
+  error: "",
+  rewardSplit: { NodeRewards: eth(node), VoterRewards: eth("0.0011"), ProtocolDAORewards: eth("0.0004"), RethRewards: eth("0.0139") },
+  refundValue: eth(refund),
+});
+
+/** Reads every node with a wallet answers the same way. */
+const walletReads = (o: { feeDistributor?: { balance: string; nodeShare: number }; allowance?: string }) => ({
+  // Without it (the minipool node) the mock's generic answer stands: the transaction-flow tests price it.
+  ...(o.feeDistributor
+    ? { "node/can-distribute": can({ balance: eth(o.feeDistributor.balance), nodeShare: o.feeDistributor.nodeShare }, { estimated: 64_000, safe: 96_000 }) }
+    : {}),
+  "node/stake-rpl-allowance": { status: "success", error: "", allowance: eth(o.allowance ?? "0") },
+  "node/get-stake-rpl-approval-gas": can({}, { estimated: 46_000, safe: 69_000 }),
+  "node/can-stake-rpl": can({ canStake: true, insufficientBalance: false, inConsensus: false }),
+  "node/can-unstake-rpl": can({ canUnstake: true, insufficientBalance: false, hasDifferentRPLWithdrawalAddress: false }),
+  "node/can-unstake-legacy-rpl": can({ canUnstake: true, insufficientBalance: false, hasDifferentRPLWithdrawalAddress: false, belowMaxRPLStake: false }),
+  "node/can-withdraw-rpl": can({ canWithdraw: false, insufficientBalance: true, unstakingPeriodActive: false, hasDifferentRPLWithdrawalAddress: false }),
+  "node/can-claim-rewards": can({}, { estimated: 212_000, safe: 318_000 }),
+  "node/can-claim-and-stake-rewards": can({}, { estimated: 298_000, safe: 447_000 }),
+  "node/can-claim-unclaimed-rewards": can({ canClaim: true }),
+  "node/can-withdraw-credit": can({ canWithdraw: true, insufficientBalance: false }),
+  "node/can-withdraw-eth": can({ canWithdraw: true, insufficientBalance: false, hasDifferentWithdrawalAddress: false }),
+  "node/can-provision-express-tickets": can({ canProvision: false, alreadyProvisioned: true }),
+  "minipool/can-exit": can({ canExit: true, invalidStatus: false }, { estimated: 0, safe: 0 }),
+  "megapool/can-exit-validator": can({ canExit: true, invalidStatus: false }, { estimated: 0, safe: 0 }),
+  "megapool/can-exit-queue": can({ canExit: true }, { estimated: 88_000, safe: 132_000 }),
+  "megapool/can-claim-refund": can({ canClaim: false }, { estimated: 0, safe: 0 }),
+  "megapool/can-repay-debt": can({ canRepay: true, notEnoughDebt: false, notEnoughBalance: false }),
+  "megapool/get-new-validator-bond-requirement": { status: "success", error: "", newValidatorBondRequirement: eth("4") },
+});
+
+/** `node/get-bond-requirement` answers for the demo nodes: 4 ETH per validator beyond the first two (8 ETH), like Saturn's schedule. */
+export const demoBondRequirement = (numValidators: number): string | number => eth(String(numValidators <= 2 ? 4 * numValidators : 8 + 4 * (numValidators - 2)));
+
+/* ------------------------------------------------------------------ */
 
 const minipoolNode: MockScenario = {
   name: "minipool",
@@ -589,6 +699,18 @@ const minipoolNode: MockScenario = {
     }),
     "node/get-smoothing-pool-registration-status": spStatus(true),
     "node/can-deposit": canDeposit("0.4128", false),
+    ...walletReads({}),
+    "minipool/get-minipool-close-details-for-node": closeDetails([
+      closeDetail(MINIPOOL_A, { canClose: false, beaconState: "active_ongoing" }),
+      closeDetail(MINIPOOL_B, { canClose: false, beaconState: "active_ongoing" }),
+    ]),
+    "minipool/get-distribute-balance-details": {
+      status: "success",
+      error: "",
+      details: [distributeDetail(MINIPOOL_A, { canDistribute: true }), distributeDetail(MINIPOOL_B, { canDistribute: true, balance: "0.0381", nodeShare: "0.0214" })],
+    },
+    "megapool/can-distribute": can({ canDistribute: false, megapoolNotDeployed: true, lastDistributionTime: 0, lockedValidatorCount: 0, exitingValidatorCount: 0 }, { estimated: 0, safe: 0 }),
+    "node/can-provision-express-tickets": can({ canProvision: false, alreadyProvisioned: true }),
   },
   logLines: NORMAL_LOG,
 };
@@ -623,7 +745,12 @@ const mixedNode: MockScenario = {
     "megapool/status": megapoolStatus(MEGAPOOL),
     "node/get-rewards-info": rewardsInfo({ minipools: 1, megapool: 1, stake: "610", unclaimed: [interval(43, "6.1204", "0")] }),
     "node/get-smoothing-pool-registration-status": spStatus(false),
-    "node/can-deposit": canDeposit("0.0061", false),
+    ...walletReads({ feeDistributor: { balance: "0.0931", nodeShare: 0.0412 } }),
+    "minipool/get-minipool-close-details-for-node": closeDetails([closeDetail(MINIPOOL_C, { canClose: false, beaconState: "active_ongoing" })]),
+    "minipool/get-distribute-balance-details": { status: "success", error: "", details: [distributeDetail(MINIPOOL_C, { canDistribute: true, balance: "0.0295", nodeShare: "0.0133" })] },
+    "megapool/can-distribute": can({ canDistribute: true, megapoolNotDeployed: false, lastDistributionTime: 1_755_000_000, lockedValidatorCount: 0, exitingValidatorCount: 0 }, { estimated: 98_000, safe: 147_000 }),
+    "megapool/pending-rewards": pendingRewards("0.0214"),
+    "node/can-deposit": can({ canDeposit: true, canUseCredit: false, creditBalance: 0, usableCreditBalance: 0, nodeBalance: eth("0.0061"), insufficientBalance: false, insufficientBalanceWithoutCredit: false, invalidAmount: false, depositDisabled: false, inConsensus: false, nodeHasDebt: false }, { estimated: 1_210_000, safe: 1_815_000 }),
   },
   logLines: [
     ...NORMAL_LOG,
@@ -803,6 +930,113 @@ const daemonFailed: MockScenario = {
   ],
 };
 
+/* An operator winding down: exits, closing, debt, refund, credit and unstaking RPL. */
+
+const MINIPOOL_D: MinipoolDetails = {
+  ...minipool(DEMO.minipoolD, DEMO.pubkeyD, { index: "401122", bond: "8", fee: 0.14, balance: "0", nodeShare: "0" }),
+  balances: { eth: eth("32.0514"), reth: 0, rpl: 0, fixedSupplyRpl: 0 },
+  nodeShareOfETHBalance: eth("8.0311"),
+  validator: { exists: true, active: false, index: "401122", balance: 0, nodeBalance: 0 },
+  closeAvailable: true,
+};
+const MINIPOOL_E = minipool(DEMO.minipoolE, DEMO.pubkeyE, { index: "401123", bond: "16", fee: 0.15, balance: "32.0122", nodeShare: "16.0061" });
+
+const WINDING_MEGAPOOL: MegapoolDetails = {
+  ...MEGAPOOL,
+  validatorCount: 4,
+  activeValidatorCount: 3,
+  exitingValidatorCount: 1,
+  lockedValidatorCount: 1,
+  nodeDebt: eth("0.05"),
+  refundValue: eth("0.3"),
+  pendingRewards: eth("0.0118"),
+  nodeExpressTicketCount: 0,
+  nodeBond: eth("12"),
+  nodeQueuedBond: eth("4"),
+  validators: [
+    megaValidator(0, DEMO.megaPubkey1, "active"),
+    megaValidator(1, DEMO.megaPubkey3, "exiting"),
+    megaValidator(2, DEMO.megaPubkey4, "locked"),
+    megaValidator(3, DEMO.megaPubkey5, "queued"),
+  ],
+};
+
+const exitsNode: MockScenario = {
+  name: "exits",
+  title: "Exits and closing",
+  avado: {
+    ...baseAvado,
+    backups: [
+      { name: "1.0.0-20260921T090000Z", createdAt: "2026-09-21T09:00:00Z", kind: "upgrade" },
+      { name: "20260920T120000Z-before-wallet-change", createdAt: "2026-09-20T12:00:00Z", kind: "wallet-change" },
+      { name: "legacy-20260919T081100Z", createdAt: "2026-09-19T08:11:00Z", kind: "upgrade" },
+    ],
+    settings: { autoTxGasThreshold: "20", distributeThreshold: "1", manualMaxFee: "0", priorityFee: "0.01" },
+  },
+  reconcile: reconcileView({
+    state: "ok",
+    client: NIMBUS,
+    keys: [
+      demoKey(DEMO.pubkeyE, "minipool", DEMO.minipoolE, "loaded", "fee-distributor", DEMO.feeDistributor),
+      demoKey(DEMO.megaPubkey1, "megapool", "0", "loaded", "megapool", DEMO.megapool),
+      demoKey(DEMO.megaPubkey3, "megapool", "1", "loaded", "megapool", DEMO.megapool),
+    ],
+  }),
+  reads: {
+    ...sharedReads,
+    "wallet/status": walletStatus(true),
+    "node/status": nodeStatus({
+      withdrawal: DEMO.coldWallet,
+      eth: "1.2",
+      rpl: "150",
+      legacyRpl: "900",
+      minipools: [MINIPOOL_D, MINIPOOL_E],
+      megapool: WINDING_MEGAPOOL,
+      smoothingPool: false,
+      unclaimed: "0",
+      extra: {
+        rplStakeMegapool: eth("200"),
+        totalRplStake: eth("1100"),
+        rplStakeThreshold: eth("412.5"),
+        unstakingRPL: eth("300"),
+        lastRPLUnstakeTime: "2026-08-20T10:00:00Z",
+        megapoolNodeDebt: eth("0.05"),
+        megapoolRefundValue: eth("0.3"),
+        creditBalance: eth("4"),
+        expressTicketCount: 0,
+        expressTicketsProvisioned: false,
+        minipoolCounts: { ...counts(2), closeAvailable: 1 },
+      },
+    }),
+    "minipool/status": minipoolStatus([MINIPOOL_D, MINIPOOL_E]),
+    "megapool/status": megapoolStatus(WINDING_MEGAPOOL),
+    "node/get-rewards-info": rewardsInfo({ minipools: 1, megapool: 3, stake: "1100", unclaimed: [interval(43, "9.8811", "0.0144")] }),
+    "node/get-smoothing-pool-registration-status": spStatus(false),
+    ...walletReads({ feeDistributor: { balance: "0.0474", nodeShare: 0.0208 } }),
+    "minipool/get-minipool-close-details-for-node": closeDetails([
+      closeDetail(MINIPOOL_D, { canClose: true, beaconState: "withdrawal_done", balance: "32.0514", nodeShare: "8.0311" }),
+      closeDetail(MINIPOOL_E, { canClose: false, beaconState: "active_ongoing" }),
+    ]),
+    "minipool/get-distribute-balance-details": {
+      status: "success",
+      error: "",
+      details: [distributeDetail(MINIPOOL_D, { canDistribute: false, balance: "32.0514", nodeShare: "8.0311" }), distributeDetail(MINIPOOL_E, { canDistribute: false, balance: "0.0081", nodeShare: "0.0037" })],
+    },
+    "megapool/can-distribute": can({ canDistribute: false, megapoolNotDeployed: false, lastDistributionTime: 1_755_000_000, lockedValidatorCount: 1, exitingValidatorCount: 1 }, { estimated: 0, safe: 0 }),
+    "megapool/pending-rewards": pendingRewards("0.0118", "0.3"),
+    "megapool/can-claim-refund": can({ canClaim: true }, { estimated: 71_000, safe: 106_500 }),
+    "node/can-withdraw-rpl": can({ canWithdraw: true, insufficientBalance: false, unstakingPeriodActive: false, hasDifferentRPLWithdrawalAddress: false }),
+    "node/can-unstake-legacy-rpl": can({ canUnstake: true, insufficientBalance: false, hasDifferentRPLWithdrawalAddress: false, belowMaxRPLStake: true }),
+    "node/can-provision-express-tickets": can({ canProvision: true, alreadyProvisioned: false }),
+    "node/can-deposit": can({ canDeposit: false, nodeHasDebt: true, canUseCredit: true, creditBalance: eth("4"), usableCreditBalance: eth("4"), nodeBalance: eth("1.2"), insufficientBalance: false, insufficientBalanceWithoutCredit: false, invalidAmount: false, depositDisabled: false, inConsensus: false }, { estimated: 0, safe: 0 }),
+  },
+  logLines: [
+    ...NORMAL_LOG,
+    "2026/09/23 09:57:12 Megapool validator 1 is exiting (withdrawable epoch 413056).",
+    "2026/09/23 09:57:13 Gas price 0.85 gwei is below the automatic transaction threshold (20 gwei).",
+  ],
+};
+
 export const SCENARIOS: Record<MockScenarioName, MockScenario> = {
   minipool: minipoolNode,
   mixed: mixedNode,
@@ -811,6 +1045,7 @@ export const SCENARIOS: Record<MockScenarioName, MockScenario> = {
   "new-node": newNode,
   "keys-attention": keysAttentionNode,
   "daemon-failed": daemonFailed,
+  exits: exitsNode,
 };
 
 export const isScenarioName = (v: unknown): v is MockScenarioName =>

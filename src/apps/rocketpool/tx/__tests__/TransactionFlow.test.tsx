@@ -5,7 +5,7 @@ import { DemoSnError } from "../../api/fixtures";
 import { createMockRocketpoolApi, type MockRocketpoolApi, type RocketpoolMockOptions } from "../../api/mock";
 import type { CanResponse, SnEnvelope } from "../../api/models";
 import { RocketpoolApiProvider } from "../../api/RocketpoolApiProvider";
-import { PENDING_STORAGE_KEY, PendingTxProvider, PendingTxStore } from "../pending";
+import { PENDING_STORAGE_KEY, PendingTxProvider, PendingTxStore, pendingKey } from "../pending";
 import { TransactionFlow, type TransactionFlowProps } from "../TransactionFlow";
 
 type Props = Partial<TransactionFlowProps<CanResponse>>;
@@ -515,5 +515,85 @@ describe("TransactionFlow", () => {
     await reopen();
     expect(await screen.findByRole("button", { name: "Distribute" })).toBeInTheDocument();
     expect(posts()).toHaveLength(1);
+  });
+
+  describe("Task 7 options", () => {
+    const exitSpec = {
+      canRoute: "minipool/can-exit",
+      route: "minipool/exit",
+      params: { address: "0xabc" },
+      offChain: {
+        sendingText: "Sending the exit request to the beacon chain…",
+        doneTitle: "Exit requested",
+        doneText: <p>The beacon chain has the exit request.</p>,
+        checkText: <p>Check the validator on beaconcha.in.</p>,
+      },
+    };
+
+    it("an off-chain exit shows no fee, sends no gas fields, never waits for a tx, and says it's done", async () => {
+      const { api, posts, waits, onDone } = setup({}, { tx: exitSpec, requireText: "abc123", tone: "danger", confirmLabel: "Exit" });
+      expect(await screen.findByTestId("tx-no-fee")).toHaveTextContent("No network fee");
+      expect(screen.queryByTestId("tx-fee")).toBeNull();
+      expect(api.calls.map((c) => c.path)).toEqual(["/api/sn/minipool/can-exit"]); // no gas price read
+      const button = screen.getByRole("button", { name: "Exit" });
+      expect(button).toBeDisabled();
+      await userEvent.type(screen.getByLabelText(/to confirm/), "abc123");
+      await userEvent.click(button);
+      expect(await screen.findByText("Exit requested")).toBeInTheDocument();
+      expect(screen.getByText("The beacon chain has the exit request.")).toBeInTheDocument();
+      expect(posts()).toEqual([{ method: "POST", path: "/api/sn/minipool/exit", params: { address: "0xabc" } }]);
+      expect(waits()).toHaveLength(0);
+      expect(onDone).toHaveBeenCalledWith("");
+      expect(screen.queryByRole("link", { name: /Etherscan/ })).toBeNull();
+    });
+
+    it("an off-chain exit with no clear answer stays locked and says how to check it", async () => {
+      const { posts } = setup({ failures: { "minipool/exit": "timeout" } }, { tx: exitSpec, confirmLabel: "Exit" });
+      await userEvent.click(await screen.findByRole("button", { name: "Exit" }));
+      expect(await screen.findByText("We don't know if it was sent")).toBeInTheDocument();
+      expect(screen.getByText("Check the validator on beaconcha.in.")).toBeInTheDocument();
+      await reopen();
+      expect(screen.queryByRole("button", { name: "Exit" })).toBeNull();
+      expect(posts()).toHaveLength(1);
+    });
+
+    it("M12: a lockKey override locks the action under that key", async () => {
+      const api = createMockRocketpoolApi({ scenario: "mixed" });
+      const store = new PendingTxStore({ api, storage: null });
+      const lock = "megapool/exit-queue?validator=1";
+      expect(store.begin({ key: lock, title: "Leave the queue", route: "megapool/exit-queue", params: { validatorIndex: 1 } })).toBe(true);
+      setup(api, { tx: { canRoute: "megapool/can-exit-queue", route: "megapool/exit-queue", params: { validatorIndex: "1" }, lockKey: lock } }, store);
+      expect(await screen.findByText("Sending…")).toBeInTheDocument();
+      expect(screen.getByText(/This was started earlier/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Distribute" })).toBeNull();
+      expect(api.calls.some((c) => c.path.endsWith("can-exit-queue"))).toBe(false);
+    });
+
+    it("M12: a stake started as wait-and-stake-rpl blocks a plain stake-rpl", async () => {
+      const api = createMockRocketpoolApi({ scenario: "minipool" });
+      const store = new PendingTxStore({ api, storage: null });
+      store.begin({ key: pendingKey("node/wait-and-stake-rpl", { amountWei: "1" }), title: "Stake RPL", route: "node/wait-and-stake-rpl", params: { amountWei: "1" } });
+      setup(api, { tx: { canRoute: "node/can-stake-rpl", route: "node/stake-rpl", params: { amountWei: "2" }, txHashField: "stakeTxHash" } }, store);
+      expect(await screen.findByText(/This was started earlier/)).toBeInTheDocument();
+      expect(api.calls.filter((c) => c.method === "POST")).toHaveLength(0);
+    });
+
+    it("a close bundle's second transaction is counted in the fee but not sent as the gas limit", async () => {
+      const { posts } = setup({}, {
+        tx: {
+          canRoute: "node/can-distribute",
+          route: "node/distribute",
+          extraGas: { gas: 600_000, label: "Second transaction in the bundle" },
+        },
+      });
+      const fee = await screen.findByTestId("tx-fee");
+      // (145,000 + 600,000) × 1.85 gwei = 0.00137825; (217,500 + 600,000) × 2.7 gwei = 0.00220725
+      expect(within(fee).getByText("about 0.001379 ETH")).toBeInTheDocument();
+      expect(within(fee).getByText("0.002208 ETH")).toBeInTheDocument();
+      expect(within(fee).getByText("Second transaction in the bundle").nextElementSibling?.textContent).toBe("600,000 gas");
+      await userEvent.click(confirmButton());
+      await screen.findByText("Transaction confirmed");
+      expect(posts()[0].params).toMatchObject({ gasLimit: "217500" });
+    });
   });
 });

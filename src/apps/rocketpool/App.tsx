@@ -5,10 +5,14 @@ import { ModeProvider } from "../../settings/ModeProvider";
 import { ThemeProvider } from "../../theme/ThemeProvider";
 import { RocketpoolApiProvider } from "./api/RocketpoolApiProvider";
 import type { RocketpoolApi } from "./api/types";
+import AdvancedPage from "./pages/advanced/AdvancedPage";
 import HomePage from "./pages/HomePage";
 import NotFound from "./pages/NotFound";
-import PlaceholderPage from "./pages/PlaceholderPage";
 import SetupPage from "./pages/setup/SetupPage";
+import RewardsPage from "./pages/rewards/RewardsPage";
+import RplPage from "./pages/rpl/RplPage";
+import ValidatorsPage from "./pages/validators/ValidatorsPage";
+import WalletPage from "./pages/wallet/WalletPage";
 import { RocketpoolShell } from "./RocketpoolShell";
 import { PendingTxProvider } from "./tx/pending";
 
@@ -32,16 +36,11 @@ export function AppRoutes() {
         <Route index element={<HomePage />} />
         <Route path="setup" element={<SetupPage />} />
         <Route path="setup/:step" element={<SetupPage />} />
-        <Route
-          path="validators"
-          element={<PlaceholderPage title="Validators" text="Your minipools and megapool validators, with exits and distributions." />}
-        />
-        <Route path="rewards" element={<PlaceholderPage title="Rewards" text="Your periodic and smoothing pool rewards, and claiming them." />} />
-        <Route path="wallet" element={<PlaceholderPage title="Wallet" text="Your node wallet, its backup and your withdrawal address." />} />
-        <Route
-          path="advanced"
-          element={<PlaceholderPage title="Advanced" text="Automatic actions, gas settings, logs and versions." />}
-        />
+        <Route path="validators" element={<ValidatorsPage />} />
+        <Route path="rewards" element={<RewardsPage />} />
+        <Route path="wallet" element={<WalletPage />} />
+        <Route path="rpl" element={<RplPage />} />
+        <Route path="advanced" element={<AdvancedPage />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
