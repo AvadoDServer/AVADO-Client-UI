@@ -112,4 +112,32 @@ describe("RPL page", () => {
     expect(within(card).getByText(/300 RPL is unstaking. You can withdraw it from/)).toBeInTheDocument();
     expect(within(card).queryByRole("button", { name: "Withdraw RPL" })).toBeNull();
   });
+
+  it("I2: with RPL ready, the unstake cards and the confirm say to withdraw it first, with a shortcut", async () => {
+    const { posts } = renderPage("/rpl", { scenario: "exits" }, { advanced: true });
+    await screen.findByTestId("rpl-summary", {}, { timeout: 3000 });
+    const card = section("Unstake megapool RPL");
+    expect(within(card).getByText("Withdraw your unstaked RPL first")).toBeInTheDocument();
+    await userEvent.type(within(card).getByLabelText("RPL to unstake"), "10");
+    await userEvent.click(within(card).getByRole("button", { name: "Unstake…" }));
+    expect(await within(dialog()).findByText(/To withdraw it first, cancel this/)).toBeInTheDocument();
+    expect(within(dialog()).getByText(/300 RPL has finished unstaking./)).toBeInTheDocument();
+    await userEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    await userEvent.click(within(section("Unstake legacy RPL")).getByRole("button", { name: "Withdraw ready RPL first" }));
+    await confirmIn(dialog(), "Withdraw");
+    await within(dialog()).findByText("Transaction confirmed");
+    expect(posts().map((p) => p.path)).toEqual(["/api/sn/node/withdraw-rpl"]);
+  });
+
+  it("I2: with RPL still unstaking, the confirm says the wait restarts for all of it", async () => {
+    const node = (await import("../../../api/fixtures")).SCENARIOS.exits.reads["node/status"] as object;
+    renderPage("/rpl", { scenario: "exits", reads: { "node/status": { ...node, lastRPLUnstakeTime: "2026-09-20T10:00:00Z" } } }, { advanced: true });
+    await screen.findByTestId("rpl-summary", {}, { timeout: 3000 });
+    const card = section("Unstake megapool RPL");
+    expect(within(card).getByText("This restarts the wait")).toBeInTheDocument();
+    await userEvent.type(within(card).getByLabelText("RPL to unstake"), "10");
+    await userEvent.click(within(card).getByRole("button", { name: "Unstake…" }));
+    expect(await within(dialog()).findByText(/300 RPL is already unstaking/)).toBeInTheDocument();
+    expect(within(dialog()).getByText(/restarts the wait \(28 days\) for all of it: everything would be withdrawable around/)).toBeInTheDocument();
+  });
 });

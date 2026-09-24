@@ -76,6 +76,8 @@ export interface TransactionFlowProps<C extends CanResponse = CanResponse> {
   tone?: "primary" | "danger";
   /** The owner must type this exact text before confirming (irreversible actions). */
   requireText?: string;
+  /** Accept the typed text in any letter case (for a code derived from a checksummed address). */
+  requireTextIgnoreCase?: boolean;
   /**
    * Confirm stays disabled this long after the summary shows (ms), so the
    * second click of a double click that opened the dialog can't confirm.
@@ -114,6 +116,13 @@ type Phase<C> =
   | { k: "send-failed"; message: string; certain: boolean }
   /** Showing the app's record of this action (sending, sent, unclear, lost, done, failed). */
   | { k: "tracked" };
+
+/** The owner typed the confirmation text (exactly, or in any case when allowed). */
+function typedMatches(typed: string, required: string | undefined, ignoreCase: boolean): boolean {
+  if (required === undefined) return true;
+  const t = typed.trim();
+  return ignoreCase ? t.toLowerCase() === required.toLowerCase() : t === required;
+}
 
 /** Smartnode's reason flags on `can-X` answers, in plain words. */
 const REASONS: Array<[string, string]> = [
@@ -214,6 +223,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
   confirmLabel,
   tone = "primary",
   requireText,
+  requireTextIgnoreCase = false,
   armDelayMs = DEFAULT_ARM_DELAY_MS,
   maxQuoteAgeMs = DEFAULT_MAX_QUOTE_AGE_MS,
   onClose,
@@ -332,7 +342,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
 
   const confirm = async () => {
     if (phase.k !== "ready" || !armed || sent.current) return;
-    if (requireText !== undefined && typed.trim() !== requireText) return;
+    if (!typedMatches(typed, requireText, requireTextIgnoreCase)) return;
     if (Date.now() - phase.checkedAt > maxQuoteAgeMs) {
       void check(true); // too old: fees and eligibility may have changed
       return;
@@ -386,7 +396,7 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
 
   const entryState = showEntry ? entry?.state : undefined;
   const sending = entryState === "sending";
-  const typedOk = requireText === undefined || typed.trim() === requireText;
+  const typedOk = typedMatches(typed, requireText, requireTextIgnoreCase);
   const confirmHint =
     phase.k === "ready" && !armed
       ? "Confirm becomes available in a moment."

@@ -26,15 +26,27 @@ export interface AutomaticAction {
   text: string;
 }
 
-/** What the daemon does on its own (Smartnode v1.24 node tasks), in plain words. */
+/**
+ * What the daemon does on its own (Smartnode v1.24.2 `rocketpool/node/*`
+ * tasks), in plain words. `exits` marks the one an owner must know about:
+ * the node can exit a validator without being asked here.
+ */
 export const AUTOMATIC_ACTIONS: AutomaticAction[] = [
   {
+    title: "Exit a validator when Rocket Pool requires it",
+    text: "If Rocket Pool asks one of your validators to leave (a protocol exit request), your node signs its exit by itself, as the rules require. An exit can't be undone. If a validator doesn't leave in time, Rocket Pool can force it out and penalise it.",
+  },
+  {
     title: "Start megapool validators",
-    text: "When Rocket Pool assigns ETH to a validator in the queue, your node stakes it on the beacon chain.",
+    text: "Your node prepares new megapool validators (prestake) and, once Rocket Pool assigns them ETH, stakes them on the beacon chain.",
   },
   {
     title: "Report exits and final balances",
     text: "When a megapool validator has left the beacon chain, your node reports it so its ETH can be settled.",
+  },
+  {
+    title: "Answer challenges",
+    text: "If someone challenges one of your megapool validators (a disputed exit or performance), your node sends the proof that answers it.",
   },
   {
     title: "Keep minipool contracts up to date",
@@ -47,6 +59,10 @@ export const AUTOMATIC_ACTIONS: AutomaticAction[] = [
   {
     title: "Distribute minipool balances",
     text: "When a minipool's balance grows above the limit below, your node pays out the rewards in it.",
+  },
+  {
+    title: "Download reward files",
+    text: "After each reward period your node downloads the file that lists everyone's rewards, so you can claim. No transaction.",
   },
 ];
 

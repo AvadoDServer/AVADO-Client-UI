@@ -16,7 +16,7 @@ import { useAppStatus } from "../../status/AppStatus";
 import { TransactionFlow } from "../../tx/TransactionFlow";
 import { Address, Callout, Facts, LoadError, LoadingCard, NodeGate, PageHeader, SectionCard } from "../common";
 import { claimFlow, itemLabel } from "./actions";
-import { blockedIntervals, claimItems, claimTotals, payoutAddress, type ClaimItem } from "./model";
+import { blockedIntervals, claimItems, claimTotals, ethOnBehalfElsewhere, payoutAddress, type ClaimItem } from "./model";
 
 /** Rewards: everything that can be claimed, one transaction per source, and "claim everything" one step at a time. */
 export default function RewardsPage() {
@@ -100,9 +100,11 @@ function Rewards() {
   const restakeError =
     restake && typedRestake === null && restakeText.trim() !== ""
       ? "Enter an amount like 12.5"
-      : restake && periodic && typedRestake !== null && typedRestake > periodic.rpl
-        ? `At most ${formatRpl(periodic.rpl)}`
-        : undefined;
+      : restake && typedRestake === 0n
+        ? "Enter more than 0, or untick staking to claim it all"
+        : restake && periodic && typedRestake !== null && typedRestake > periodic.rpl
+          ? `At most ${formatRpl(periodic.rpl)}`
+          : undefined;
   const restakeAmount = restake && periodic && !restakeError ? (typedRestake ?? periodic.rpl) : 0n;
 
   const running = !!sequence && !sequence.stopped;
@@ -164,6 +166,14 @@ function Rewards() {
         {failed && (
           <Callout tone="warning" title="Some rewards could not be checked">
             <p>The list may be incomplete. It is checked again every minute.</p>
+          </Callout>
+        )}
+        {!stillLoading && ethOnBehalfElsewhere(status) > 0n && (
+          <Callout tone="neutral" title={`${formatEth(ethOnBehalfElsewhere(status))} staked on your behalf`}>
+            <p>
+              Someone staked ETH for your node. Because your node has a withdrawal address, only that address can withdraw it (for
+              example on the Rocket Pool website). It isn't counted above.
+            </p>
           </Callout>
         )}
         {blocked.length > 0 && (

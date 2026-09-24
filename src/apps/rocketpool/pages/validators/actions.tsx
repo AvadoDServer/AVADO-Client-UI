@@ -6,6 +6,7 @@
  */
 import type { ReactNode } from "react";
 import type {
+  CanDistributeFeeDistributor,
   CanDistributeMegapool,
   CanResponse,
   MegapoolValidator,
@@ -98,6 +99,7 @@ export function exitMinipoolFlow(address: string, pubkey: string): FlowConfig {
     confirmLabel: "Exit minipool",
     tone: "danger",
     requireText: code,
+    requireTextIgnoreCase: true,
   };
 }
 
@@ -125,7 +127,7 @@ export function distributeMinipoolFlow(address: string): FlowConfig {
       details: (can) => {
         const d = find(can);
         if (!d) return null;
-        const yours = (toBigInt(d.nodeShareOfBalance) ?? 0n) + (toBigInt(d.refund) ?? 0n);
+        const yours = minipoolPayout(d);
         return (
           <p>
             You receive about <strong>{formatEth(yours)}</strong> of the {formatEth(d.balance)} in the minipool.
@@ -138,24 +140,62 @@ export function distributeMinipoolFlow(address: string): FlowConfig {
 }
 
 /**
- * Close an exited minipool. When the fee distributor holds ETH, Smartnode
- * sends a bundle (empty the fee distributor, then close) so both are paid at
- * the right commission; the second transaction has a fixed gas limit.
+ * The node's part of a minipool distribution, as Smartnode's claim-all counts
+ * it: for a dissolved minipool its whole balance (Smartnode already reports
+ * that as the node share, so the refund is not added again).
  */
-export function closeMinipoolFlow(address: string, feeDistributorHasBalance: boolean): FlowConfig {
+export function minipoolPayout(d: { status: string; balance: unknown; nodeShareOfBalance: unknown; refund: unknown }): bigint {
+  const big = (v: unknown) => toBigInt(v as string | number | null | undefined) ?? 0n;
+  return d.status === "Dissolved" ? big(d.balance) : big(d.nodeShareOfBalance) + big(d.refund);
+}
+
+/** Pay out the fee distributor (tips and MEV of minipools outside the smoothing pool). */
+export function distributeFeeDistributorFlow(approxShare?: bigint, title = "Distribute your fee distributor"): FlowConfig {
+  return {
+    title,
+    summary: (
+      <p>
+        Pays out the tips and MEV your minipools collected outside the smoothing pool: your share
+        {approxShare !== undefined ? ` (about ${formatEth(approxShare)})` : ""} goes to your withdrawal address, the rest to Rocket
+        Pool's stakers.
+      </p>
+    ),
+    tx: {
+      canRoute: "node/can-distribute",
+      route: "node/distribute",
+      blockedReason: (can: CanResponse) =>
+        (toBigInt((can as CanDistributeFeeDistributor).balance) ?? 0n) > 0n ? null : "Your fee distributor is empty right now.",
+    },
+    confirmLabel: "Distribute",
+  };
+}
+
+/**
+ * Close an exited minipool with one transaction (`bundle=false`), or, as an
+ * Advanced option, with Smartnode's Flashbots bundle (empty the fee
+ * distributor, then close, in the same block). A bundle is often not
+ * included at the normal tip; the default is the two-step close
+ * (`CloseMinipoolFlow`: distribute the fee distributor, then this).
+ */
+export function closeMinipoolFlow(address: string, { bundle = false, title }: { bundle?: boolean; title?: string } = {}): FlowConfig {
   const find = (can: CanResponse) =>
     ((can as unknown as MinipoolCloseDetailsResponse).details ?? []).find((d) => sameAddress(d.address, address));
-  const bundle = feeDistributorHasBalance;
   return {
-    title: `Close minipool ${shortAddress(address)}`,
+    title: title ?? (bundle ? `Close minipool ${shortAddress(address)} in one bundle` : `Close minipool ${shortAddress(address)}`),
     summary: (
       <div className="flex flex-col gap-2">
         <p>Pays out this exited minipool: your bond and rewards go to your withdrawal address, and the minipool is closed.</p>
         {bundle && (
-          <p>
-            Your fee distributor also holds ETH, so it is paid out in the same step (two transactions sent together). If the
-            network doesn't include them, nothing is paid and you can try again later.
-          </p>
+          <>
+            <p>
+              Your fee distributor is paid out in the same block: two transactions sent together as a bundle (the first pays out the
+              fee distributor, your share also goes to your withdrawal address; the second closes the minipool).
+            </p>
+            <p>
+              Bundles are often not included at the normal tip. If it isn't, nothing is paid and no fee is charged: then use{" "}
+              <strong>Close minipool</strong> instead, which does the same in two steps.
+            </p>
+          </>
         )}
       </div>
     ),
@@ -173,8 +213,10 @@ export function closeMinipoolFlow(address: string, feeDistributorHasBalance: boo
         if (d.isFinalized) return "This minipool is already closed.";
         if (!d.canClose) {
           if (d.minipoolVersion < 3) return "This minipool uses an old contract version and can't be closed safely yet.";
-          if ((toBigInt(d.balance) ?? 0n) < (toBigInt(d.refund) ?? 0n)) return "Its ETH hasn't fully arrived from the beacon chain yet.";
-          return "Its ETH isn't back from the beacon chain yet. Exit it first and wait until it has been withdrawn.";
+          if (d.minipoolStatus !== "Dissolved" && d.beaconState !== "withdrawal_done") {
+            return "Its ETH isn't back from the beacon chain yet. Exit it first and wait until it has been withdrawn.";
+          }
+          return "Rocket Pool says it can't be closed right now.";
         }
         const distributable = (toBigInt(d.balance) ?? 0n) - (toBigInt(d.refund) ?? 0n);
         if (d.minipoolStatus !== "Dissolved" && distributable < (toBigInt(d.userDepositBalance) ?? 0n)) {
@@ -191,7 +233,8 @@ export function closeMinipoolFlow(address: string, feeDistributorHasBalance: boo
         return (
           <div className="flex flex-col gap-2">
             <p>
-              You receive about <strong>{formatEth(yours)}</strong> of the {formatEth(d.balance)} in the minipool.
+              You receive about <strong>{formatEth(yours)}</strong> of the {formatEth(d.balance)} in the minipool
+              {bundle ? ", plus your share of the fee distributor" : ""}.
             </p>
             {d.minipoolStatus !== "Dissolved" && distributable < WEI_32 && (
               <p role="note" className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-warning-text">
@@ -201,9 +244,9 @@ export function closeMinipoolFlow(address: string, feeDistributorHasBalance: boo
           </div>
         );
       },
-      extraGas: bundle ? { gas: CLOSE_BUNDLE_EXTRA_GAS, label: "Second transaction (close)" } : undefined,
+      extraGas: bundle ? { gas: CLOSE_BUNDLE_EXTRA_GAS, label: "Second transaction (close); the gas limit above is the first (fee distributor)" } : undefined,
     },
-    confirmLabel: "Close minipool",
+    confirmLabel: bundle ? "Close in one bundle" : "Close minipool",
   };
 }
 

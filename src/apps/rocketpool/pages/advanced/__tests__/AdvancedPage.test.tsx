@@ -11,6 +11,9 @@ describe("Advanced page", () => {
     expect(await within(service).findByText("1.24.2")).toBeInTheDocument();
     const auto = screen.getByTestId("automatic-actions");
     expect(within(auto).getByText("Keep minipool contracts up to date")).toBeInTheDocument();
+    // M5: the owner learns the node may exit a validator by itself when Rocket Pool requires it.
+    expect(within(auto).getByText("Exit a validator when Rocket Pool requires it")).toBeInTheDocument();
+    expect(within(auto).getByText("Answer challenges")).toBeInTheDocument();
     expect(within(auto).getByText("Gas limit for automatic actions").nextElementSibling).toHaveTextContent("20 gwei");
     expect(within(auto).getByText(/usually well below 20 gwei/)).toBeInTheDocument();
     expect(await within(auto).findByText(/Right now the base fee is 0.85 gwei, below the limit, so automatic actions go ahead./)).toBeInTheDocument();

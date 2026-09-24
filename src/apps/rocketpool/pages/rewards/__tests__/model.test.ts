@@ -7,7 +7,7 @@ import type {
   NodeStatus,
   RewardsInfo,
 } from "../../../api/models";
-import { blockedIntervals, claimItems, claimTotals, floatEthToWei, payoutAddress } from "../model";
+import { blockedIntervals, claimItems, claimTotals, ethOnBehalfElsewhere, floatEthToWei, payoutAddress } from "../model";
 
 const ETH = 10n ** 18n;
 const milli = (n: number) => (BigInt(n) * ETH) / 10_000n; // n / 10,000 ETH
@@ -78,5 +78,14 @@ describe("claim everything, as Smartnode's claim-all composes it", () => {
   it("knows where rewards are paid", () => {
     expect(payoutAddress(inputs("minipool").node)).toEqual({ address: DEMO.coldWallet, isNodeWallet: false });
     expect(payoutAddress(inputs("mixed").node)).toEqual({ address: DEMO.nodeAddress, isNodeWallet: true });
+  });
+
+  it("M1: ETH staked on the node's behalf is claimable here only while the withdrawal address is the node", () => {
+    const withAddress = { ...inputs("minipool").node, ethOnBehalfBalance: String(2n * ETH) }; // cold withdrawal address
+    expect(claimItems({ ...inputs("minipool"), node: withAddress }).some((i) => i.kind === "eth-on-behalf")).toBe(false);
+    expect(ethOnBehalfElsewhere(withAddress)).toBe(2n * ETH);
+    const hot = { ...inputs("mixed").node, ethOnBehalfBalance: String(2n * ETH) }; // withdrawal address = node
+    expect(claimItems({ ...inputs("mixed"), node: hot }).find((i) => i.kind === "eth-on-behalf")?.eth).toBe(2n * ETH);
+    expect(ethOnBehalfElsewhere(hot)).toBe(0n);
   });
 });

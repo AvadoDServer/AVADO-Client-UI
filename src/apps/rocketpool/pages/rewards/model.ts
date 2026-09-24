@@ -147,7 +147,8 @@ export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDis
     });
   }
 
-  const onBehalf = big(node.ethOnBehalfBalance);
+  // Smartnode lets only the withdrawal address withdraw it once one is set (withdraw-eth.go): listed apart, not here.
+  const onBehalf = ethOnBehalfHere(node);
   if (onBehalf > 0n) {
     items.push({
       id: "eth-on-behalf",
@@ -179,4 +180,14 @@ export function payoutAddress(node: NodeStatus): { address: string; isNodeWallet
   const w = node.primaryWithdrawalAddress;
   const isNode = isZeroAddress(w) || w.toLowerCase() === node.accountAddress.toLowerCase();
   return { address: isNode ? node.accountAddress : w, isNodeWallet: isNode };
+}
+
+/** ETH staked on the node's behalf that the node itself can withdraw: only while the withdrawal address is the node. */
+export function ethOnBehalfHere(node: NodeStatus): bigint {
+  return payoutAddress(node).isNodeWallet ? big(node.ethOnBehalfBalance) : 0n;
+}
+
+/** ETH staked on the node's behalf that only the withdrawal address can withdraw (e.g. on the Rocket Pool website). */
+export function ethOnBehalfElsewhere(node: NodeStatus): bigint {
+  return payoutAddress(node).isNodeWallet ? 0n : big(node.ethOnBehalfBalance);
 }

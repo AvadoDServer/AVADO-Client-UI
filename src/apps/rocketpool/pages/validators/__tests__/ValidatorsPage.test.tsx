@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { DEMO } from "../../../api/fixtures";
+import { DEMO, SCENARIOS } from "../../../api/fixtures";
 import { confirmIn, renderPage } from "../../__tests__/renderPage";
 
 const card = (testId: string) => screen.findByTestId(testId);
@@ -29,12 +29,14 @@ describe("Validators page", () => {
     expect(within(d).getByText(/An exit is permanent and can't be undone/)).toBeInTheDocument();
     expect(await within(d).findByTestId("tx-no-fee")).toBeInTheDocument();
     const code = DEMO.minipoolA.slice(-6).toLowerCase();
+    expect(code).toMatch(/[a-f]/); // so the upper-case entry below really differs
     const confirm = within(d).getByRole("button", { name: "Exit minipool" });
     await userEvent.type(within(d).getByLabelText(/to confirm/), "wrong1");
     await userEvent.click(confirm);
     expect(posts().filter((p) => p.path.startsWith("/api/sn/"))).toHaveLength(0);
     await userEvent.clear(within(d).getByLabelText(/to confirm/));
-    await userEvent.type(within(d).getByLabelText(/to confirm/), code);
+    // M4: the code comes from a checksummed address, so any letter case is accepted.
+    await userEvent.type(within(d).getByLabelText(/to confirm/), code.toUpperCase());
     await waitFor(() => expect(confirm).toBeEnabled());
     await userEvent.click(confirm);
     expect(await within(dialog()).findByText("Exit requested")).toBeInTheDocument();
@@ -42,27 +44,69 @@ describe("Validators page", () => {
     expect(api.calls.some((c) => c.path === "/api/sn/wait")).toBe(false);
   });
 
-  it("closes an exited minipool, bundled with the fee distributor, and counts both transactions in the fee", async () => {
+  it("I1: with ETH in the fee distributor, closing is two confirmed steps: pay out the distributor, then close without a bundle", async () => {
     const { posts } = renderPage("/validators", { scenario: "exits" });
     const d = await card(`minipool-${DEMO.minipoolD.toLowerCase()}`);
     expect(within(d).getByText("Exited, ready to close")).toBeInTheDocument();
     expect(within(d).queryByRole("button", { name: "Exit…" })).toBeNull();
+    expect(within(d).queryByRole("button", { name: "Close in one bundle…" })).toBeNull(); // Advanced only
     await userEvent.click(within(d).getByRole("button", { name: "Close minipool" }));
-    const box = await screen.findByRole("dialog");
-    expect(within(box).getByText(/Your fee distributor also holds ETH/)).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Step 1 of 2: pay out your fee distributor" })).toBeInTheDocument();
+    expect(within(dialog()).getByText(/It is paid out before minipool/)).toBeInTheDocument();
+    await confirmIn(dialog(), "Distribute");
+    await within(dialog()).findByText("Transaction confirmed");
+    expect(posts()).toHaveLength(1);
+    await userEvent.click(within(dialog()).getByRole("button", { name: "Done" }));
+    // Step 2 needs its own check and confirm; no bundle, so no second transaction in the fee.
+    const box = await screen.findByRole("dialog", { name: /Step 2 of 2: close minipool/ });
     expect(await within(box).findByText(/You receive about/)).toHaveTextContent("You receive about 8.0311 ETH of the 32.0514 ETH in the minipool.");
-    const fee = within(box).getByTestId("tx-fee");
-    expect(within(fee).getByText("Second transaction (close)").nextElementSibling).toHaveTextContent("600,000 gas");
-    expect(within(fee).getByText("Gas limit").nextElementSibling).toHaveTextContent("273,000");
+    expect(within(within(box).getByTestId("tx-fee")).queryByText(/Second transaction/)).toBeNull();
+    expect(posts()).toHaveLength(1);
     await confirmIn(box, "Close minipool");
-    expect(await within(dialog()).findByText("Transaction confirmed")).toBeInTheDocument();
-    expect(posts()[0]).toMatchObject({ path: "/api/sn/minipool/close", params: { address: DEMO.minipoolD.toLowerCase(), bundle: "true", gasLimit: "273000" } });
+    await within(dialog()).findByText("Transaction confirmed");
+    expect(posts().map((p) => p.path)).toEqual(["/api/sn/node/distribute", "/api/sn/minipool/close"]);
+    expect(posts()[1].params).toMatchObject({ address: DEMO.minipoolD.toLowerCase(), bundle: "false", gasLimit: "273000" });
+  });
+
+  it("I1: cancelling step 1 ends the close; nothing is sent", async () => {
+    const { posts } = renderPage("/validators", { scenario: "exits" });
+    const d = await card(`minipool-${DEMO.minipoolD.toLowerCase()}`);
+    await userEvent.click(within(d).getByRole("button", { name: "Close minipool" }));
+    await screen.findByRole("dialog", { name: "Step 1 of 2: pay out your fee distributor" });
+    await userEvent.click(await within(dialog()).findByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("I1: Advanced mode offers the one-block bundle, says it is often not included and points to the two-step close", async () => {
+    const { posts } = renderPage("/validators", { scenario: "exits" }, { advanced: true });
+    const d = await card(`minipool-${DEMO.minipoolD.toLowerCase()}`);
+    await userEvent.click(within(d).getByRole("button", { name: "Close in one bundle…" }));
+    const box = await screen.findByRole("dialog");
+    expect(within(box).getByText(/Bundles are often not included at the normal tip/)).toBeInTheDocument();
+    expect(await within(box).findByText(/plus your share of the fee distributor/)).toBeInTheDocument();
+    const fee = within(box).getByTestId("tx-fee");
+    expect(within(fee).getByText(/^Second transaction \(close\)/).nextElementSibling).toHaveTextContent("600,000 gas");
+    await confirmIn(box, "Close in one bundle");
+    await within(dialog()).findByText("Transaction confirmed");
+    expect(posts()[0]).toMatchObject({ path: "/api/sn/minipool/close", params: { bundle: "true", gasLimit: "273000" } });
+  });
+
+  it("an empty fee distributor: closing is one step", async () => {
+    const node = SCENARIOS.exits.reads["node/status"] as object;
+    const { posts } = renderPage("/validators", { scenario: "exits", reads: { "node/status": { ...node, feeDistributorBalance: 0 } } });
+    const d = await card(`minipool-${DEMO.minipoolD.toLowerCase()}`);
+    await userEvent.click(within(d).getByRole("button", { name: "Close minipool" }));
+    await confirmIn(await screen.findByRole("dialog", { name: /^Close minipool/ }), "Close minipool");
+    await within(dialog()).findByText("Transaction confirmed");
+    expect(posts().map((p) => [p.path, p.params.bundle])).toEqual([["/api/sn/minipool/close", "false"]]);
   });
 
   it("won't close a minipool whose balance is below what it borrowed", async () => {
     const { posts } = renderPage("/validators", {
       scenario: "exits",
       reads: {
+        "node/status": { ...(SCENARIOS.exits.reads["node/status"] as object), feeDistributorBalance: 0 },
         "minipool/get-minipool-close-details-for-node": {
           status: "success",
           error: "",

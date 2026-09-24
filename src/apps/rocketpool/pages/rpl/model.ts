@@ -23,6 +23,8 @@ export interface RplView {
   legacyMinimum: bigint;
   /** The most legacy RPL that can be unstaked now. */
   legacyUnstakable: bigint;
+  /** The most megapool RPL that can be unstaked now (CLI rule: megapool stake, and never locked RPL). */
+  megapoolUnstakable: bigint;
   unstaking: bigint;
   /** When the unstaking RPL can be withdrawn (ms), if anything is unstaking. */
   withdrawableAt: number | null;
@@ -58,6 +60,7 @@ export function rplView(node: NodeStatus, nowMs: number): RplView {
     locked,
     legacyMinimum,
     legacyUnstakable: free > 0n ? free : 0n,
+    megapoolUnstakable: minBig(big(node.rplStakeMegapool), big(node.totalRplStake) - locked),
     unstaking,
     withdrawableAt,
     unstakingState,
@@ -65,6 +68,31 @@ export function rplView(node: NodeStatus, nowMs: number): RplView {
     otherRplAddress: other,
     minimumPercent: Math.round((node.rplStakeThresholdFraction ?? 0.15) * 100),
   };
+}
+
+function minBig(a: bigint, b: bigint): bigint {
+  const m = a < b ? a : b;
+  return m > 0n ? m : 0n;
+}
+
+/**
+ * What a new unstake does to RPL that is already unstaking. RocketNodeStaking
+ * (`_unstakeRPLFor` / `_unstakeLegacyRPL`, Saturn) first withdraws unstaking
+ * RPL whose period has passed (only if its withdrawal cooldown has passed
+ * too), then adds the new amount and restarts the timer for everything that
+ * is unstaking. Smartnode's CLI (withdraw-rpl.go) warns the same way.
+ */
+export type UnstakeEffect =
+  | { kind: "none" }
+  /** Still waiting: the wait restarts for all of it, ending around `newEnd`. */
+  | { kind: "restart"; amount: bigint; currentEnd: number | null; newEnd: number | null }
+  /** Ready: normally paid out first by the unstake itself; withdrawing it first is the sure way. */
+  | { kind: "ready"; amount: bigint };
+
+export function unstakeEffect(v: RplView, nowMs: number): UnstakeEffect {
+  if (v.unstaking === 0n || v.unstakingState === "none") return { kind: "none" };
+  if (v.unstakingState === "ready") return { kind: "ready", amount: v.unstaking };
+  return { kind: "restart", amount: v.unstaking, currentEnd: v.withdrawableAt, newEnd: v.periodMs !== null ? nowMs + v.periodMs : null };
 }
 
 /** A typed amount checked against a maximum: the wei, or why not. */

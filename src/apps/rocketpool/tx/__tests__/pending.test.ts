@@ -35,6 +35,8 @@ describe("pending transactions", () => {
     expect(pendingKey("node/wait-and-stake-rpl", { amountWei: "5", approvalTxHash: HASH })).toBe(pendingKey("node/stake-rpl", { amountWei: "9" }));
     expect(pendingKey("node/wait-and-stake-rpl")).toBe("node/stake-rpl");
     expect(pendingKey("node/stake-rpl-approve-rpl")).not.toBe("node/stake-rpl");
+    // Claiming and claiming-and-staking the same reward periods is one action.
+    expect(pendingKey("node/claim-and-stake-rewards", { indices: "42,43", stakeAmount: "1" })).toBe(pendingKey("node/claim-rewards", { indices: "42,43" }));
     const store = new PendingTxStore({ api: createMockRocketpoolApi(), storage: null });
     expect(store.begin({ key: pendingKey("node/wait-and-stake-rpl"), title: "Stake", route: "node/wait-and-stake-rpl", params: {} })).toBe(true);
     expect(store.begin({ key: pendingKey("node/stake-rpl", { amountWei: "1" }), title: "Stake", route: "node/stake-rpl", params: {} })).toBe(false);

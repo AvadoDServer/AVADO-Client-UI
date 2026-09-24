@@ -78,10 +78,12 @@ export function lockParams(route: string): readonly string[] {
 
 /**
  * Write routes that end in the same on-chain action share one lock:
- * `wait-and-stake-rpl` stakes exactly like `stake-rpl`.
+ * `wait-and-stake-rpl` stakes exactly like `stake-rpl`, and
+ * `claim-and-stake-rewards` claims the same periods as `claim-rewards`.
  */
 export const LOCK_ALIASES: Readonly<Record<string, string>> = Object.freeze({
   "node/wait-and-stake-rpl": "node/stake-rpl",
+  "node/claim-and-stake-rewards": "node/claim-rewards",
 });
 
 /** One spelling per target: addresses lower-case, whole numbers without leading zeros ("007" → "7"). */

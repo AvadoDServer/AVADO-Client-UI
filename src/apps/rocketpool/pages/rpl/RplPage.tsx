@@ -9,7 +9,7 @@ import { CAN_RULES } from "../../tx/rules";
 import { TransactionFlow } from "../../tx/TransactionFlow";
 import { Address, Callout, Facts, LoadError, LoadingCard, NodeGate, PageHeader, SectionCard } from "../common";
 import type { FlowConfig } from "../validators/actions";
-import { checkAmount, rplView } from "./model";
+import { checkAmount, rplView, unstakeEffect, type UnstakeEffect } from "./model";
 import { StakeRplFlow } from "./StakeRplFlow";
 
 /** RPL (Advanced): stake on the megapool, unstake legacy or megapool RPL, and withdraw after the unstaking period. */
@@ -71,6 +71,33 @@ function AmountForm({
   );
 }
 
+/** What unstaking more does to RPL already unstaking, in plain words (contract rule: see `unstakeEffect`). */
+function UnstakeEffectText({ effect, periodText, payoutTo }: { effect: UnstakeEffect; periodText: string; payoutTo: string }) {
+  if (effect.kind === "restart") {
+    return (
+      <>
+        <p>
+          <strong>{formatRpl(effect.amount)} is already unstaking</strong>
+          {effect.currentEnd !== null ? ` and can be withdrawn from ${formatDateTime(effect.currentEnd)}` : ""}. Unstaking more
+          restarts the wait ({periodText}) for all of it
+          {effect.newEnd !== null ? `: everything would be withdrawable around ${formatDateTime(effect.newEnd)}` : ""}.
+        </p>
+        <p>To keep the earlier date, wait until it has been withdrawn before unstaking more.</p>
+      </>
+    );
+  }
+  if (effect.kind === "ready") {
+    return (
+      <p>
+        <strong>{formatRpl(effect.amount)} has finished unstaking.</strong> Unstaking more normally pays it out to {payoutTo} first, then
+        the wait ({periodText}) starts for the new amount only. If Rocket Pool can't pay it out at that moment, it waits again with the
+        rest, so the sure way is to withdraw it first.
+      </p>
+    );
+  }
+  return null;
+}
+
 function Rpl() {
   const { daemonReady } = useAppStatus();
   const node = useRead(getNodeStatus, { enabled: daemonReady });
@@ -83,6 +110,40 @@ function Rpl() {
   const v = rplView(status, Date.now());
   const blockedByAddress = v.otherRplAddress !== null;
   const refresh = () => void node.refresh();
+  const effect = unstakeEffect(v, Date.now());
+  const periodText = v.periodMs ? formatDuration(v.periodMs) : "28 days";
+  const payoutTo = blockedByAddress ? "your RPL withdrawal address" : "your node wallet";
+  const withdrawFlow: FlowConfig = {
+    title: `Withdraw ${formatRpl(v.unstaking)}`,
+    summary: <p>Withdraws the RPL that finished unstaking to {payoutTo}. It is no longer staked afterwards.</p>,
+    tx: { canRoute: "node/can-withdraw-rpl", route: "node/withdraw-rpl", blockedReason: CAN_RULES["node/can-withdraw-rpl"] },
+    confirmLabel: "Withdraw",
+  };
+  /** Shown in both unstake cards and both confirm dialogs while RPL is already unstaking. */
+  const effectNote =
+    effect.kind === "none" ? null : (
+      <Callout tone="warning" title={effect.kind === "ready" ? "Withdraw your unstaked RPL first" : "This restarts the wait"}>
+        <UnstakeEffectText effect={effect} periodText={periodText} payoutTo={payoutTo} />
+        {effect.kind === "ready" && (
+          <div>
+            <Button variant="secondary" size="sm" onClick={() => setFlow(withdrawFlow)} disabled={blockedByAddress}>
+              Withdraw ready RPL first
+            </Button>
+          </div>
+        )}
+      </Callout>
+    );
+  const unstakeSummary = (text: string) => (
+    <div className="flex flex-col gap-2">
+      <p>{text}</p>
+      {effect.kind !== "none" && (
+        <div role="note" className="flex flex-col gap-2 rounded-lg border border-warning/30 bg-warning-subtle p-3 text-warning-text">
+          <UnstakeEffectText effect={effect} periodText={periodText} payoutTo={payoutTo} />
+          {effect.kind === "ready" && <p>To withdraw it first, cancel this and use &ldquo;Withdraw ready RPL first&rdquo;.</p>}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -125,14 +186,7 @@ function Rpl() {
               </p>
               <div>
                 <Button
-                  onClick={() =>
-                    setFlow({
-                      title: `Withdraw ${formatRpl(v.unstaking)}`,
-                      summary: <p>Withdraws the RPL that finished unstaking. It is no longer staked afterwards.</p>,
-                      tx: { canRoute: "node/can-withdraw-rpl", route: "node/withdraw-rpl", blockedReason: CAN_RULES["node/can-withdraw-rpl"] },
-                      confirmLabel: "Withdraw",
-                    })
-                  }
+                  onClick={() => setFlow(withdrawFlow)}
                   disabled={blockedByAddress}
                 >
                   Withdraw RPL
@@ -152,21 +206,19 @@ function Rpl() {
 
       <SectionCard
         title="Unstake megapool RPL"
-        description={`Unstaked RPL can be withdrawn after the unstaking period (${v.periodMs ? formatDuration(v.periodMs) : "28 days"}). Unstaking again restarts the wait for all of it.`}
+        description={`Unstaked RPL can be withdrawn after the unstaking period (${periodText}). Unstaking again restarts the wait for all RPL that is still unstaking.`}
       >
+        {effectNote}
         <AmountForm
           label="RPL to unstake"
-          max={v.megapool}
+          max={v.megapoolUnstakable}
           button="Unstake…"
-          disabled={blockedByAddress || v.megapool === 0n}
+          disabled={blockedByAddress || v.megapoolUnstakable === 0n}
           onSubmit={(wei) =>
             setFlow({
               title: `Unstake ${formatRpl(wei)} from your megapool`,
-              summary: (
-                <p>
-                  Starts the unstaking period for {formatRpl(wei)}. It stops earning rewards now; you can withdraw it once the period
-                  has ended.
-                </p>
+              summary: unstakeSummary(
+                `Starts the unstaking period for ${formatRpl(wei)}. It stops earning rewards now; you can withdraw it once the period has ended.`,
               ),
               tx: { canRoute: "node/can-unstake-rpl", route: "node/unstake-rpl", params: { amountWei: wei.toString() }, blockedReason: CAN_RULES["node/can-unstake-rpl"] },
               confirmLabel: "Unstake",
@@ -179,6 +231,7 @@ function Rpl() {
         title="Unstake legacy RPL"
         description={`RPL staked for your minipools. While you have minipools, at least ${v.minimumPercent}% of the ETH they borrowed must stay staked as RPL.`}
       >
+        {effectNote}
         <AmountForm
           label="Legacy RPL to unstake"
           max={v.legacyUnstakable}
@@ -192,11 +245,8 @@ function Rpl() {
           onSubmit={(wei) =>
             setFlow({
               title: `Unstake ${formatRpl(wei)} of legacy RPL`,
-              summary: (
-                <p>
-                  Starts the unstaking period for {formatRpl(wei)} of the RPL staked for your minipools. You can withdraw it once the
-                  period has ended.
-                </p>
+              summary: unstakeSummary(
+                `Starts the unstaking period for ${formatRpl(wei)} of the RPL staked for your minipools. You can withdraw it once the period has ended.`,
               ),
               tx: {
                 canRoute: "node/can-unstake-legacy-rpl",
@@ -212,6 +262,7 @@ function Rpl() {
 
       {flow && (
         <TransactionFlow
+          key={flow.tx.route}
           open
           {...flow}
           onClose={() => {

@@ -38,6 +38,10 @@ describe("Rewards page", () => {
     const { posts } = renderPage("/rewards", { scenario: "minipool" });
     const card = await screen.findByTestId("claim-periodic", {}, { timeout: 3000 });
     await userEvent.click(within(card).getByLabelText("Stake the RPL again instead of paying it out"));
+    await userEvent.type(within(card).getByLabelText("RPL to stake"), "0");
+    expect(within(card).getByText("Enter more than 0, or untick staking to claim it all")).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Claim and stake" })).toBeDisabled();
+    await userEvent.clear(within(card).getByLabelText("RPL to stake"));
     await userEvent.type(within(card).getByLabelText("RPL to stake"), "40");
     expect(within(card).getByText("At most 36.34 RPL")).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "Claim and stake" })).toBeDisabled();
@@ -95,5 +99,13 @@ describe("Rewards page", () => {
     });
     expect(await screen.findByTestId("claim-unclaimed", {}, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.queryByTestId("claim-periodic")).toBeNull();
+  });
+
+  it("M1: ETH staked on the node's behalf, with a withdrawal address set, is explained apart and not counted", async () => {
+    const node = (await import("../../../api/fixtures")).SCENARIOS.minipool.reads["node/status"] as object;
+    renderPage("/rewards", { scenario: "minipool", reads: { "node/status": { ...node, ethOnBehalfBalance: "2000000000000000000" } } });
+    expect(await screen.findByTestId("claim-total", {}, { timeout: 3000 })).toHaveTextContent("0.2132 ETH + 36.34 RPL");
+    expect(screen.getByText("2 ETH staked on your behalf")).toBeInTheDocument();
+    expect(screen.queryByTestId("claim-eth-on-behalf")).toBeNull();
   });
 });

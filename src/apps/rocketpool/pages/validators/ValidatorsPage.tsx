@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Badge, Button, Card, StatusPill } from "../../../../components/ui";
+import { useMode } from "../../../../settings/ModeProvider";
 import type { MegapoolDetails, NodeStatus } from "../../api/models";
 import {
   getMegapoolPendingRewards,
@@ -28,6 +29,7 @@ import {
   type FlowConfig,
 } from "./actions";
 import { AddValidatorDialog } from "./AddValidatorDialog";
+import { CloseMinipoolFlow } from "./CloseMinipoolFlow";
 import { megapoolSummary, megapoolValidatorView, minipoolView, sortMinipools, type MinipoolView } from "./model";
 
 /** Validators: minipools (the existing fleet) and the megapool, with their actions. */
@@ -67,6 +69,7 @@ function Validators() {
 
   const [flow, setFlow] = useState<FlowConfig | null>(null);
   const [adding, setAdding] = useState(false);
+  const [closing, setClosing] = useState<string | null>(null);
 
   const refreshAll = () => {
     void node.refresh();
@@ -112,6 +115,7 @@ function Validators() {
           detailsError={close.error ?? distribute.error}
           onRetry={refreshAll}
           onAction={setFlow}
+          onClose={setClosing}
         />
       )}
 
@@ -164,6 +168,17 @@ function Validators() {
           }}
         />
       )}
+      {closing && (
+        <CloseMinipoolFlow
+          address={closing}
+          feeDistributorHasBalance={(toBigInt(status.feeDistributorBalance) ?? 0n) > 0n}
+          onClose={() => {
+            setClosing(null);
+            refreshAll();
+          }}
+          onDone={refreshAll}
+        />
+      )}
       {adding && (
         <AddValidatorDialog
           megapool={details}
@@ -187,6 +202,7 @@ function MinipoolSection({
   detailsError,
   onRetry,
   onAction,
+  onClose,
 }: {
   node: NodeStatus;
   views: MinipoolView[] | undefined;
@@ -194,6 +210,7 @@ function MinipoolSection({
   detailsError: unknown;
   onRetry: () => void;
   onAction: (f: FlowConfig) => void;
+  onClose: (address: string) => void;
 }) {
   const feeDistributorHasBalance = (toBigInt(node.feeDistributorBalance) ?? 0n) > 0n;
   return (
@@ -212,13 +229,24 @@ function MinipoolSection({
         </Callout>
       )}
       {views?.map((v) => (
-        <MinipoolCard key={v.mp.address} view={v} feeDistributorHasBalance={feeDistributorHasBalance} onAction={onAction} />
+        <MinipoolCard key={v.mp.address} view={v} feeDistributorHasBalance={feeDistributorHasBalance} onAction={onAction} onClose={onClose} />
       ))}
     </section>
   );
 }
 
-function MinipoolCard({ view, feeDistributorHasBalance, onAction }: { view: MinipoolView; feeDistributorHasBalance: boolean; onAction: (f: FlowConfig) => void }) {
+function MinipoolCard({
+  view,
+  feeDistributorHasBalance,
+  onAction,
+  onClose,
+}: {
+  view: MinipoolView;
+  feeDistributorHasBalance: boolean;
+  onAction: (f: FlowConfig) => void;
+  onClose: (address: string) => void;
+}) {
+  const { isAdvanced } = useMode();
   const { mp, status } = view;
   const index = mp.validator.index && mp.validator.index !== "0" ? mp.validator.index : null;
   const delegate = view.delegate.followsLatest
@@ -257,7 +285,12 @@ function MinipoolCard({ view, feeDistributorHasBalance, onAction }: { view: Mini
       />
       {(view.canClose || view.canDistribute || view.canExit) && (
         <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-          {view.canClose && <Button onClick={() => onAction(closeMinipoolFlow(mp.address, feeDistributorHasBalance))}>Close minipool</Button>}
+          {view.canClose && <Button onClick={() => onClose(mp.address)}>Close minipool</Button>}
+          {view.canClose && feeDistributorHasBalance && isAdvanced && (
+            <Button variant="ghost" onClick={() => onAction(closeMinipoolFlow(mp.address, { bundle: true }))}>
+              Close in one bundle…
+            </Button>
+          )}
           {view.canDistribute && (
             <Button variant="secondary" onClick={() => onAction(distributeMinipoolFlow(mp.address))}>
               Distribute rewards

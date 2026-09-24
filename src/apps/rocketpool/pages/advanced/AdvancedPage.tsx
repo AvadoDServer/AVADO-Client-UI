@@ -82,7 +82,7 @@ function AutomaticActions() {
     <>
       <SectionCard
         title="Automatic actions"
-        description="Your Rocket Pool node sends these transactions by itself, paid from the node wallet."
+        description="Your Rocket Pool node does these by itself. Its transactions are paid from the node wallet."
         data-testid="automatic-actions"
       >
         <ul className="flex flex-col gap-3">

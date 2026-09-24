@@ -1,6 +1,6 @@
 import { DEMO, SCENARIOS } from "../../../api/fixtures";
 import type { NodeStatus } from "../../../api/models";
-import { checkAmount, rplView } from "../model";
+import { checkAmount, rplView, unstakeEffect } from "../model";
 
 const ETH = 10n ** 18n;
 const node = (name: keyof typeof SCENARIOS) => SCENARIOS[name].reads["node/status"] as NodeStatus;
@@ -39,5 +39,24 @@ describe("RPL", () => {
     expect(checkAmount(0n, "0", 5n).error).toBe("Enter more than 0.");
     expect(checkAmount(6n, "6", 5n).error).toBe("That is more than is available.");
     expect(checkAmount(5n, "5", 5n)).toEqual({ wei: 5n });
+  });
+
+  it("megapool RPL: at most the megapool stake, and never locked RPL (CLI rule)", () => {
+    const exits = node("exits"); // megapool 200, total 1100
+    expect(rplView(exits, NOW).megapoolUnstakable).toBe(200n * ETH);
+    expect(rplView({ ...exits, nodeRPLLocked: String(1000n * ETH) }, NOW).megapoolUnstakable).toBe(100n * ETH);
+  });
+
+  it("I2: unstaking more restarts the wait for everything still unstaking; ready RPL is paid out first", () => {
+    const exits = node("exits");
+    expect(unstakeEffect(rplView(node("minipool"), NOW), NOW)).toEqual({ kind: "none" });
+    expect(unstakeEffect(rplView(exits, NOW), NOW)).toEqual({ kind: "ready", amount: 300n * ETH });
+    const waiting = rplView({ ...exits, lastRPLUnstakeTime: "2026-09-20T10:00:00Z" }, NOW);
+    expect(unstakeEffect(waiting, NOW)).toEqual({
+      kind: "restart",
+      amount: 300n * ETH,
+      currentEnd: Date.parse("2026-10-18T10:00:00Z"),
+      newEnd: NOW + 28 * DAY,
+    });
   });
 });

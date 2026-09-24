@@ -1,12 +1,7 @@
-import type { CanDistributeFeeDistributor, CanResponse } from "../../api/models";
-import { formatEth, formatRpl, shortAddress, toBigInt } from "../../lib/units";
-import { pendingKey } from "../../tx/pending";
+import { formatEth, formatRpl, shortAddress } from "../../lib/units";
 import { CAN_RULES } from "../../tx/rules";
-import { distributeMegapoolFlow, distributeMinipoolFlow, type FlowConfig } from "../validators/actions";
+import { distributeFeeDistributorFlow, distributeMegapoolFlow, distributeMinipoolFlow, type FlowConfig } from "../validators/actions";
 import type { ClaimItem } from "./model";
-
-/** Claiming and claiming-and-staking the same periods is one action: one lock for both. */
-export const PERIODIC_LOCK = pendingKey("node/claim-rewards");
 
 /** The flow that claims one item. `restakeRpl` (periodic rewards only): stake this much of the RPL again instead of paying it out. */
 export function claimFlow(item: ClaimItem, { nodeAddress, restakeRpl = 0n }: { nodeAddress: string; restakeRpl?: bigint }): FlowConfig {
@@ -16,25 +11,11 @@ export function claimFlow(item: ClaimItem, { nodeAddress, restakeRpl = 0n }: { n
     case "minipool":
       return distributeMinipoolFlow(item.address!);
     case "fee-distributor":
-      return {
-        title: "Distribute your fee distributor",
-        summary: (
-          <p>
-            Pays out the tips and MEV your minipools collected outside the smoothing pool: your share (about {formatEth(item.eth)})
-            goes to your withdrawal address, the rest to Rocket Pool's stakers.
-          </p>
-        ),
-        tx: {
-          canRoute: "node/can-distribute",
-          route: "node/distribute",
-          blockedReason: (can: CanResponse) =>
-            (toBigInt((can as CanDistributeFeeDistributor).balance) ?? 0n) > 0n ? null : "Your fee distributor is empty right now.",
-        },
-        confirmLabel: "Distribute",
-      };
+      return distributeFeeDistributorFlow(item.eth);
     case "periodic": {
       const indices = (item.indices ?? []).join(",");
-      const restake = restakeRpl > 0n && restakeRpl <= item.rpl ? restakeRpl : 0n;
+      // A restake never quietly turns into a plain claim: an amount above the claimed RPL is refused below.
+      const restake = restakeRpl > 0n ? restakeRpl : 0n;
       return {
         title: restake > 0n ? "Claim your rewards and stake RPL" : "Claim your periodic rewards",
         summary: (
@@ -60,9 +41,9 @@ export function claimFlow(item: ClaimItem, { nodeAddress, restakeRpl = 0n }: { n
                 canRoute: "node/can-claim-and-stake-rewards",
                 route: "node/claim-and-stake-rewards",
                 params: { indices, stakeAmount: restake.toString() },
-                lockKey: PERIODIC_LOCK,
+                blockedReason: () => (restake > item.rpl ? `You can stake at most the ${formatRpl(item.rpl)} you claim.` : null),
               }
-            : { canRoute: "node/can-claim-rewards", route: "node/claim-rewards", params: { indices }, lockKey: PERIODIC_LOCK },
+            : { canRoute: "node/can-claim-rewards", route: "node/claim-rewards", params: { indices } },
         confirmLabel: restake > 0n ? "Claim and stake" : "Claim",
       };
     }
