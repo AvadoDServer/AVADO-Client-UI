@@ -11,6 +11,7 @@
 import type { NodeStatus } from "../../api/models";
 import { nsToMs, parseTime } from "../../lib/time";
 import { isZeroAddress, sameAddress, toBigInt } from "../../lib/units";
+import { payoutAddress } from "../rewards/model";
 
 const big = (v: unknown): bigint => toBigInt(v as string | number | null | undefined) ?? 0n;
 
@@ -102,4 +103,15 @@ export function checkAmount(parsed: bigint | null, text: string, max: bigint): {
   if (parsed === 0n) return { wei: null, error: "Enter more than 0." };
   if (parsed > max) return { wei: null, error: "That is more than is available." };
   return { wei: parsed };
+}
+
+/**
+ * Where withdrawn RPL goes, in words. A separate RPL withdrawal address wins;
+ * without one, RocketNodeManager.getNodeRPLWithdrawalAddress falls back to the
+ * primary withdrawal address, so it is the node wallet only when that is
+ * still the node itself.
+ */
+export function rplPayoutTo(node: NodeStatus, otherRplAddress: string | null): string {
+  if (otherRplAddress !== null) return "your RPL withdrawal address";
+  return payoutAddress(node).isNodeWallet ? "your node wallet" : "your withdrawal address";
 }

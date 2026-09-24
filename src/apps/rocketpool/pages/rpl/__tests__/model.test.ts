@@ -1,6 +1,6 @@
 import { DEMO, SCENARIOS } from "../../../api/fixtures";
 import type { NodeStatus } from "../../../api/models";
-import { checkAmount, rplView, unstakeEffect } from "../model";
+import { checkAmount, rplPayoutTo, rplView, unstakeEffect } from "../model";
 
 const ETH = 10n ** 18n;
 const node = (name: keyof typeof SCENARIOS) => SCENARIOS[name].reads["node/status"] as NodeStatus;
@@ -58,5 +58,13 @@ describe("RPL", () => {
       currentEnd: Date.parse("2026-10-18T10:00:00Z"),
       newEnd: NOW + 28 * DAY,
     });
+  });
+
+  it("N1: withdrawn RPL goes to the RPL address, else the withdrawal address, else the node wallet", () => {
+    const exits = node("exits");
+    expect(rplPayoutTo(exits, null)).toBe("your withdrawal address");
+    expect(rplPayoutTo(exits, DEMO.coldWallet)).toBe("your RPL withdrawal address");
+    expect(rplPayoutTo({ ...exits, primaryWithdrawalAddress: DEMO.nodeAddress }, null)).toBe("your node wallet");
+    expect(rplPayoutTo({ ...exits, primaryWithdrawalAddress: "0x0000000000000000000000000000000000000000" }, null)).toBe("your node wallet");
   });
 });

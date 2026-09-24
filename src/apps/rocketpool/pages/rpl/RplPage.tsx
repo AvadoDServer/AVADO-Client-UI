@@ -9,7 +9,7 @@ import { CAN_RULES } from "../../tx/rules";
 import { TransactionFlow } from "../../tx/TransactionFlow";
 import { Address, Callout, Facts, LoadError, LoadingCard, NodeGate, PageHeader, SectionCard } from "../common";
 import type { FlowConfig } from "../validators/actions";
-import { checkAmount, rplView, unstakeEffect, type UnstakeEffect } from "./model";
+import { checkAmount, rplPayoutTo, rplView, unstakeEffect, type UnstakeEffect } from "./model";
 import { StakeRplFlow } from "./StakeRplFlow";
 
 /** RPL (Advanced): stake on the megapool, unstake legacy or megapool RPL, and withdraw after the unstaking period. */
@@ -112,7 +112,7 @@ function Rpl() {
   const refresh = () => void node.refresh();
   const effect = unstakeEffect(v, Date.now());
   const periodText = v.periodMs ? formatDuration(v.periodMs) : "28 days";
-  const payoutTo = blockedByAddress ? "your RPL withdrawal address" : "your node wallet";
+  const payoutTo = rplPayoutTo(status, v.otherRplAddress);
   const withdrawFlow: FlowConfig = {
     title: `Withdraw ${formatRpl(v.unstaking)}`,
     summary: <p>Withdraws the RPL that finished unstaking to {payoutTo}. It is no longer staked afterwards.</p>,
@@ -181,8 +181,7 @@ function Rpl() {
           ) : (
             <>
               <p className="text-sm text-fg">
-                {formatRpl(v.unstaking)} has finished unstaking and can be withdrawn to{" "}
-                {blockedByAddress ? "your RPL withdrawal address" : "your node wallet"}.
+                {formatRpl(v.unstaking)} has finished unstaking and can be withdrawn to {payoutTo}.
               </p>
               <div>
                 <Button

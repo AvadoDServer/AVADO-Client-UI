@@ -88,7 +88,11 @@ describe("RPL page", () => {
     const { posts } = renderPage("/rpl", { scenario: "exits" }, { advanced: true });
     const card = await screen.findByTestId("rpl-unstaking", {}, { timeout: 3000 });
     expect(within(card).getByText(/300 RPL has finished unstaking/)).toBeInTheDocument();
+    // N1: no separate RPL address, and the withdrawal address is a cold wallet: that is where the RPL goes.
+    expect(within(card).getByText(/can be withdrawn to your withdrawal address\./)).toBeInTheDocument();
     await userEvent.click(within(card).getByRole("button", { name: "Withdraw RPL" }));
+    expect(within(dialog()).getByText(/finished unstaking to your withdrawal address/)).toBeInTheDocument();
+    expect(within(dialog()).queryByText(/to your node wallet/)).toBeNull();
     await confirmIn(dialog(), "Withdraw");
     await within(dialog()).findByText("Transaction confirmed");
     expect(posts()[0].path).toBe("/api/sn/node/withdraw-rpl");
