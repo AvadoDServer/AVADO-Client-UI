@@ -180,14 +180,7 @@ function Validators() {
         />
       )}
       {adding && (
-        <AddValidatorDialog
-          megapool={details}
-          expressTickets={details?.nodeExpressTicketCount ?? status.expressTicketCount ?? 0}
-          nodeEth={toBigInt(status.accountBalances.eth) ?? 0n}
-          credit={toBigInt(status.creditBalance) ?? 0n}
-          onClose={() => setAdding(false)}
-          onDone={refreshAll}
-        />
+        <AddValidatorDialog node={status} megapool={hasMegapool ? details : null} onClose={() => setAdding(false)} onDone={refreshAll} />
       )}
     </>
   );

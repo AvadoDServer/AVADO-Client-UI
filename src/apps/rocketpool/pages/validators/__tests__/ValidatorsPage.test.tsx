@@ -205,25 +205,52 @@ describe("Validators page", () => {
     expect(posts()[0].path).toBe("/api/sn/node/provision-express-tickets");
   });
 
-  it("adds a validator: the exact bond, a check, then a deposit that saves the keys and asks for a key check", async () => {
+  it("adds a validator with the setup wizard's deposit form: the exact bond, and blocked while the wallet is short", async () => {
     const { posts, api } = renderPage("/validators", { scenario: "mixed" });
     const mega = await card("megapool");
     await userEvent.click(within(mega).getByRole("button", { name: "Add a validator" }));
     const box = await screen.findByRole("dialog", { name: "Add validators" });
     // Active 1, bonded 8 + queued 4; the demo requirement for 2 validators is 8 ETH → the 1 ETH minimum.
-    expect(await within(box).findByText("Bond to deposit")).toBeInTheDocument();
-    expect(within(box).getByText("Bond to deposit").nextElementSibling).toHaveTextContent("1 ETH");
+    const plan = await within(box).findByTestId("deposit-plan", {}, { timeout: 3000 });
+    expect(within(plan).getByText("Your bond").nextElementSibling).toHaveTextContent("1 ETH");
     expect(api.calls.find((c) => c.path === "/api/sn/node/get-bond-requirement")?.params).toEqual({ numValidators: 2 });
-    expect(within(box).getByText("Not enough ETH yet")).toBeInTheDocument();
-    await userEvent.click(within(box).getByRole("button", { name: "Review" }));
-    const flow = await screen.findByRole("dialog", { name: "Add a validator" });
-    await confirmIn(flow, "Deposit");
+    expect(within(box).getByText("Not possible right now")).toBeInTheDocument();
+    expect(within(box).getByText(/doesn't have enough ETH for this bond: it has 0.0061 ETH/)).toBeInTheDocument();
+    expect(within(box).getByRole("button", { name: "Create 1 validator" })).toBeDisabled();
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("adds a validator: a check, then a deposit with the one fixed parameter set that asks for a key check", async () => {
+    const enough = { ...SCENARIOS.mixed.reads["node/can-deposit"] as object, canDeposit: true, insufficientBalance: false, nodeBalance: "5000000000000000000", gasLimits: { estimated: 1_210_000, safe: 1_815_000 } };
+    const { posts } = renderPage("/validators", { scenario: "mixed", reads: { "node/can-deposit": enough } });
+    const mega = await card("megapool");
+    await userEvent.click(within(mega).getByRole("button", { name: "Add a validator" }));
+    const box = await screen.findByRole("dialog", { name: "Add validators" });
+    const create = await within(box).findByRole("button", { name: "Create 1 validator" });
+    await waitFor(() => expect(create).toBeEnabled(), { timeout: 3000 });
+    await userEvent.click(create);
+    const flow = await screen.findByRole("dialog", { name: "Create 1 validator" });
+    expect(within(flow).getByText(/network fee below is paid from the node wallet on top of the bond/)).toBeInTheDocument();
+    await confirmIn(flow, "Create validators");
     await within(flow).findByText("Transaction confirmed");
     expect(posts()[0]).toMatchObject({
       path: "/api/sn/node/deposit",
-      params: { amountWei: "1000000000000000000", minFee: "0", salt: "0", expressTickets: 1, count: 1, useCreditBalance: "false", submit: "true" },
+      params: { amountWei: "1000000000000000000", minFee: "0", salt: "0", expressTickets: "1", count: "1", useCreditBalance: "false", submit: "true" },
     });
     expect(posts().some((p) => p.path === "/api/avado/reconcile/run")).toBe(true);
+  });
+
+  it("a megapool with a debt can't add validators through the form either", async () => {
+    const { posts } = renderPage("/validators", {
+      scenario: "mixed",
+      reads: { "node/can-deposit": { ...SCENARIOS.mixed.reads["node/can-deposit"] as object, canDeposit: false, insufficientBalance: true, nodeHasDebt: true } },
+    });
+    const mega = await card("megapool");
+    await userEvent.click(within(mega).getByRole("button", { name: "Add a validator" }));
+    const box = await screen.findByRole("dialog", { name: "Add validators" });
+    expect(await within(box).findByText(/Your megapool has a debt. Repay it first/, {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(within(box).getByRole("button", { name: "Create 1 validator" })).toBeDisabled();
+    expect(posts()).toHaveLength(0);
   });
 
   it("asks to set up the node when there is no wallet, and waits when the daemon is down", async () => {

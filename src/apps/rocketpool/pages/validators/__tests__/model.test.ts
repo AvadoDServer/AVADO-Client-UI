@@ -1,7 +1,6 @@
 import { SCENARIOS } from "../../../api/fixtures";
 import type { MegapoolStatusResponse, MegapoolValidator, MinipoolCloseDetailsResponse, MinipoolDetails, MinipoolDistributeDetailsResponse, MinipoolStatusResponse } from "../../../api/models";
 import {
-  bondForNewValidators,
   exitCodeForMinipool,
   megapoolSummary,
   megapoolValidatorStatus,
@@ -11,7 +10,6 @@ import {
   sortMinipools,
 } from "../model";
 
-const ETH = 10n ** 18n;
 const reads = (name: keyof typeof SCENARIOS) => SCENARIOS[name].reads;
 const minipools = (name: keyof typeof SCENARIOS) => (reads(name)["minipool/status"] as MinipoolStatusResponse).minipools;
 const close = (name: keyof typeof SCENARIOS) => (reads(name)["minipool/get-minipool-close-details-for-node"] as MinipoolCloseDetailsResponse).details;
@@ -85,24 +83,5 @@ describe("megapool", () => {
   it("summarises debt, refund and what is in progress", () => {
     expect(megapoolSummary(mega("exits"))).toMatchObject({ hasDebt: true, debt: 5n * 10n ** 16n, hasRefund: true, refund: 3n * 10n ** 17n, queued: 1, exiting: 1, locked: 1 });
     expect(megapoolSummary(mega("mixed"))).toMatchObject({ hasDebt: false, hasRefund: false, queued: 1 });
-  });
-});
-
-describe("the bond for new validators (Smartnode's CLI rule)", () => {
-  it("first: requirement minus what is bonded and queued; then the step between requirements", () => {
-    // Bonded 8 + queued 4; requirements for 4, 5, 6 validators: 16, 20, 24 ETH.
-    const r = bondForNewValidators(8n * ETH, 4n * ETH, [16n * ETH, 20n * ETH, 24n * ETH]);
-    expect(r.perValidator).toEqual([4n * ETH, 4n * ETH, 4n * ETH]);
-    expect(r.total).toBe(12n * ETH);
-  });
-
-  it("each validator's bond stays between 1 and 32 ETH", () => {
-    expect(bondForNewValidators(20n * ETH, 0n, [8n * ETH]).perValidator).toEqual([ETH]);
-    expect(bondForNewValidators(0n, 0n, [40n * ETH]).perValidator).toEqual([32n * ETH]);
-    expect(bondForNewValidators(0n, 0n, []).total).toBe(0n);
-  });
-
-  it("keeps wei exact", () => {
-    expect(bondForNewValidators(1n, 0n, [4n * ETH]).total).toBe(4n * ETH - 1n);
   });
 });

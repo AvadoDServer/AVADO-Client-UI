@@ -750,7 +750,8 @@ const mixedNode: MockScenario = {
     "minipool/get-distribute-balance-details": { status: "success", error: "", details: [distributeDetail(MINIPOOL_C, { canDistribute: true, balance: "0.0295", nodeShare: "0.0133" })] },
     "megapool/can-distribute": can({ canDistribute: true, megapoolNotDeployed: false, lastDistributionTime: 1_755_000_000, lockedValidatorCount: 0, exitingValidatorCount: 0 }, { estimated: 98_000, safe: 147_000 }),
     "megapool/pending-rewards": pendingRewards("0.0214"),
-    "node/can-deposit": can({ canDeposit: true, canUseCredit: false, creditBalance: 0, usableCreditBalance: 0, nodeBalance: eth("0.0061"), insufficientBalance: false, insufficientBalanceWithoutCredit: false, invalidAmount: false, depositDisabled: false, inConsensus: false, nodeHasDebt: false }, { estimated: 1_210_000, safe: 1_815_000 }),
+    // 0.0061 ETH in the wallet: not enough for a bond.
+    "node/can-deposit": canDeposit("0.0061", false),
   },
   logLines: [
     ...NORMAL_LOG,

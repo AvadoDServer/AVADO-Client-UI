@@ -9,7 +9,7 @@ import type {
   MinipoolDetails,
   MinipoolDistributeDetails,
 } from "../../api/models";
-import { sameAddress, toBigInt, WEI_PER_ETH } from "../../lib/units";
+import { sameAddress, toBigInt } from "../../lib/units";
 import type { StatusTone } from "../../../../components/ui";
 
 export interface Status {
@@ -192,33 +192,4 @@ export function megapoolSummary(m: MegapoolDetails) {
     exiting: m.exitingValidatorCount,
     locked: m.lockedValidatorCount,
   };
-}
-
-/* ------------------------------------------------------------------ */
-/* New validators: the bond                                            */
-/* ------------------------------------------------------------------ */
-
-const ONE_ETH = WEI_PER_ETH;
-const MAX_BOND = 32n * WEI_PER_ETH;
-
-/**
- * The ETH to send for `count` new megapool validators, exactly as Smartnode's
- * CLI (`rocketpool-cli/megapool/deposit.go`) works it out: each new validator
- * adds the bond requirement for the megapool with it included, minus what is
- * already bonded (for the first: bond + queued bond; then the previous
- * requirement), each between 1 and 32 ETH.
- *
- * `requirements[i]` is `node/get-bond-requirement?numValidators=active+i+1`.
- */
-export function bondForNewValidators(nodeBond: bigint, nodeQueuedBond: bigint, requirements: bigint[]): { perValidator: bigint[]; total: bigint } {
-  let bonded = nodeBond + nodeQueuedBond;
-  const perValidator: bigint[] = [];
-  for (const req of requirements) {
-    let next = req - bonded;
-    if (next < ONE_ETH) next = ONE_ETH;
-    else if (next > MAX_BOND) next = MAX_BOND;
-    perValidator.push(next);
-    bonded = req;
-  }
-  return { perValidator, total: perValidator.reduce((a, b) => a + b, 0n) };
 }

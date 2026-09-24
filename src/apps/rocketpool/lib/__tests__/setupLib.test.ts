@@ -80,6 +80,21 @@ describe("megapool bond (Smartnode CLI rule)", () => {
     expect(newValidatorBonds([100n * ETH], 0n)).toEqual([MAX_VALIDATOR_BOND_WEI]);
     expect(sumWei([1n, 2n, 3n])).toBe(6n);
   });
+
+  // Moved from the Validators model tests when the two deposit screens were merged.
+  it("first: requirement minus what is bonded and queued; then the step between requirements", () => {
+    // Bonded 8 + queued 4; requirements for 4, 5, 6 validators: 16, 20, 24 ETH.
+    const r = newValidatorBonds([16n * ETH, 20n * ETH, 24n * ETH], 8n * ETH + 4n * ETH);
+    expect(r).toEqual([4n * ETH, 4n * ETH, 4n * ETH]);
+    expect(sumWei(r)).toBe(12n * ETH);
+  });
+
+  it("each validator's bond stays between 1 and 32 ETH, and wei stay exact", () => {
+    expect(newValidatorBonds([8n * ETH], 20n * ETH)).toEqual([ETH]);
+    expect(newValidatorBonds([40n * ETH], 0n)).toEqual([32n * ETH]);
+    expect(sumWei(newValidatorBonds([], 0n))).toBe(0n);
+    expect(sumWei(newValidatorBonds([4n * ETH], 1n))).toBe(4n * ETH - 1n);
+  });
 });
 
 describe("time zones", () => {

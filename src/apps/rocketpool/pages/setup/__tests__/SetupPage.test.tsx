@@ -6,7 +6,7 @@ import { AppRoutes, Providers } from "../../../App";
 import { DEMO, DemoSnError, reconcileView } from "../../../api/fixtures";
 import { createMockRocketpoolApi, type MockRocketpoolApi, type RocketpoolMockOptions } from "../../../api/mock";
 import { pendingKey } from "../../../tx/pending";
-import { PLAN_DEBOUNCE_MS, creditPlan, depositParams } from "../ValidatorsStep";
+import { PLAN_DEBOUNCE_MS, creditPlan, depositParams } from "../../deposit/NewValidators";
 import { withdrawalAddressProblem, withdrawalAddressWarning } from "../WithdrawalStep";
 import type { CanDepositResponse } from "../../../api/models";
 import { walletError } from "../walletCalls";
