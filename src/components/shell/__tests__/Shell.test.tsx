@@ -289,6 +289,38 @@ describe("Problem banners", () => {
     expect(within(nodeStrip()).queryByText("Synced")).toBeNull();
   });
 
+  it("execution client catching up: warns only after two optimistic answers in a row", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const api = createMockApi({
+        latencyMs: 0,
+        settings: MOCK_SETTINGS,
+        syncing: { head_slot: "100", sync_distance: "0", is_syncing: false, is_optimistic: true },
+      });
+      renderApp({ api });
+      const nodeStrip = () => screen.getByRole("region", { name: "Node status" });
+      // one optimistic answer: a slow block on a healthy node, no warning yet
+      expect(await within(nodeStrip()).findByText("Synced")).toBeInTheDocument();
+      expect(screen.queryByText("Execution client is catching up")).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(12_000));
+      expect(await screen.findByText("Execution client is catching up")).toBeInTheDocument();
+      expect(within(nodeStrip()).getByText("Synced, execution client catching up")).toBeInTheDocument();
+      // verified again: the warning goes away
+      vi.spyOn(api.beacon, "syncing").mockResolvedValue({ head_slot: "101", sync_distance: "0", is_syncing: false, is_optimistic: false });
+      await act(() => vi.advanceTimersByTimeAsync(12_000));
+      expect(await within(nodeStrip()).findByText("Synced")).toBeInTheDocument();
+      expect(screen.queryByText("Execution client is catching up")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("no execution client installed: the strip doesn't say a plain Synced", async () => {
+    renderApp({ mock: { settings: MOCK_SETTINGS, packages: ["dappmanager.dnp.dappnode.eth", "nimbus.avado.dnp.dappnode.eth"] } });
+    const nodeStrip = () => screen.getByRole("region", { name: "Node status" });
+    expect(await within(nodeStrip()).findByText("Synced, no execution client")).toBeInTheDocument();
+  });
+
   it("an installed but stopped execution client (listPackageStates) is stopped, not missing", async () => {
     const api = createMockApi({ latencyMs: 0, settings: MOCK_SETTINGS });
     Object.assign(api.dappmanager, {

@@ -8,6 +8,7 @@ import { ExitDialog } from "./ExitDialog";
 import { FeeRecipientDialog } from "./FeeRecipientDialog";
 import { ExternalIcon, type ValidatorAction } from "./parts";
 import { RemoveDialog } from "./RemoveDialog";
+import { ROCKET_POOL_TEXT, RocketPoolCaution, useRocketPoolInstalled } from "./rocketPool";
 import { beaconchainDashboardUrl } from "./statusText";
 import { useValidators, type ValidatorRowData } from "./useValidators";
 import { ValidatorCard } from "./ValidatorCard";
@@ -103,6 +104,7 @@ export default function ValidatorsPage({ pollMs, retryMs }: ValidatorsPageProps 
   const config = useClientConfig();
   const client = clientDisplayName(config.client);
   const { data, error, refresh } = useValidators(pollMs, retryMs);
+  const rocketPool = useRocketPoolInstalled();
   const [dialog, setDialog] = useState<Dialog>(null);
   const followUps = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -198,15 +200,21 @@ export default function ValidatorsPage({ pollMs, retryMs }: ValidatorsPageProps 
   return (
     <div className="min-w-0">
       <Header ref={headingRef} count={data ? rows.length : undefined} action={data && rows.length > 0 ? <AddButton /> : undefined} />
+      {rocketPool && (
+        <div className="mb-4">
+          <RocketPoolCaution>{ROCKET_POOL_TEXT.page(client)}</RocketPoolCaution>
+        </div>
+      )}
       {body}
       <FeeRecipientDialog
         row={dialog?.action === "fee" ? dialog.row : null}
         defaultFeeRecipient={defaultFeeRecipient}
         onClose={close}
         onChanged={changed}
+        rocketPool={rocketPool}
       />
-      <RemoveDialog row={dialog?.action === "remove" ? dialog.row : null} onClose={close} onRemoved={changed} />
-      <ExitDialog row={dialog?.action === "exit" ? dialog.row : null} onClose={close} onSubmitted={exited} />
+      <RemoveDialog row={dialog?.action === "remove" ? dialog.row : null} onClose={close} onRemoved={changed} rocketPool={rocketPool} />
+      <ExitDialog row={dialog?.action === "exit" ? dialog.row : null} onClose={close} onSubmitted={exited} rocketPool={rocketPool} />
     </div>
   );
 }

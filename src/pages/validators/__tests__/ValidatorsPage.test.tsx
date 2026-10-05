@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createMockApi, MOCK_DEFAULT_FEE_RECIPIENT, MOCK_PUBKEYS } from "../../../api/mock";
+import { createMockApi, MOCK_DEFAULT_FEE_RECIPIENT, MOCK_PACKAGES, MOCK_PUBKEYS } from "../../../api/mock";
 import type { Api } from "../../../api/types";
 import ValidatorsPage from "../ValidatorsPage";
 import { renderWithApi } from "./renderWithApi";
@@ -165,6 +165,21 @@ describe("ValidatorsPage", () => {
       expect(set).not.toHaveBeenCalled();
     });
 
+    it("rejects an address whose checksum is wrong", async () => {
+      const api = renderPage();
+      const set = vi.spyOn(api.keymanager, "setFeeRecipient");
+      const t = await table();
+      await userEvent.click(await t.findByRole("button", { name: "Change fee recipient of Validator 412345" }));
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.type(within(dialog).getByLabelText("Address for this validator"), "0x5AAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+      expect(await within(dialog).findByText(/has a typo/)).toBeInTheDocument();
+      expect(set).not.toHaveBeenCalled();
+      // editing the address clears the old error
+      await userEvent.type(within(dialog).getByLabelText("Address for this validator"), "{Backspace}");
+      expect(within(dialog).queryByText(/has a typo/)).toBeNull();
+    });
+
     it("clears an override back to the default", async () => {
       const api = renderPage();
       const t = await table();
@@ -193,6 +208,9 @@ describe("ValidatorsPage", () => {
       expect(JSON.parse(downloads.calls[0].text).data[0].pubkey).toBe(MOCK_PUBKEYS.active01);
       expect(screen.getByText(file)).toBeInTheDocument();
       expect(screen.getByText(/should have saved/)).toBeInTheDocument();
+      // the slashing-safe wait: 5 epochs, never the old "15 minutes"
+      expect(screen.getByText(/at least 5 epochs \(about 32 minutes\)/)).toBeInTheDocument();
+      expect(screen.queryByText(/15 minutes/)).toBeNull();
 
       expect((await api.keymanager.listKeystores()).map((k) => k.validating_pubkey)).not.toContain(MOCK_PUBKEYS.active01);
       await waitFor(() => expect(screen.getByRole("table").querySelector(`tr[data-pubkey="${MOCK_PUBKEYS.active01}"]`)).toBeNull());
@@ -402,6 +420,32 @@ describe("ValidatorsPage", () => {
       expect(await within(dialog).findByRole("alert")).toHaveTextContent(
         "The beacon node didn't accept the exit: validator has not been active long enough",
       );
+    });
+  });
+
+  describe("Rocket Pool installed", () => {
+    const withRocketPool = () => createMockApi({ packages: [...MOCK_PACKAGES, "rocketpool.avado.dnp.dappnode.eth"] });
+
+    it("says on the page that Rocket Pool manages its own validators", async () => {
+      renderPage(withRocketPool());
+      expect(await screen.findByText(/Rocket Pool is installed\. If it uses Nimbus/)).toBeInTheDocument();
+    });
+
+    it("cautions in the remove, exit and fee-recipient dialogs", async () => {
+      renderPage(withRocketPool());
+      await screen.findByText(/Rocket Pool is installed/);
+      const t = await table();
+      await userEvent.click(await t.findByRole("button", { name: "Remove Validator 412345" }));
+      expect(within(await screen.findByRole("dialog")).getByText(/Rocket Pool adds it back/)).toBeInTheDocument();
+      await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+      await userEvent.click(await t.findByRole("button", { name: "Change fee recipient of Validator 412345" }));
+      expect(within(await screen.findByRole("dialog")).getByText(/leave its fee recipient to Rocket Pool/)).toBeInTheDocument();
+    });
+
+    it("says nothing about Rocket Pool when it isn't installed", async () => {
+      renderPage();
+      await table();
+      expect(screen.queryByText(/Rocket Pool/)).toBeNull();
     });
   });
 });

@@ -7,7 +7,7 @@ import { POLL_MS, usePoll } from "../../hooks/usePoll";
 import { useMode } from "../../settings/ModeProvider";
 import { Banners } from "./Banners";
 import { CLIENT_TITLE } from "./identity";
-import { fetchNodeStatus } from "./nodeStatus";
+import { fetchNodeStatus, type ExecutionState } from "./nodeStatus";
 import { SETTINGS_SAVED_EVENT } from "./events";
 import { findProblems } from "./problems";
 import { Sidebar } from "./Sidebar";
@@ -66,6 +66,15 @@ export function Shell() {
   );
   // Advanced mode adds strip fields: read again at once, keeping what is shown.
   useRefreshOnChange(isAdvanced, node.refresh);
+  // "Catching up" only after two optimistic answers in a row: one slow block
+  // makes a single answer optimistic on a healthy node.
+  const optimisticPolls = useRef(0);
+  const [elCatchingUp, setElCatchingUp] = useState(false);
+  useEffect(() => {
+    if (!node.data) return;
+    optimisticPolls.current = node.data.optimistic ? optimisticPolls.current + 1 : 0;
+    setElCatchingUp(optimisticPolls.current >= 2);
+  }, [node.data]);
   // Settings and packages for the banners. A read that fails (backend
   // restarting, WAMP down) keeps the last known value: never "not installed".
   const lastKnown = useRef<ProblemData>({});
@@ -95,7 +104,16 @@ export function Shell() {
     settings: inputs.data?.settings,
     packages: inputs.data?.packages,
     elOffline: node.data?.elOffline,
+    elCatchingUp,
   });
+  const ids = new Set(problems.map((p) => p.id));
+  const execution: ExecutionState | undefined = ids.has("no-execution-client")
+    ? "missing"
+    : ids.has("execution-client-stopped")
+      ? "stopped"
+      : elCatchingUp
+        ? "catching-up"
+        : undefined;
 
   // A page that saves settings asks for fresh banners right away
   // (`notifySettingsSaved()` from ./events).
@@ -202,7 +220,7 @@ export function Shell() {
       <div ref={behind} data-testid="page-behind-drawer">
         <TopBar ref={menuButton} menuOpen={menuOpen} onMenu={() => setMenuOpen(true)} />
         <div className="flex min-w-0 flex-col lg:pl-[15.5rem]">
-          <StatusStrip status={node.data} loading={node.loading} />
+          <StatusStrip status={node.data} loading={node.loading} execution={execution} />
           <main
             ref={main}
             id="main"

@@ -28,6 +28,43 @@ describe("executionClients", () => {
     expect(executionClientsForNetwork("hoodi")).toEqual([]);
   });
 
+  describe("Lighthouse (its previous wizard's list, no start-script auto-detection)", () => {
+    it("offers Geth, Nethermind and Reth on mainnet", () => {
+      expect(executionClientsForNetwork("mainnet", "lighthouse").map((c) => [c.packageName, c.eeEndpoint])).toEqual([
+        ["ethchain-geth.public.dappnode.eth", "http://ethchain-geth.my.ava.do:8551"],
+        ["avado-dnp-nethermind.public.dappnode.eth", "http://avado-dnp-nethermind.my.ava.do:8551"],
+        ["reth-mainnet.avado.dnp.dappnode.eth", "http://reth-mainnet.my.ava.do:8551"],
+      ]);
+    });
+
+    it("offers Geth, Nethermind and Reth on Holesky", () => {
+      expect(executionClientsForNetwork("holesky", "lighthouse").map((c) => c.packageName)).toEqual([
+        "holesky-geth.avado.dnp.dappnode.eth",
+        "nethermind-holesky.avado.dnp.dappnode.eth",
+        "reth-holesky.avado.dnp.dappnode.eth",
+      ]);
+    });
+
+    it("offers Nethermind on Gnosis", () => {
+      expect(executionClientsForNetwork("gnosis", "lighthouse").map((c) => c.packageName)).toEqual([
+        "nethermind-gnosis.avado.dnp.dappnode.eth",
+      ]);
+    });
+
+    it("does not change what Nimbus offers", () => {
+      expect(executionClientsForNetwork("mainnet", "nimbus")).toEqual(executionClientsForNetwork("mainnet"));
+      expect(executionClientsForNetwork("holesky", "nimbus")).toEqual(executionClientsForNetwork("holesky"));
+      expect(executionClientsForNetwork("mainnet", "nimbus").map((c) => c.packageName)).not.toContain(
+        "reth-mainnet.avado.dnp.dappnode.eth",
+      );
+    });
+
+    it("findExecutionClient finds the Lighthouse-only candidates, so a save writes their endpoint", () => {
+      expect(findExecutionClient("reth-mainnet.avado.dnp.dappnode.eth")?.eeEndpoint).toBe("http://reth-mainnet.my.ava.do:8551");
+      expect(findExecutionClient("reth-holesky.avado.dnp.dappnode.eth")?.eeEndpoint).toBe("http://reth-holesky.my.ava.do:8551");
+    });
+  });
+
   it("every candidate has a unique package name", () => {
     const names = EXECUTION_CLIENTS.map((c) => c.packageName);
     expect(new Set(names).size).toBe(names.length);
