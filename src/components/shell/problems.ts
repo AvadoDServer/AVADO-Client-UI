@@ -22,6 +22,7 @@ export type ProblemId =
   | "execution-client-not-installed"
   | "execution-client-stopped"
   | "execution-client-offline"
+  | "execution-client-catching-up"
   | "fee-recipient"
   | "testnet";
 
@@ -54,6 +55,8 @@ export interface ProblemInputs {
   packages?: PackageState[] | null;
   /** `syncing.el_offline` from the beacon node. */
   elOffline?: boolean;
+  /** `syncing.is_optimistic` from the beacon node, seen on two polls in a row. */
+  elCatchingUp?: boolean;
 }
 
 /** Test networks that no longer run. */
@@ -147,6 +150,15 @@ export function findProblems(i: ProblemInputs): Problem[] {
       tone: "warning",
       title: "Execution client not reachable",
       body: `${name} can't reach ${title || "its execution client"}. It may still be starting; if this stays, check it in the AVADO Admin.`,
+      action: engine ? { label: `Open ${title}`, href: adminPackageUrl(engine) } : { label: "Check settings", to: "/settings" },
+    });
+  } else if (i.elCatchingUp && !executionProblem) {
+    const title = engine ? executionClientTitle(engine) : "";
+    out.push({
+      id: "execution-client-catching-up",
+      tone: "warning",
+      title: "Execution client is catching up",
+      body: `${title || "The execution client"} is still catching up with the chain. Until it does, your validators can miss rewards and can't propose blocks. This usually fixes itself; after a long break it can take a few hours.`,
       action: engine ? { label: `Open ${title}`, href: adminPackageUrl(engine) } : { label: "Check settings", to: "/settings" },
     });
   }

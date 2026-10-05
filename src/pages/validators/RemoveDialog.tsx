@@ -5,6 +5,7 @@ import { downloadText } from "../../lib/download";
 import type { ValidatorRowData } from "./useValidators";
 import { validatorName } from "./parts";
 import { canExit, slashingProtectionFileName } from "./statusText";
+import { ROCKET_POOL_TEXT, RocketPoolCaution } from "./rocketPool";
 
 export interface RemoveDialogProps {
   /** The validator to remove; the dialog is closed when null. */
@@ -12,6 +13,8 @@ export interface RemoveDialogProps {
   onClose: () => void;
   /** Called once the key is gone, to refresh the list. */
   onRemoved: () => void;
+  /** Rocket Pool is installed: show its caution. */
+  rocketPool?: boolean;
 }
 
 /** The slashing-protection export returned by the keymanager. */
@@ -51,7 +54,7 @@ function tryDownload(file: string, data: string): boolean {
  * done step keeps "Download again" available and only closes when the owner
  * closes it.
  */
-export function RemoveDialog({ row, onClose, onRemoved }: RemoveDialogProps) {
+export function RemoveDialog({ row, onClose, onRemoved, rocketPool }: RemoveDialogProps) {
   const { keymanager } = useApi();
   const [phase, setPhase] = useState<Phase>({ step: "confirm" });
   const [exported, setExported] = useState<Export | null>(null);
@@ -149,7 +152,11 @@ export function RemoveDialog({ row, onClose, onRemoved }: RemoveDialogProps) {
             </p>
           )}
           {exported && <p>Keep the file: import it together with the key if you run this validator on another machine.</p>}
-          <p>Wait at least 15 minutes before you start this validator anywhere else.</p>
+          <p>
+            <strong className="font-semibold text-fg">Wait at least 5 epochs (about 32 minutes) before you start this validator
+            anywhere else; an hour is safer.</strong>{" "}
+            Running it in two places at once gets it slashed.
+          </p>
         </div>
       </Modal>
     );
@@ -178,6 +185,7 @@ export function RemoveDialog({ row, onClose, onRemoved }: RemoveDialogProps) {
       }
     >
       <div className="flex flex-col gap-3 text-sm text-fg-muted">
+        {rocketPool && <RocketPoolCaution>{ROCKET_POOL_TEXT.remove}</RocketPoolCaution>}
         <p>
           The key is deleted from this node and the validator stops validating here. This does not exit the validator.
         </p>

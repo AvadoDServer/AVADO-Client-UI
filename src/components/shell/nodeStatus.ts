@@ -16,6 +16,11 @@ export interface NodeStatus {
   outbound?: number;
   /** The beacon node reports its execution client offline. */
   elOffline?: boolean;
+  /**
+   * The beacon node follows the chain optimistically: its execution client
+   * hasn't verified the latest blocks yet (still catching up).
+   */
+  optimistic?: boolean;
   /** When not ready: what supervisord says about the client process, if known. */
   service?: ServiceState;
   /**
@@ -110,6 +115,7 @@ export async function fetchNodeStatus(beacon: BeaconApi, advanced: boolean, prob
   if (s) {
     status.syncing = s;
     status.elOffline = s.el_offline === true;
+    status.optimistic = s.is_optimistic === true;
   }
   const pc = settled(peerCount);
   if (pc && Number.isFinite(Number(pc.connected))) status.peers = Number(pc.connected);
@@ -135,11 +141,22 @@ export function syncPercent(s: SyncingStatus): string {
 }
 
 /**
+ * What the shell knows about the execution client beyond the beacon node's
+ * own answer: none installed, installed but stopped, or catching up (seen
+ * over more than one poll, so a slow block doesn't flicker the strip).
+ */
+export type ExecutionState = "missing" | "stopped" | "catching-up";
+
+/**
  * Health in plain words (spec §4): Synced, Syncing n%, Not ready (Stopped or
  * Starting when known, Can't connect when nothing answers). Synced with the
- * execution client offline is a warning: validators can't do their duties.
+ * execution client missing, stopped, offline or catching up is a warning:
+ * validators can't do all their duties.
  */
-export function describeHealth(status: NodeStatus | undefined): { tone: StatusTone; label: string } {
+export function describeHealth(
+  status: NodeStatus | undefined,
+  execution?: ExecutionState,
+): { tone: StatusTone; label: string } {
   if (!status) return { tone: "neutral", label: "Checking" };
   if (status.health === "not_ready") {
     if (status.unreachable) return { tone: "danger", label: "Can't connect" };
@@ -151,6 +168,9 @@ export function describeHealth(status: NodeStatus | undefined): { tone: StatusTo
   if (status.health === "syncing" || s?.is_syncing) {
     return { tone: "warning", label: s ? `Syncing ${syncPercent(s)}%` : "Syncing" };
   }
+  if (execution === "missing") return { tone: "warning", label: "Synced, no execution client" };
+  if (execution === "stopped") return { tone: "warning", label: "Synced, execution client stopped" };
   if (status.elOffline) return { tone: "warning", label: "Synced, execution client offline" };
+  if (execution === "catching-up") return { tone: "warning", label: "Synced, execution client catching up" };
   return { tone: "success", label: "Synced" };
 }

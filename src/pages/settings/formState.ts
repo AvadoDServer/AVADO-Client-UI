@@ -5,6 +5,7 @@
  */
 import type { Settings } from "../../api/types";
 import { findExecutionClient } from "../../config/executionClients";
+import { BAD_CHECKSUM, checksumState } from "../../lib/checksum";
 
 export interface SettingsFormState {
   feeRecipient: string;
@@ -107,6 +108,8 @@ export function validateForm(form: SettingsFormState, baseline: SettingsFormStat
     errors.feeRecipient = "Enter a default fee recipient.";
   } else if (!FEE_RECIPIENT_RE.test(form.feeRecipient)) {
     errors.feeRecipient = "Enter a valid address: 0x followed by 40 hex characters.";
+  } else if (checksumState(form.feeRecipient) === "invalid") {
+    errors.feeRecipient = BAD_CHECKSUM;
   }
 
   const bytes = graffitiByteLength(form.graffiti);

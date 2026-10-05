@@ -49,6 +49,18 @@ describe("describeHealth", () => {
       label: "Synced, execution client offline",
     });
   });
+  it("does not say a plain green Synced without a running execution client", () => {
+    const ready = { health: "ready" as const, syncing: syncing(100, 0) };
+    expect(describeHealth(ready, "missing")).toEqual({ tone: "warning", label: "Synced, no execution client" });
+    expect(describeHealth(ready, "stopped")).toEqual({ tone: "warning", label: "Synced, execution client stopped" });
+    expect(describeHealth(ready, "catching-up")).toEqual({ tone: "warning", label: "Synced, execution client catching up" });
+  });
+  it("offline wins over catching up, and syncing wins over both", () => {
+    expect(describeHealth({ health: "ready", syncing: syncing(100, 0), elOffline: true }, "catching-up").label).toBe(
+      "Synced, execution client offline",
+    );
+    expect(describeHealth({ health: "syncing", syncing: syncing(50, 50) }, "missing").label).toBe("Syncing 50.00%");
+  });
   it("says Can't connect when nothing on the box answers", () => {
     expect(describeHealth({ health: "not_ready", unreachable: true })).toEqual({ tone: "danger", label: "Can't connect" });
   });
@@ -138,6 +150,13 @@ describe("fetchNodeStatus", () => {
   it("marks el_offline from /eth/v1/node/syncing", async () => {
     const api = createMockApi({ latencyMs: 0, syncing: { ...syncing(100, 0), el_offline: true } });
     expect(await fetchNodeStatus(api.beacon, false)).toMatchObject({ health: "ready", elOffline: true });
+  });
+
+  it("marks is_optimistic from /eth/v1/node/syncing", async () => {
+    const api = createMockApi({ latencyMs: 0, syncing: { ...syncing(100, 0), is_optimistic: true } });
+    expect(await fetchNodeStatus(api.beacon, false)).toMatchObject({ health: "ready", optimistic: true });
+    const healthy = createMockApi({ latencyMs: 0 });
+    expect(await fetchNodeStatus(healthy.beacon, false)).toMatchObject({ optimistic: false });
   });
 
   describe("nothing reachable", () => {

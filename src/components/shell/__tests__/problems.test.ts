@@ -111,6 +111,19 @@ describe("findProblems", () => {
       expect(p.action).toEqual({ label: "Open Geth", href: "http://my.ava.do/#/packages/ethchain-geth.public.dappnode.eth" });
     });
 
+    it("flags an execution client that is catching up, with a link to its package", () => {
+      const p = one({ elCatchingUp: true }, "execution-client-catching-up");
+      expect(p.tone).toBe("warning");
+      expect(p.body).toContain("Geth is still catching up");
+      expect(p.action).toEqual({ label: "Open Geth", href: "http://my.ava.do/#/packages/ethchain-geth.public.dappnode.eth" });
+    });
+
+    it("catching up stays quiet when a bigger execution-client problem shows", () => {
+      expect(ids({ elCatchingUp: true, elOffline: true })).toEqual(["execution-client-offline"]);
+      expect(ids({ elCatchingUp: true, packages: [] })).toEqual(["no-execution-client"]);
+      expect(ids({ elCatchingUp: true, packages: down("ethchain-geth.public.dappnode.eth") })).toEqual(["execution-client-stopped"]);
+    });
+
     describe("stopped execution client", () => {
       it("an installed but stopped execution client is stopped, not missing", () => {
         const packages = [...up("nimbus.avado.dnp.dappnode.eth"), ...down("ethchain-geth.public.dappnode.eth")];

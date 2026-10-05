@@ -5,6 +5,8 @@ import { Button, Input, Modal } from "../../components/ui";
 import type { ValidatorRowData } from "./useValidators";
 import { validatorName } from "./parts";
 import { FEE_RECIPIENT_RE, feeRecipientInfo, sameAddress } from "./statusText";
+import { BAD_CHECKSUM, checksumState } from "../../lib/checksum";
+import { ROCKET_POOL_TEXT, RocketPoolCaution } from "./rocketPool";
 
 export interface FeeRecipientDialogProps {
   /** The validator being edited; the dialog is closed when null. */
@@ -13,6 +15,8 @@ export interface FeeRecipientDialogProps {
   onClose: () => void;
   /** Called after a successful change, to refresh the list. */
   onChanged: () => void;
+  /** Rocket Pool is installed: show its caution. */
+  rocketPool?: boolean;
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -22,7 +26,7 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * keymanager. An empty field (or the default address) clears the override,
  * so the validator follows the default from Settings.
  */
-export function FeeRecipientDialog({ row, defaultFeeRecipient, onClose, onChanged }: FeeRecipientDialogProps) {
+export function FeeRecipientDialog({ row, defaultFeeRecipient, onClose, onChanged, rocketPool }: FeeRecipientDialogProps) {
   const { keymanager } = useApi();
   const info = row ? feeRecipientInfo(row.feeRecipient, defaultFeeRecipient) : null;
   const hasOverride = info?.kind === "custom";
@@ -71,6 +75,10 @@ export function FeeRecipientDialog({ row, defaultFeeRecipient, onClose, onChange
       setError("Enter an Ethereum address: 0x followed by 40 characters 0-9 and a-f.");
       return;
     }
+    if (checksumState(v) === "invalid") {
+      setError(BAD_CHECKSUM);
+      return;
+    }
     void run(() => keymanager.setFeeRecipient(row.pubkey, v));
   };
 
@@ -100,6 +108,7 @@ export function FeeRecipientDialog({ row, defaultFeeRecipient, onClose, onChange
       }
     >
       <form id={formId} onSubmit={submit} noValidate className="flex flex-col gap-4">
+        {rocketPool && <RocketPoolCaution>{ROCKET_POOL_TEXT.fee}</RocketPoolCaution>}
         <Input
           label="Address for this validator"
           placeholder={defaultFeeRecipient || "0x…"}

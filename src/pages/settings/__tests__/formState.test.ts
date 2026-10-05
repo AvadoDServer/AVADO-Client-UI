@@ -146,6 +146,17 @@ describe("validateForm", () => {
     expect(validateForm(blank, blank)).toHaveProperty("feeRecipient");
   });
 
+  it("rejects a mixed-case fee recipient whose checksum is wrong (a typo)", () => {
+    const typo = "0x5AAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
+    expect(validateForm({ ...baseline, feeRecipient: typo }, baseline).feeRecipient).toMatch(/typo/);
+  });
+
+  it("accepts a checksummed or single-case fee recipient", () => {
+    for (const ok of ["0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed"]) {
+      expect(validateForm({ ...baseline, feeRecipient: ok }, baseline)).not.toHaveProperty("feeRecipient");
+    }
+  });
+
   it("rejects a malformed fee recipient", () => {
     expect(validateForm({ ...baseline, feeRecipient: "0xnotanaddress" }, baseline)).toHaveProperty("feeRecipient");
   });

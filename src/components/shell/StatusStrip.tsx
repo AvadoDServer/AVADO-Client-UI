@@ -4,7 +4,7 @@ import { useClientConfig } from "../../config/ClientConfigProvider";
 import { useMode } from "../../settings/ModeProvider";
 import { Skeleton, StatusPill } from "../ui";
 import { CLIENT_TITLE } from "./identity";
-import { describeHealth, type NodeStatus } from "./nodeStatus";
+import { describeHealth, type ExecutionState, type NodeStatus } from "./nodeStatus";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
@@ -22,10 +22,19 @@ function Item({ label, children }: { label: string; children: ReactNode }) {
  * Advanced adds inbound/outbound peers and the head slot. The data comes
  * from the shell's poll so the banners can share it.
  */
-export function StatusStrip({ status, loading }: { status: NodeStatus | undefined; loading?: boolean }) {
+export function StatusStrip({
+  status,
+  loading,
+  execution,
+}: {
+  status: NodeStatus | undefined;
+  loading?: boolean;
+  /** What the banners know about the execution client. */
+  execution?: ExecutionState;
+}) {
   const { client } = useClientConfig();
   const { isAdvanced } = useMode();
-  const health = describeHealth(status);
+  const health = describeHealth(status, execution);
   const ready = status && status.health !== "not_ready";
   const name = CLIENT_TITLE[client];
   const advancedLink = (label: string) => (
