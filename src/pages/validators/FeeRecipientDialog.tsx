@@ -113,7 +113,10 @@ export function FeeRecipientDialog({ row, defaultFeeRecipient, onClose, onChange
           label="Address for this validator"
           placeholder={defaultFeeRecipient || "0x…"}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError(null);
+          }}
           error={error ?? undefined}
           hint={
             defaultFeeRecipient ? (

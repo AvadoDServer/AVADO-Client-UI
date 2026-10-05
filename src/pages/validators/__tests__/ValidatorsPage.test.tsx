@@ -175,6 +175,9 @@ describe("ValidatorsPage", () => {
       await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
       expect(await within(dialog).findByText(/has a typo/)).toBeInTheDocument();
       expect(set).not.toHaveBeenCalled();
+      // editing the address clears the old error
+      await userEvent.type(within(dialog).getByLabelText("Address for this validator"), "{Backspace}");
+      expect(within(dialog).queryByText(/has a typo/)).toBeNull();
     });
 
     it("clears an override back to the default", async () => {
