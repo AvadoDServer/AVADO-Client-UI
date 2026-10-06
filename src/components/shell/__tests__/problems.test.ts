@@ -37,6 +37,15 @@ describe("findProblems", () => {
   });
 
   describe("execution client", () => {
+    it("counts the Lighthouse-only candidates for Lighthouse, not for Nimbus", () => {
+      const reth = up("dappmanager.dnp.dappnode.eth", "reth-mainnet.avado.dnp.dappnode.eth");
+      const lighthouse = { client: "lighthouse" as const, packageName: "lighthouse.avado.dnp.dappnode.eth" };
+      const rethSettings = { ...base.settings, execution_engine: "reth-mainnet.avado.dnp.dappnode.eth" };
+      expect(ids({ ...lighthouse, settings: rethSettings, packages: reth })).toEqual([]);
+      expect(ids({ packages: reth })).toContain("no-execution-client");
+      expect(one({ ...lighthouse, packages: [] }, "no-execution-client").body).toContain("Geth, Nethermind or Reth");
+    });
+
     it("flags a box with none of the network's candidates installed, linking to the DappStore", () => {
       const p = one({ packages: up("dappmanager.dnp.dappnode.eth") }, "no-execution-client");
       expect(p.tone).toBe("danger");
@@ -100,6 +109,19 @@ describe("findProblems", () => {
       expect(p.title).toBe("Execution client not reachable");
       expect(p.body).toContain("can't reach Geth");
       expect(p.action).toEqual({ label: "Open Geth", href: "http://my.ava.do/#/packages/ethchain-geth.public.dappnode.eth" });
+    });
+
+    it("flags an execution client that is catching up, with a link to its package", () => {
+      const p = one({ elCatchingUp: true }, "execution-client-catching-up");
+      expect(p.tone).toBe("warning");
+      expect(p.body).toContain("Geth is still catching up");
+      expect(p.action).toEqual({ label: "Open Geth", href: "http://my.ava.do/#/packages/ethchain-geth.public.dappnode.eth" });
+    });
+
+    it("catching up stays quiet when a bigger execution-client problem shows", () => {
+      expect(ids({ elCatchingUp: true, elOffline: true })).toEqual(["execution-client-offline"]);
+      expect(ids({ elCatchingUp: true, packages: [] })).toEqual(["no-execution-client"]);
+      expect(ids({ elCatchingUp: true, packages: down("ethchain-geth.public.dappnode.eth") })).toEqual(["execution-client-stopped"]);
     });
 
     describe("stopped execution client", () => {

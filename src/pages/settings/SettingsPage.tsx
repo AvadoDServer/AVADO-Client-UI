@@ -173,7 +173,7 @@ export default function SettingsPage() {
   const errorFields = Object.keys(errors) as (keyof SettingsFormErrors)[];
   const hasErrors = errorFields.length > 0;
 
-  const candidates = useMemo(() => executionClientsForNetwork(network), [network]);
+  const candidates = useMemo(() => executionClientsForNetwork(network, client), [network, client]);
   const clientLabel = CLIENT_LABEL[client];
   const mevBoostInstalled = (installedPackages ?? []).includes(MEVBOOST_PACKAGE);
   // Losing the package must not strand the toggle on: turning it off is

@@ -3,6 +3,7 @@ import { useApi } from "../../api/ApiProvider";
 import { Button, Input, Modal } from "../../components/ui";
 import type { ValidatorRowData } from "./useValidators";
 import { withdrawalText } from "./statusText";
+import { ROCKET_POOL_TEXT, RocketPoolCaution } from "./rocketPool";
 
 export interface ExitDialogProps {
   /** The validator to exit; the dialog is closed when null. */
@@ -10,6 +11,8 @@ export interface ExitDialogProps {
   onClose: () => void;
   /** Called after the beacon node accepted the exit, to refresh the list. */
   onSubmitted: () => void;
+  /** Rocket Pool is installed: show its caution. */
+  rocketPool?: boolean;
 }
 
 type Phase = { step: "confirm" } | { step: "busy" } | { step: "done" } | { step: "error"; message: string };
@@ -28,7 +31,7 @@ function WarningIcon() {
  * Voluntary exit: the owner types the validator index to confirm, then the
  * keymanager signs the exit and the beacon node broadcasts it.
  */
-export function ExitDialog({ row, onClose, onSubmitted }: ExitDialogProps) {
+export function ExitDialog({ row, onClose, onSubmitted, rocketPool }: ExitDialogProps) {
   const { keymanager, beacon } = useApi();
   const [typed, setTyped] = useState("");
   const [phase, setPhase] = useState<Phase>({ step: "confirm" });
@@ -109,6 +112,7 @@ export function ExitDialog({ row, onClose, onSubmitted }: ExitDialogProps) {
       }
     >
       <form id={formId} onSubmit={exit} className="flex flex-col gap-4 text-sm">
+        {rocketPool && <RocketPoolCaution>{ROCKET_POOL_TEXT.exit}</RocketPoolCaution>}
         <div role="note" className="flex gap-3 rounded-lg border border-danger/30 bg-danger-subtle p-3 text-danger-text">
           <WarningIcon />
           <p>

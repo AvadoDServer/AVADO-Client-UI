@@ -3,6 +3,7 @@
  * `${apiUrl}/keymanager` proxy, which adds the bearer token server side (the
  * browser never sees it). Browser paths are the same for every client:
  *  - Nimbus (deno): → localhost:5052
+ *  - Lighthouse (deno): → the validator client's API on localhost:5062
  *  - Teku (monitor): → https://teku[-net].my.ava.do:5052
  *  - Prysm (monitor): → the eth2validator package's monitor, which adds the
  *    token and forwards to the Prysm validator client (two hops).

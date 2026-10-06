@@ -5,9 +5,6 @@ Prysm and Lighthouse). It looks and behaves like the AVADO Admin: the same
 tokens, Sen and Public Sans, light/dark/match-computer themes, and Simple and
 Advanced modes.
 
-Spec: [`docs/specs/2026-09-23-shared-client-ui-design.md`](docs/specs/2026-09-23-shared-client-ui-design.md).
-Plan: [`docs/plans/2026-09-23-shared-client-ui-nimbus.md`](docs/plans/2026-09-23-shared-client-ui-nimbus.md).
-
 ## Develop
 
 Yarn 1 only (never npm), Node 20.
