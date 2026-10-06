@@ -1,6 +1,6 @@
 {
   "name": "avado-client-ui",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "Shared web UI for AVADO consensus-client packages",
   "license": "MIT",
