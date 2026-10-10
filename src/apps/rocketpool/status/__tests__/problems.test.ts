@@ -102,6 +102,14 @@ describe("status banners", () => {
     expect(p[0].body).toMatch(/^They are not running in Teku yet. Start them only if these validators are not running anywhere else/);
   });
 
+  it("no client because the pass failed before choosing one: the failure, not a missing client", () => {
+    const p = findStatusProblems({
+      avado: running,
+      reconcile: view({ state: "error", client: null, keys: [] }, { clientChoice: null, errors: ["Rocket Pool daemon (node/status): HTTP 500"] }),
+    });
+    expect(ids(p)).toEqual(["reconcile-failed"]);
+  });
+
   it("no client: the loop's own explanation of the client choice", () => {
     const why = 'Rocket Pool is set to use Lighthouse (CONSENSUSCLIENT=lighthouse), but the lighthouse.avado.dnp.dappnode.eth package is not installed.';
     const p = findStatusProblems({

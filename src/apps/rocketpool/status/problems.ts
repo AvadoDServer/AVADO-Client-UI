@@ -233,7 +233,8 @@ function reconcileProblems(s: ReconcileStatus): RpProblem[] {
   // "waiting": no wallet, not registered, daemon starting or syncing; the other banners say so.
   if (s.state === "waiting") return out;
 
-  if (!s.client) {
+  // Only when the pass got as far as choosing a client: an earlier failure (node status unreadable) is reported below.
+  if (!s.client && s.clientChoice) {
     out.push({
       id: "no-consensus-client",
       tone: "danger",
