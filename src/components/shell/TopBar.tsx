@@ -1,13 +1,16 @@
-import { forwardRef } from "react";
-import { ClientIdentity } from "./ClientIdentity";
-import { MenuIcon } from "./icons";
+import { forwardRef, type ReactNode } from "react";
 import { SIDEBAR_ID } from "./Sidebar";
+import { MenuIcon } from "./icons";
 
-/** Phone and tablet top bar (below lg): the menu button and the client identity. */
-export const TopBar = forwardRef<HTMLButtonElement, { menuOpen: boolean; onMenu: () => void }>(function TopBar(
-  { menuOpen, onMenu },
-  ref,
-) {
+export interface TopBarProps {
+  menuOpen: boolean;
+  onMenu: () => void;
+  /** The app's compact identity (e.g. `<ClientIdentity size="sm" />`). */
+  identity: ReactNode;
+}
+
+/** Phone and tablet top bar (below lg): the menu button and the app's identity. */
+export const TopBar = forwardRef<HTMLButtonElement, TopBarProps>(function TopBar({ menuOpen, onMenu, identity }, ref) {
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-2 border-b border-border bg-chrome px-2 sm:px-4 lg:hidden">
       <button
@@ -21,7 +24,7 @@ export const TopBar = forwardRef<HTMLButtonElement, { menuOpen: boolean; onMenu:
       >
         <MenuIcon />
       </button>
-      <ClientIdentity size="sm" />
+      {identity}
     </header>
   );
 });

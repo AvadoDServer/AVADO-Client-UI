@@ -35,8 +35,9 @@ export interface ProblemAction {
   href?: string;
 }
 
-export interface Problem {
-  id: ProblemId;
+/** A banner. `Id` is the app's own set of problem ids (the client's by default). */
+export interface Problem<Id extends string = ProblemId> {
+  id: Id;
   tone: ProblemTone;
   title: string;
   body: string;

@@ -10,7 +10,9 @@ const ch = (name: string) => `rgb(var(${name}) / <alpha-value>)`;
 // Unlike the Admin there is no Bootstrap here, so preflight stays on.
 const config: Config = {
   darkMode: ["selector", '[data-theme="dark"]'],
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  // src/apps/* are other apps with their own Tailwind config: leaving them
+  // out keeps the client app's CSS exactly as before they existed.
+  content: ["./index.html", "./src/**/*.{ts,tsx}", "!./src/apps/**"],
   theme: {
     extend: {
       colors: {

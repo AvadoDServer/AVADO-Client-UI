@@ -1,10 +1,8 @@
-import { forwardRef } from "react";
+import { forwardRef, type ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { useMode } from "../../settings/ModeProvider";
 import { cn } from "../ui";
-import { ClientIdentity } from "./ClientIdentity";
 import { CloseIcon } from "./icons";
-import { visibleNavItems } from "./navItems";
+import type { NavItem } from "./navItems";
 import { SidebarFooter } from "./SidebarFooter";
 
 export const SIDEBAR_ID = "sidebar";
@@ -18,15 +16,20 @@ export interface SidebarProps {
   /** Just closed: still sliding out (visible). Then it is hidden and out of the tab order. */
   closing?: boolean;
   onClose: () => void;
+  /** The app's identity at the top (logo tile, name, subtitle); links home. */
+  brand: ReactNode;
+  /** The pages listed in the main navigation. */
+  items: NavItem[];
 }
 
 /**
- * The Admin's sidebar: client identity at the top, the pages, and the footer
- * with the theme and mode switches. Advanced-only pages are listed in
- * Advanced mode only.
+ * The Admin-style sidebar shared by every app: the app's identity at the
+ * top, its pages, and the footer with the theme and mode switches.
  */
-export const Sidebar = forwardRef<HTMLElement, SidebarProps>(function Sidebar({ open, closing = false, onClose }, ref) {
-  const { isAdvanced } = useMode();
+export const Sidebar = forwardRef<HTMLElement, SidebarProps>(function Sidebar(
+  { open, closing = false, onClose, brand, items },
+  ref,
+) {
   return (
     <aside
       ref={ref}
@@ -50,7 +53,7 @@ export const Sidebar = forwardRef<HTMLElement, SidebarProps>(function Sidebar({ 
       <div className="flex min-h-0 flex-1 flex-col gap-1 px-4 py-6">
         <div className="flex items-start justify-between gap-2 px-2 pb-6">
           <NavLink to="/" onClick={onClose} className="min-w-0 rounded-md no-underline focus-visible:shadow-focus focus-visible:outline-none">
-            <ClientIdentity />
+            {brand}
           </NavLink>
           <button
             type="button"
@@ -63,7 +66,7 @@ export const Sidebar = forwardRef<HTMLElement, SidebarProps>(function Sidebar({ 
         </div>
 
         <nav aria-label="Main" className="flex flex-col gap-1">
-          {visibleNavItems(isAdvanced).map(({ to, label, icon: Icon }) => (
+          {items.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
