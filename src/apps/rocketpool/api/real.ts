@@ -1,6 +1,6 @@
 import { RpApiError } from "./errors";
 import { parseAvadoStatus } from "./avado";
-import { CURRENT_BACKUP, type ApproveKeysResult, type BackupDownload, type LegacyMnemonicArchiveResult, type LogsView, type ReconcileView, type SnEnvelope } from "./models";
+import { CURRENT_BACKUP, type AdoptWalletResult, type ApproveKeysResult, type BackupDownload, type LegacyMnemonicArchiveResult, type LogsView, type ReconcileView, type SnEnvelope } from "./models";
 import type { CallOptions, RocketpoolApi, SnParams } from "./types";
 
 /** The package backend's routes, on the UI's own origin. */
@@ -11,6 +11,7 @@ export const AVADO_RECONCILE_APPROVE_PATH = "/api/avado/reconcile/approve";
 export const AVADO_LOGS_PATH = "/api/avado/logs";
 export const AVADO_LEGACY_MNEMONIC_ARCHIVE_PATH = "/api/avado/legacy-mnemonic/archive";
 export const AVADO_BACKUP_DOWNLOAD_PATH = "/api/avado/backups/download";
+export const AVADO_WALLET_ADOPT_PATH = "/api/avado/wallet/adopt";
 export const SN_PREFIX = "/api/sn/";
 
 /** The backend refuses a write without this header (its CSRF guard). */
@@ -169,6 +170,15 @@ export function createRealRocketpoolApi(fetchImpl: typeof fetch = (...args) => f
         method: "POST",
         path: AVADO_LEGACY_MNEMONIC_ARCHIVE_PATH,
         body: { confirm },
+        timeoutMs: WRITE_TIMEOUT_MS,
+        envelope: true,
+      }),
+
+    adoptFoundWallet: (dir: string) =>
+      request<AdoptWalletResult>({
+        method: "POST",
+        path: AVADO_WALLET_ADOPT_PATH,
+        body: { dir },
         timeoutMs: WRITE_TIMEOUT_MS,
         envelope: true,
       }),

@@ -228,6 +228,24 @@ describe("Home", () => {
     expect(api.calls.some((c) => c.path.startsWith("/api/sn/node/"))).toBe(false);
   });
 
+  it("a wallet found elsewhere on the AVADO: one click to put it back, not a new setup", async () => {
+    renderHome({ scenario: "wallet-found" });
+    const callout = await screen.findByTestId("setup-callout");
+    expect(within(callout).getByText("Your wallet was found on this AVADO")).toBeInTheDocument();
+    expect(within(callout).getByText("One click puts it back and your node is as it was.")).toBeInTheDocument();
+    expect(within(callout).getByRole("link", { name: "Use this wallet" })).toHaveAttribute("href", "/setup/wallet");
+    expect(within(callout).queryByText("Set up your Rocket Pool node")).not.toBeInTheDocument();
+  });
+
+  it("a wallet found while Rocket Pool isn't running: still one click to put it back", async () => {
+    const api = createMockRocketpoolApi({ scenario: "wallet-found" });
+    const status = api.avadoStatus.bind(api);
+    api.avadoStatus = async () => ({ ...(await status()), daemon: { state: "STARTING" }, apiReachable: false });
+    renderHome(api);
+    const callout = await screen.findByTestId("setup-callout");
+    expect(within(callout).getByRole("link", { name: "Use this wallet" })).toHaveAttribute("href", "/setup/wallet");
+  });
+
   it("an unregistered node and a node without validators each get their next step", async () => {
     renderHome({ scenario: "unregistered" });
     expect(await screen.findByText("Finish setting up your node")).toBeInTheDocument();

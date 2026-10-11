@@ -11,6 +11,8 @@ import { withdrawalAddressProblem, withdrawalAddressWarning } from "../Withdrawa
 import type { CanDepositResponse } from "../../../api/models";
 import { walletError } from "../walletCalls";
 import { RpApiError } from "../../../api/errors";
+import { FOUND_WALLET_GONE } from "../../../api/mock";
+import { MODE_STORAGE_KEY } from "../../../../../settings/ModeProvider";
 
 function Where() {
   return <div data-testid="where">{useLocation().pathname}</div>;
@@ -200,6 +202,168 @@ describe("Setup wizard", () => {
       expect(screen.getByText(/this page never replaces it/)).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /Create a new wallet|Restore a wallet/ })).not.toBeInTheDocument();
       await waitFor(() => expect(screen.getByText(DEMO.nodeAddress)).toBeInTheDocument());
+    });
+  });
+
+  describe("a wallet found elsewhere on the AVADO", () => {
+    const BACKUP_DIR = "backups/legacy-20261006T200006Z";
+    const ALREADY = "This AVADO already has a Rocket Pool wallet. Nothing was changed.";
+    const foundCard = () => screen.findByRole("region", { name: "We found a wallet on this AVADO" });
+
+    it("lists what was found, above the usual choices, and puts the first one back with one click", async () => {
+      const api = createMockRocketpoolApi({ scenario: "wallet-found" });
+      const adopt = vi.spyOn(api, "adoptFoundWallet");
+      const { user, posts } = renderSetup("/setup/wallet", api);
+      const card = await foundCard();
+      const rows = within(card).getAllByRole("listitem");
+      expect(rows).toHaveLength(2);
+      expect(within(rows[0]).getByText("In an automatic backup")).toBeInTheDocument();
+      expect(within(rows[0]).getByText(DEMO.nodeAddress)).toBeInTheDocument();
+      expect(within(rows[0]).getByText("Includes validator keys")).toBeInTheDocument();
+      expect(within(rows[0]).getByText(/^Made\/changed /)).toBeInTheDocument();
+      expect(within(rows[1]).getByText("In the folder data-old")).toBeInTheDocument();
+      expect(within(rows[1]).getByText("Address unknown")).toBeInTheDocument();
+      expect(within(rows[1]).queryByText("Includes validator keys")).not.toBeInTheDocument();
+      expect(within(card).getByText("This copies the wallet and its keys into the folder the app uses and leaves the original where it is.")).toBeInTheDocument();
+      // The card comes before the two usual choices.
+      const create = screen.getByRole("button", { name: /Create a new wallet/ });
+      expect(card.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      const buttons = within(card).getAllByRole("button", { name: "Use this wallet" });
+      expect(buttons).toHaveLength(2);
+      expect(buttons[0]).toHaveAccessibleDescription(/In an automatic backup/);
+      await user.click(buttons[0]);
+
+      expect(adopt).toHaveBeenCalledTimes(1);
+      expect(adopt).toHaveBeenCalledWith(BACKUP_DIR);
+      expect(posts().map((c) => c.path)).toEqual(["/api/avado/wallet/adopt"]);
+      expect(await screen.findByText("Your wallet is back. Rocket Pool is restarting, this takes about a minute.")).toBeInTheDocument();
+      expect(screen.queryByText(/could not be restarted by itself/)).not.toBeInTheDocument();
+      // After the refresh: the wallet is there, the step is done, and nothing offers to replace it.
+      expect(await screen.findByText("Your node wallet is ready")).toBeInTheDocument();
+      await waitFor(() => expect(stepStatus("Node wallet")).toBe("Done"));
+      expect(screen.getByText("Your wallet is back. Rocket Pool is restarting, this takes about a minute.")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Use this wallet" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Create a new wallet/ })).not.toBeInTheDocument();
+    });
+
+    it("the outcome stays on screen while Rocket Pool restarts to pick the wallet up", async () => {
+      const api = createMockRocketpoolApi({ scenario: "wallet-found" });
+      const status = api.avadoStatus.bind(api);
+      // As on the box: right after the copy the daemon is starting again.
+      api.avadoStatus = async () => {
+        const s = await status();
+        return s.walletFilePresent ? { ...s, daemon: { state: "STARTING" }, apiReachable: false } : s;
+      };
+      const { user } = renderSetup("/setup/wallet", api);
+      await user.click(within(await foundCard()).getAllByRole("button", { name: "Use this wallet" })[0]);
+      expect(await screen.findByText("Your node wallet is ready")).toBeInTheDocument();
+      expect(screen.getByText("Your wallet is back. Rocket Pool is restarting, this takes about a minute.")).toBeInTheDocument();
+      expect(screen.queryByText(/Rocket Pool isn't ready yet/)).not.toBeInTheDocument();
+    });
+
+    it("says so when Rocket Pool could not restart by itself, without claiming it is restarting", async () => {
+      localStorage.setItem(MODE_STORAGE_KEY, "advanced");
+      const api = createMockRocketpoolApi({ scenario: "wallet-found" });
+      const real = api.adoptFoundWallet.bind(api);
+      api.adoptFoundWallet = async (dir) => ({ ...(await real(dir)), restarted: false, restartError: "supervisor socket not found" });
+      const { user } = renderSetup("/setup/wallet", api);
+      await user.click(within(await foundCard()).getAllByRole("button", { name: "Use this wallet" })[1]);
+      expect(await screen.findByText("Your wallet is back.")).toBeInTheDocument();
+      expect(screen.getByText("Rocket Pool could not restart by itself: restart the Rocket Pool package in the AVADO Admin.")).toBeInTheDocument();
+      expect(screen.queryByText(/is restarting/)).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toMatch(/daemon/i);
+      // The reason, for support, in Advanced mode's details.
+      expect(screen.getByTestId("tech-details")).toHaveTextContent("supervisor socket not found");
+      expect(api.calls.filter((c) => c.method === "POST").map((c) => c.params)).toEqual([{ dir: "data-old" }]);
+    });
+
+    it("works while Rocket Pool isn't running: putting the wallet back doesn't need it, creating one does", async () => {
+      const api = createMockRocketpoolApi({ scenario: "wallet-found" });
+      const status = api.avadoStatus.bind(api);
+      api.avadoStatus = async () => ({ ...(await status()), daemon: { state: "BACKOFF" }, apiReachable: false });
+      const { user } = renderSetup("/setup/wallet", api);
+      const card = await foundCard();
+      expect(screen.queryByRole("button", { name: /Create a new wallet/ })).not.toBeInTheDocument();
+      expect(screen.queryByText(/Rocket Pool isn't ready yet/)).not.toBeInTheDocument();
+      expect(screen.getByText(/creating or restoring a wallet has to wait/)).toBeInTheDocument();
+      await user.click(within(card).getAllByRole("button", { name: "Use this wallet" })[0]);
+      expect(await screen.findByText("Your node wallet is ready")).toBeInTheDocument();
+      expect(screen.getByText("Your wallet is back. Rocket Pool is restarting, this takes about a minute.")).toBeInTheDocument();
+    });
+
+    it("a folder gone from the list: only the refusal, not an empty card", async () => {
+      const api = createMockRocketpoolApi({ scenario: "wallet-found" });
+      const status = api.avadoStatus.bind(api);
+      let gone = false;
+      api.avadoStatus = async () => {
+        const s = await status();
+        return gone ? { ...s, foundWallets: [] } : s;
+      };
+      api.adoptFoundWallet = vi.fn(async () => {
+        gone = true;
+        throw new RpApiError({ kind: "http", path: "/api/avado/wallet/adopt", status: 400, detail: FOUND_WALLET_GONE });
+      });
+      const { user } = renderSetup("/setup/wallet", api);
+      await user.click(within(await foundCard()).getAllByRole("button", { name: "Use this wallet" })[0]);
+      const alert = await screen.findByRole("alert");
+      expect(within(alert).getByText(FOUND_WALLET_GONE)).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByRole("region", { name: "We found a wallet on this AVADO" })).not.toBeInTheDocument());
+      expect(screen.queryByText("This copies the wallet and its keys into the folder the app uses and leaves the original where it is.")).not.toBeInTheDocument();
+      expect(screen.getByText(FOUND_WALLET_GONE)).toBeInTheDocument();
+    });
+
+    it("every button waits while one is busy; a refusal says the wallet was not put back, in the backend's words", async () => {
+      const api = createMockRocketpoolApi({ scenario: "wallet-found" });
+      let refuse!: (e: unknown) => void;
+      api.adoptFoundWallet = vi.fn(() => new Promise<never>((_, reject) => (refuse = reject)));
+      const { user } = renderSetup("/setup/wallet", api);
+      const card = await foundCard();
+      const buttons = within(card).getAllByRole("button", { name: "Use this wallet" });
+      await user.click(buttons[0]);
+      await waitFor(() => expect(buttons[0]).toHaveAttribute("aria-busy", "true"));
+      for (const b of buttons) expect(b).toBeDisabled();
+      expect(screen.getByRole("button", { name: /Create a new wallet/ })).toBeDisabled();
+      await user.click(buttons[1]);
+      expect(api.adoptFoundWallet).toHaveBeenCalledTimes(1);
+
+      refuse(new RpApiError({ kind: "http", path: "/api/avado/wallet/adopt", status: 409, detail: ALREADY }));
+      const alert = await screen.findByRole("alert");
+      expect(within(alert).getByText("The wallet was not put back")).toBeInTheDocument();
+      expect(within(alert).getByText(ALREADY)).toBeInTheDocument();
+      for (const b of within(card).getAllByRole("button", { name: "Use this wallet" })) expect(b).toBeEnabled();
+    });
+
+    it("a lost answer: not sure whether it worked; the page updates by itself", async () => {
+      const api = createMockRocketpoolApi({ scenario: "wallet-found" });
+      api.adoptFoundWallet = vi.fn(() => Promise.reject(new RpApiError({ kind: "timeout", path: "/api/avado/wallet/adopt" })));
+      const { user } = renderSetup("/setup/wallet", api);
+      await user.click(within(await foundCard()).getAllByRole("button", { name: "Use this wallet" })[0]);
+      const notice = await screen.findByText("Not sure whether it worked");
+      expect(notice.closest("[role=status]")).not.toBeNull();
+      expect(
+        screen.getByText("This page updates by itself once the wallet shows up. Trying again is safe: a wallet that is already back is never replaced."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("The wallet was not put back")).not.toBeInTheDocument();
+    });
+
+    it("a lost answer after the wallet did land: the doubt goes once the wallet shows up", async () => {
+      const api = createMockRocketpoolApi({ scenario: "wallet-found" });
+      const real = api.adoptFoundWallet.bind(api);
+      api.adoptFoundWallet = vi.fn(async (dir: string) => {
+        await real(dir);
+        throw new RpApiError({ kind: "timeout", path: "/api/avado/wallet/adopt" });
+      });
+      const { user } = renderSetup("/setup/wallet", api);
+      await user.click(within(await foundCard()).getAllByRole("button", { name: "Use this wallet" })[0]);
+      expect(await screen.findByText("Your node wallet is ready")).toBeInTheDocument();
+      expect(screen.queryByText("Not sure whether it worked")).not.toBeInTheDocument();
+    });
+
+    it("a new node with nothing found shows only the usual choices", async () => {
+      renderSetup("/setup/wallet", { scenario: "fresh" });
+      expect(await screen.findByRole("button", { name: /Create a new wallet/ })).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "We found a wallet on this AVADO" })).not.toBeInTheDocument();
     });
   });
 

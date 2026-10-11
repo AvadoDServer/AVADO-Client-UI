@@ -523,6 +523,27 @@ export interface AvadoStatus {
    * back to the package template's values.
    */
   settings?: DaemonSettings;
+  /**
+   * Copies of a Rocket Pool wallet found elsewhere on the package's storage
+   * (an automatic backup, an old folder), newest first. Only while there is
+   * no wallet where the daemon looks (`walletFilePresent` is false), so
+   * usually empty. Optional: older backends don't send it (read it as []).
+   */
+  foundWallets?: FoundWallet[];
+}
+
+/** A wallet copy the backend found outside the data folder; `POST /api/avado/wallet/adopt {dir}` puts it back. */
+export interface FoundWallet {
+  /** Its folder relative to the package's storage, e.g. "backups/legacy-20261006T200006Z", "data-old"; "" is the top. */
+  dir: string;
+  /** The node address (0x…), when known. */
+  address: string | null;
+  /** ISO time the wallet file was last changed ("" when unknown). */
+  modifiedAt: string;
+  /** Validator keys are stored next to it. */
+  hasValidators: boolean;
+  /** "backup": in one of the package's automatic backups. */
+  source: "backup" | "other";
 }
 
 export interface DaemonSettings {
@@ -679,6 +700,18 @@ export interface LegacyMnemonicArchiveResult extends SnEnvelope {
   archived: boolean;
   /** The backup folder it was moved into, e.g. "mnemonic-archive-20260923T101500Z". */
   name: string;
+}
+
+/** `POST /api/avado/wallet/adopt` answer (200): the found wallet was copied into the data folder. */
+export interface AdoptWalletResult extends SnEnvelope {
+  /** The folder it was copied from (as in `foundWallets`). */
+  dir: string;
+  /** What was copied: "wallet", "password", "validators", … */
+  copied: string[];
+  /** The daemon was restarted to pick the wallet up. */
+  restarted: boolean;
+  /** Why it couldn't be restarted, when it couldn't (the owner restarts the package). */
+  restartError?: string;
 }
 
 /** `name` for `POST /api/avado/backups/download` that makes a fresh backup of the wallet, its password and the validator keys. */

@@ -10,7 +10,7 @@ import { useMegapoolStatus, useNodeReadable, useNodeStatus, useNodeSync, useRewa
 import { formatEth, formatRpl, formatUnits, toBigInt } from "../lib/units";
 import { useAppStatus } from "../status/AppStatus";
 import { serviceStatus } from "../status/daemon";
-import { findNodeProblems } from "../status/problems";
+import { SETUP_WALLET_ROUTE, findNodeProblems, foundWalletsOf } from "../status/problems";
 import { KeyApproval } from "./home/KeyApproval";
 import { LegacyMnemonic } from "./home/LegacyMnemonic";
 
@@ -81,12 +81,18 @@ export function unclaimedRewards(info: RewardsInfo | undefined): { rpl: bigint; 
   return { rpl, eth, intervals: info.unclaimedIntervals?.length ?? 0 };
 }
 
-function SetupCallout({ walletReady, node }: { walletReady: boolean; node?: NodeStatus }) {
+function SetupCallout({ walletReady, walletFound, node }: { walletReady: boolean; walletFound: boolean; node?: NodeStatus }) {
   let title: string | null = null;
   let text = "";
   let label = "Continue setup";
   let to = "/setup";
-  if (!walletReady) {
+  if (!walletReady && walletFound) {
+    // Usually after an update: the wallet is still on the AVADO, so no new setup.
+    title = "Your wallet was found on this AVADO";
+    text = "One click puts it back and your node is as it was.";
+    label = "Use this wallet";
+    to = SETUP_WALLET_ROUTE;
+  } else if (!walletReady) {
     title = "Set up your Rocket Pool node";
     text = "Create or restore the node wallet, register the node and start your first validators. It takes a few steps.";
     label = "Start setup";
@@ -160,7 +166,7 @@ export default function HomePage() {
     <div className="flex flex-col gap-6">
       <h1 className="font-display text-4xl font-bold tracking-tight text-fg">Home</h1>
 
-      {avado && <SetupCallout walletReady={walletReady} node={node} />}
+      {avado && <SetupCallout walletReady={walletReady} walletFound={foundWalletsOf(avado).length > 0} node={node} />}
       <KeyApproval />
       <LegacyMnemonic />
       <NodeFixes problems={problems} />

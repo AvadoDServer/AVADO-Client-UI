@@ -1,6 +1,6 @@
 import { DEMO, SCENARIOS, demoKey, reconcileView } from "../../api/fixtures";
 import type { AvadoStatus, NodeStatus, ReconcileView } from "../../api/models";
-import { findNodeProblems, findPendingProblems, findStatusProblems, forMode } from "../problems";
+import { findNodeProblems, findPendingProblems, findStatusProblems, forMode, foundWalletsOf } from "../problems";
 import type { PendingTx } from "../../tx/pending";
 
 const running = SCENARIOS.minipool.avado;
@@ -67,6 +67,40 @@ describe("status banners", () => {
     expect(ids(p)).toEqual(["no-wallet"]);
     expect(p[0]).toMatchObject({ tone: "accent", action: { to: "/setup" } });
     expect(ids(findStatusProblems({ avado: { ...s.avado, apiReachable: false } }))).toEqual(["daemon-starting"]);
+  });
+
+  it("a wallet found elsewhere on the AVADO: one click to put it back, instead of setting up a new node", () => {
+    const s = SCENARIOS["wallet-found"];
+    const p = findStatusProblems({ avado: s.avado, reconcile: s.reconcile });
+    expect(ids(p)).toEqual(["wallet-found"]);
+    expect(p[0]).toEqual({
+      id: "wallet-found",
+      tone: "accent",
+      title: "Your Rocket Pool wallet was found on this AVADO",
+      body: "It is not in the folder the app uses, so the app can't see it. One click puts it back. Nothing is deleted.",
+      action: { label: "Use this wallet", to: "/setup/wallet" },
+    });
+    // An empty list, or an older backend that doesn't send one: set up as before.
+    expect(ids(findStatusProblems({ avado: { ...s.avado, foundWallets: [] } }))).toEqual(["no-wallet"]);
+    const older: AvadoStatus = { ...s.avado };
+    delete older.foundWallets;
+    expect(ids(findStatusProblems({ avado: older }))).toEqual(["no-wallet"]);
+    // Putting it back doesn't need the daemon: it shows while the daemon starts or has stopped (perhaps for want of the wallet).
+    expect(ids(findStatusProblems({ avado: { ...s.avado, apiReachable: false } }))).toEqual(["daemon-starting", "wallet-found"]);
+    expect(ids(findStatusProblems({ avado: { ...s.avado, daemon: { state: "FATAL" }, apiReachable: false } }))).toEqual(["daemon-stopped", "wallet-found"]);
+    // …but no-wallet still waits for a ready daemon.
+    expect(ids(findStatusProblems({ avado: { ...older, apiReachable: false } }))).toEqual(["daemon-starting"]);
+    // A wallet in place: whatever the list says, nothing is offered.
+    expect(ids(findStatusProblems({ avado: { ...s.avado, walletFilePresent: true, passwordFilePresent: true } }))).toEqual([]);
+  });
+
+  it("foundWalletsOf: the found copies only while there is no wallet; an older backend has none", () => {
+    const s = SCENARIOS["wallet-found"].avado;
+    expect(foundWalletsOf(s).map((w) => w.dir)).toEqual(["backups/legacy-20261006T200006Z", "data-old"]);
+    expect(foundWalletsOf({ ...s, walletFilePresent: true })).toEqual([]);
+    expect(foundWalletsOf(SCENARIOS.fresh.avado)).toEqual([]);
+    expect(foundWalletsOf(undefined)).toEqual([]);
+    expect(foundWalletsOf(null)).toEqual([]);
   });
 
   it("wallet without its password file; the old plaintext recovery phrase", () => {
