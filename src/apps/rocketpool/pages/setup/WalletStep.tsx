@@ -6,7 +6,7 @@ import { Address, Notice } from "../../components/common";
 import { isAddress } from "../../lib/explorer";
 import { CONFIRM_WORD_COUNT, mnemonicProblem, mnemonicWords, ordinal, pickConfirmPositions, wrongPositions } from "../../lib/mnemonic";
 import { sameAddress } from "../../lib/units";
-import { SUPPORT_EMAIL } from "../../status/problems";
+import { SUPPORT_EMAIL, foundWalletsOf } from "../../status/problems";
 import { useAppStatus } from "../../status/AppStatus";
 import { FoundWalletCard } from "./FoundWalletCard";
 import { ensureWalletPassword, newWallet, saveWallet, walletError } from "./walletCalls";
@@ -44,13 +44,13 @@ type FoundPhase = "idle" | "busy" | "tried" | "done";
  * back with one click comes first.
  */
 export function WalletStep({ walletReady, address }: { walletReady: boolean; address?: string }) {
-  const { avado } = useAppStatus();
+  const { avado, daemonReady } = useAppStatus();
   const [mode, setMode] = useState<Mode>("choose");
   /** This page just created or restored the wallet: keep showing its outcome. */
   const [saved, setSaved] = useState(false);
   /** This page is putting a found wallet back, or just did: keep its card and outcome on screen while the status catches up. */
   const [found, setFound] = useState<FoundPhase>("idle");
-  const wallets = avado && !avado.walletFilePresent ? (avado.foundWallets ?? []) : [];
+  const wallets = foundWalletsOf(avado);
   if (walletReady && !saved && found === "idle") return <WalletExists address={address} />;
   if (mode === "create") return <CreateWallet onCancel={() => setMode("choose")} onSaved={() => setSaved(true)} />;
   if (mode === "restore") return <RestoreWallet onCancel={() => setMode("choose")} onSaved={() => setSaved(true)} />;
@@ -59,10 +59,20 @@ export function WalletStep({ walletReady, address }: { walletReady: boolean; add
   return (
     <div className="flex flex-col gap-4">
       {(wallets.length > 0 || found !== "idle") && (
-        <FoundWalletCard wallets={wallets} onStart={() => setFound("busy")} onFinish={(ok) => setFound(ok ? "done" : "tried")} />
+        <FoundWalletCard
+          wallets={wallets}
+          walletReady={walletReady}
+          onStart={() => setFound("busy")}
+          onFinish={(ok) => setFound(ok ? "done" : "tried")}
+        />
       )}
       {settled ? (
         walletReady && <WalletExists address={address} />
+      ) : !daemonReady ? (
+        // Only reached with a found wallet (the setup page waits otherwise): creating or restoring needs Rocket Pool running.
+        <p className="text-sm text-fg-muted">
+          Rocket Pool isn't running yet, so creating or restoring a wallet has to wait. Putting the found wallet back works now.
+        </p>
       ) : (
         <>
           <p className="text-sm text-fg">

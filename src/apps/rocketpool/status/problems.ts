@@ -6,7 +6,7 @@
 import { ADMIN_STORE_URL, adminPackageUrl } from "../../../components/shell/links";
 import type { Problem, ProblemAction, ProblemTone } from "../../../components/shell/problems";
 import { plainMessage } from "../api/errors";
-import type { AvadoStatus, NodeStatus, ReconcileKeyState, ReconcileStatus, ReconcileView } from "../api/models";
+import type { AvadoStatus, FoundWallet, NodeStatus, ReconcileKeyState, ReconcileStatus, ReconcileView } from "../api/models";
 import { reconcileStatusOf } from "../api/reconcile";
 import { txUrl } from "../lib/explorer";
 import { formatEth, isZeroAddress, sameAddress, shortAddress, toBigInt } from "../lib/units";
@@ -72,6 +72,11 @@ export interface StatusProblemInputs {
   avadoFailed?: boolean;
   /** The last `/api/avado/reconcile` answer. */
   reconcile?: ReconcileView | null;
+}
+
+/** Wallet copies found elsewhere on the AVADO, offered only while there is no wallet; [] from an older backend. */
+export function foundWalletsOf(avado: AvadoStatus | null | undefined): FoundWallet[] {
+  return avado && !avado.walletFilePresent ? (avado.foundWallets ?? []) : [];
 }
 
 /** The banners every page shows (the shell's): package, daemon, wallet files, validator keys. */
@@ -141,8 +146,9 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
   }
 
   if (!avado.walletFilePresent) {
-    if (ready && (avado.foundWallets?.length ?? 0) > 0) {
+    if (foundWalletsOf(avado).length > 0) {
       // Usually after an update: the wallet is still on the AVADO, just not where the daemon looks.
+      // Putting it back doesn't need the daemon (it may well be down for want of the wallet).
       out.push({
         id: "wallet-found",
         tone: "accent",

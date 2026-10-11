@@ -237,6 +237,15 @@ describe("Home", () => {
     expect(within(callout).queryByText("Set up your Rocket Pool node")).not.toBeInTheDocument();
   });
 
+  it("a wallet found while Rocket Pool isn't running: still one click to put it back", async () => {
+    const api = createMockRocketpoolApi({ scenario: "wallet-found" });
+    const status = api.avadoStatus.bind(api);
+    api.avadoStatus = async () => ({ ...(await status()), daemon: { state: "STARTING" }, apiReachable: false });
+    renderHome(api);
+    const callout = await screen.findByTestId("setup-callout");
+    expect(within(callout).getByRole("link", { name: "Use this wallet" })).toHaveAttribute("href", "/setup/wallet");
+  });
+
   it("an unregistered node and a node without validators each get their next step", async () => {
     renderHome({ scenario: "unregistered" });
     expect(await screen.findByText("Finish setting up your node")).toBeInTheDocument();

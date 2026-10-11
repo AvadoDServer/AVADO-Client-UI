@@ -28,10 +28,13 @@ type Outcome = { ok: true; result: AdoptWalletResult } | { ok: false; error: unk
  */
 export function FoundWalletCard({
   wallets,
+  walletReady = false,
   onStart,
   onFinish,
 }: {
   wallets: FoundWallet[];
+  /** A wallet is in place now: an unclear outcome has settled itself. */
+  walletReady?: boolean;
   onStart?: () => void;
   onFinish?: (ok: boolean) => void;
 }) {
@@ -72,6 +75,26 @@ export function FoundWalletCard({
 
   const shown = wallets.slice(0, MAX_FOUND_SHOWN);
 
+  const failure =
+    outcome && !outcome.ok ? (
+      outcome.unclear ? (
+        !walletReady && (
+          <Notice tone="neutral" title="Not sure whether it worked" live>
+            <p>This page updates by itself once the wallet shows up. Trying again is safe: a wallet that is already back is never replaced.</p>
+            <TechDetails error={outcome.error} />
+          </Notice>
+        )
+      ) : (
+        <Notice tone="danger" title="The wallet was not put back" live>
+          <p>{plainError(outcome.error)}</p>
+          <TechDetails error={outcome.error} />
+        </Notice>
+      )
+    ) : null;
+
+  // Nothing left to offer (the list changed after a refusal): only the outcome.
+  if (!outcome?.ok && shown.length === 0) return failure || null;
+
   return (
     <section aria-labelledby={`${id}-title`} className="flex flex-col gap-3 rounded-xl border border-accent/25 bg-accent-subtle p-4" data-testid="found-wallet">
       <div>
@@ -82,56 +105,46 @@ export function FoundWalletCard({
       </div>
 
       {outcome?.ok ? (
-        <Notice tone="success" title="Your wallet is back. Rocket Pool is restarting, this takes about a minute." live>
-          {outcome.result.restarted === false && (
-            <p>The daemon could not be restarted by itself: restart the Rocket Pool package in the AVADO Admin.</p>
-          )}
-        </Notice>
-      ) : (
-        shown.length > 0 && (
-          <ul className="flex flex-col gap-2">
-            {shown.map((w, i) => {
-              const time = parseTime(w.modifiedAt);
-              const rowId = `${id}-row-${i}`;
-              return (
-                <li key={w.dir} className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center">
-                  <div id={rowId} className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">
-                    <span className="font-semibold text-fg [overflow-wrap:anywhere]">{foundWhere(w)}</span>
-                    {w.address ? <Address value={w.address} /> : <span className="text-fg-muted">Address unknown</span>}
-                    <span className="flex flex-wrap gap-x-3 text-xs text-fg-muted">
-                      {time !== null && <span>Made/changed {formatDate(time)}</span>}
-                      {w.hasValidators && <span>Includes validator keys</span>}
-                    </span>
-                  </div>
-                  <Button
-                    variant={i === 0 ? "primary" : "secondary"}
-                    className="flex-shrink-0 self-start sm:self-center"
-                    onClick={() => void adopt(w.dir)}
-                    loading={busyDir === w.dir}
-                    disabled={busy}
-                    aria-describedby={rowId}
-                  >
-                    Use this wallet
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        )
-      )}
-
-      {outcome && !outcome.ok &&
-        (outcome.unclear ? (
-          <Notice tone="neutral" title="Not sure whether it worked" live>
-            <p>Reload the page in a minute to see. Trying again is safe: a wallet that is already back is never replaced.</p>
-            <TechDetails error={outcome.error} />
+        outcome.result.restarted === false ? (
+          <Notice tone="success" title="Your wallet is back." live>
+            <p>Rocket Pool could not restart by itself: restart the Rocket Pool package in the AVADO Admin.</p>
+            {outcome.result.restartError && <TechDetails lines={[outcome.result.restartError]} />}
           </Notice>
         ) : (
-          <Notice tone="danger" title="The wallet was not put back" live>
-            <p>{plainError(outcome.error)}</p>
-            <TechDetails error={outcome.error} />
-          </Notice>
-        ))}
+          <Notice tone="success" title="Your wallet is back. Rocket Pool is restarting, this takes about a minute." live />
+        )
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {shown.map((w, i) => {
+            const time = parseTime(w.modifiedAt);
+            const rowId = `${id}-row-${i}`;
+            return (
+              <li key={w.dir} className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center">
+                <div id={rowId} className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">
+                  <span className="font-semibold text-fg [overflow-wrap:anywhere]">{foundWhere(w)}</span>
+                  {w.address ? <Address value={w.address} /> : <span className="text-fg-muted">Address unknown</span>}
+                  <span className="flex flex-wrap gap-x-3 text-xs text-fg-muted">
+                    {time !== null && <span>Made/changed {formatDate(time)}</span>}
+                    {w.hasValidators && <span>Includes validator keys</span>}
+                  </span>
+                </div>
+                <Button
+                  variant={i === 0 ? "primary" : "secondary"}
+                  className="flex-shrink-0 self-start sm:self-center"
+                  onClick={() => void adopt(w.dir)}
+                  loading={busyDir === w.dir}
+                  disabled={busy}
+                  aria-describedby={rowId}
+                >
+                  Use this wallet
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {failure}
     </section>
   );
 }

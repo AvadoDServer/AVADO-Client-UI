@@ -1,6 +1,6 @@
 import { DEMO, SCENARIOS, demoKey, reconcileView } from "../../api/fixtures";
 import type { AvadoStatus, NodeStatus, ReconcileView } from "../../api/models";
-import { findNodeProblems, findPendingProblems, findStatusProblems, forMode } from "../problems";
+import { findNodeProblems, findPendingProblems, findStatusProblems, forMode, foundWalletsOf } from "../problems";
 import type { PendingTx } from "../../tx/pending";
 
 const running = SCENARIOS.minipool.avado;
@@ -85,9 +85,22 @@ describe("status banners", () => {
     const older: AvadoStatus = { ...s.avado };
     delete older.foundWallets;
     expect(ids(findStatusProblems({ avado: older }))).toEqual(["no-wallet"]);
-    // Neither while the daemon isn't ready.
-    expect(ids(findStatusProblems({ avado: { ...s.avado, apiReachable: false } }))).toEqual(["daemon-starting"]);
-    expect(ids(findStatusProblems({ avado: { ...s.avado, daemon: { state: "FATAL" }, apiReachable: false } }))).toEqual(["daemon-stopped"]);
+    // Putting it back doesn't need the daemon: it shows while the daemon starts or has stopped (perhaps for want of the wallet).
+    expect(ids(findStatusProblems({ avado: { ...s.avado, apiReachable: false } }))).toEqual(["daemon-starting", "wallet-found"]);
+    expect(ids(findStatusProblems({ avado: { ...s.avado, daemon: { state: "FATAL" }, apiReachable: false } }))).toEqual(["daemon-stopped", "wallet-found"]);
+    // …but no-wallet still waits for a ready daemon.
+    expect(ids(findStatusProblems({ avado: { ...older, apiReachable: false } }))).toEqual(["daemon-starting"]);
+    // A wallet in place: whatever the list says, nothing is offered.
+    expect(ids(findStatusProblems({ avado: { ...s.avado, walletFilePresent: true, passwordFilePresent: true } }))).toEqual([]);
+  });
+
+  it("foundWalletsOf: the found copies only while there is no wallet; an older backend has none", () => {
+    const s = SCENARIOS["wallet-found"].avado;
+    expect(foundWalletsOf(s).map((w) => w.dir)).toEqual(["backups/legacy-20261006T200006Z", "data-old"]);
+    expect(foundWalletsOf({ ...s, walletFilePresent: true })).toEqual([]);
+    expect(foundWalletsOf(SCENARIOS.fresh.avado)).toEqual([]);
+    expect(foundWalletsOf(undefined)).toEqual([]);
+    expect(foundWalletsOf(null)).toEqual([]);
   });
 
   it("wallet without its password file; the old plaintext recovery phrase", () => {

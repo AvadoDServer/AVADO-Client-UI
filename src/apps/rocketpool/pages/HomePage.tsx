@@ -10,7 +10,7 @@ import { useMegapoolStatus, useNodeReadable, useNodeStatus, useNodeSync, useRewa
 import { formatEth, formatRpl, formatUnits, toBigInt } from "../lib/units";
 import { useAppStatus } from "../status/AppStatus";
 import { serviceStatus } from "../status/daemon";
-import { SETUP_WALLET_ROUTE, findNodeProblems } from "../status/problems";
+import { SETUP_WALLET_ROUTE, findNodeProblems, foundWalletsOf } from "../status/problems";
 import { KeyApproval } from "./home/KeyApproval";
 import { LegacyMnemonic } from "./home/LegacyMnemonic";
 
@@ -166,7 +166,7 @@ export default function HomePage() {
     <div className="flex flex-col gap-6">
       <h1 className="font-display text-4xl font-bold tracking-tight text-fg">Home</h1>
 
-      {avado && <SetupCallout walletReady={walletReady} walletFound={(avado.foundWallets?.length ?? 0) > 0} node={node} />}
+      {avado && <SetupCallout walletReady={walletReady} walletFound={foundWalletsOf(avado).length > 0} node={node} />}
       <KeyApproval />
       <LegacyMnemonic />
       <NodeFixes problems={problems} />

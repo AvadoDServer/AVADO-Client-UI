@@ -5,6 +5,7 @@ import { plainError } from "../../api/errors";
 import { TechDetails } from "../../components/common";
 import { useNodeReadable, useNodeStatus } from "../../data/nodeReads";
 import { useAppStatus } from "../../status/AppStatus";
+import { foundWalletsOf } from "../../status/problems";
 import { FundStep } from "./FundStep";
 import { RegisterStep } from "./RegisterStep";
 import { SmoothingStep } from "./SmoothingStep";
@@ -75,8 +76,9 @@ export default function SetupPage() {
   let body;
   if (!avado) {
     body = <p className="text-sm text-fg-muted">Checking your node…</p>;
-  } else if (avadoFailed || (!daemonReady && !(current === "wallet" && walletReady))) {
-    // The wallet step stays up once a wallet is there: a wallet just put back restarts the daemon, and its outcome must stay on screen.
+  } else if (avadoFailed || (!daemonReady && !(current === "wallet" && (walletReady || foundWalletsOf(avado).length > 0)))) {
+    // The wallet step stays up once a wallet is there (a wallet just put back restarts the daemon, and its outcome must stay on
+    // screen), and while a found wallet can be put back: that needs no daemon.
     body = (
       <p className="text-sm text-fg">
         Rocket Pool isn't ready yet (the message at the top says why). Setup continues here by itself once it is running.
