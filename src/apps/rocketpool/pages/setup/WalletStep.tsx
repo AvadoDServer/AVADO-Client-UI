@@ -8,6 +8,7 @@ import { CONFIRM_WORD_COUNT, mnemonicProblem, mnemonicWords, ordinal, pickConfir
 import { sameAddress } from "../../lib/units";
 import { SUPPORT_EMAIL } from "../../status/problems";
 import { useAppStatus } from "../../status/AppStatus";
+import { FoundWalletCard } from "./FoundWalletCard";
 import { ensureWalletPassword, newWallet, saveWallet, walletError } from "./walletCalls";
 
 /** Shown instead of any way to replace a wallet (owner ruling: support handles wallet changes). */
@@ -34,42 +35,67 @@ export function WalletExists({ address }: { address?: string }) {
 
 type Mode = "choose" | "create" | "restore";
 
-/** Step 1: create a new node wallet or restore one; never replaces an existing wallet. */
+/** Putting a found wallet back: "busy" while it runs, "tried" after a failure, "done" after a success. */
+type FoundPhase = "idle" | "busy" | "tried" | "done";
+
+/**
+ * Step 1: create a new node wallet or restore one; never replaces an existing
+ * wallet. When the backend found a wallet elsewhere on this AVADO, putting it
+ * back with one click comes first.
+ */
 export function WalletStep({ walletReady, address }: { walletReady: boolean; address?: string }) {
+  const { avado } = useAppStatus();
   const [mode, setMode] = useState<Mode>("choose");
   /** This page just created or restored the wallet: keep showing its outcome. */
   const [saved, setSaved] = useState(false);
-  if (walletReady && !saved) return <WalletExists address={address} />;
+  /** This page is putting a found wallet back, or just did: keep its card and outcome on screen while the status catches up. */
+  const [found, setFound] = useState<FoundPhase>("idle");
+  const wallets = avado && !avado.walletFilePresent ? (avado.foundWallets ?? []) : [];
+  if (walletReady && !saved && found === "idle") return <WalletExists address={address} />;
   if (mode === "create") return <CreateWallet onCancel={() => setMode("choose")} onSaved={() => setSaved(true)} />;
   if (mode === "restore") return <RestoreWallet onCancel={() => setMode("choose")} onSaved={() => setSaved(true)} />;
+  // After a found wallet is back (or once one is there anyway), nothing offers to make another.
+  const settled = walletReady || found === "done";
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-fg">
-        Rocket Pool needs a wallet on this AVADO: the <strong>node wallet</strong>. It pays network fees and holds your node's
-        validator keys. Its recovery phrase is the only way to restore it if this AVADO breaks.
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <ChoiceButton
-          title="Create a new wallet"
-          text="For a new Rocket Pool node. You'll write down its 24-word recovery phrase."
-          onClick={() => setMode("create")}
-        />
-        <ChoiceButton
-          title="Restore a wallet"
-          text="You already have a Rocket Pool node wallet and its recovery phrase, for example from an earlier AVADO."
-          onClick={() => setMode("restore")}
-        />
-      </div>
+      {(wallets.length > 0 || found !== "idle") && (
+        <FoundWalletCard wallets={wallets} onStart={() => setFound("busy")} onFinish={(ok) => setFound(ok ? "done" : "tried")} />
+      )}
+      {settled ? (
+        walletReady && <WalletExists address={address} />
+      ) : (
+        <>
+          <p className="text-sm text-fg">
+            Rocket Pool needs a wallet on this AVADO: the <strong>node wallet</strong>. It pays network fees and holds your node's
+            validator keys. Its recovery phrase is the only way to restore it if this AVADO breaks.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ChoiceButton
+              title="Create a new wallet"
+              text="For a new Rocket Pool node. You'll write down its 24-word recovery phrase."
+              onClick={() => setMode("create")}
+              disabled={found === "busy"}
+            />
+            <ChoiceButton
+              title="Restore a wallet"
+              text="You already have a Rocket Pool node wallet and its recovery phrase, for example from an earlier AVADO."
+              onClick={() => setMode("restore")}
+              disabled={found === "busy"}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-function ChoiceButton({ title, text, onClick }: { title: string; text: string; onClick: () => void }) {
+function ChoiceButton({ title, text, onClick, disabled }: { title: string; text: string; onClick: () => void; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex flex-col gap-1 rounded-xl border border-border bg-surface p-4 text-left transition-colors hover:border-accent hover:bg-surface-hover focus:outline-none focus-visible:shadow-focus"
+      disabled={disabled}
+      className="flex flex-col gap-1 rounded-xl border border-border bg-surface p-4 text-left transition-colors hover:border-accent hover:bg-surface-hover focus:outline-none focus-visible:shadow-focus disabled:pointer-events-none disabled:opacity-55"
     >
       <span className="text-[0.9375rem] font-semibold text-fg">{title}</span>
       <span className="text-sm text-fg-muted">{text}</span>

@@ -75,7 +75,8 @@ export default function SetupPage() {
   let body;
   if (!avado) {
     body = <p className="text-sm text-fg-muted">Checking your node…</p>;
-  } else if (avadoFailed || !daemonReady) {
+  } else if (avadoFailed || (!daemonReady && !(current === "wallet" && walletReady))) {
+    // The wallet step stays up once a wallet is there: a wallet just put back restarts the daemon, and its outcome must stay on screen.
     body = (
       <p className="text-sm text-fg">
         Rocket Pool isn't ready yet (the message at the top says why). Setup continues here by itself once it is running.
