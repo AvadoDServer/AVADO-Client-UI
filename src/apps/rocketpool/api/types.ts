@@ -1,4 +1,4 @@
-import type { ApproveKeysResult, AvadoStatus, BackupDownload, LegacyMnemonicArchiveResult, LogsView, ReconcileView, SnEnvelope } from "./models";
+import type { AdoptWalletResult, ApproveKeysResult, AvadoStatus, BackupDownload, LegacyMnemonicArchiveResult, LogsView, ReconcileView, SnEnvelope } from "./models";
 
 /** Flat request parameters: Smartnode reads strings; the backend takes a flat JSON object. */
 export type SnParams = Record<string, string | number | boolean>;
@@ -35,6 +35,14 @@ export interface RocketpoolApi {
    * accepts only exactly "ARCHIVE" (400 otherwise, 404 when there is no file).
    */
   archiveLegacyMnemonic(confirm: string): Promise<LegacyMnemonicArchiveResult>;
+  /**
+   * `POST /api/avado/wallet/adopt {dir}`: copies a wallet found elsewhere on
+   * the package's storage (a `dir` from the status's `foundWallets`) into the
+   * folder the daemon uses, then restarts the daemon. Copies only, never
+   * moves or overwrites (400 when `dir` is not on the list any more, 409 when
+   * a wallet is already there). Call it only from an explicit owner action.
+   */
+  adoptFoundWallet(dir: string): Promise<AdoptWalletResult>;
   /**
    * `POST /api/avado/backups/download {name}`: one backup as a .zip file.
    * `name` is a backup's name from the status, or "current" for a fresh

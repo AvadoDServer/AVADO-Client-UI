@@ -3,7 +3,7 @@
  * never crashes the shell. Anything missing gets the cautious value (not
  * running, not reachable, not present).
  */
-import type { AvadoStatus, BackupInfo, DaemonSettings } from "./models";
+import type { AvadoStatus, BackupInfo, DaemonSettings, FoundWallet } from "./models";
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : null);
@@ -22,6 +22,25 @@ function parseSettings(v: unknown): DaemonSettings | undefined {
     if (typeof raw === "string" && /^\d+(\.\d+)?$/.test(raw.trim())) out[k] = raw.trim();
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+/** Found wallet copies with a folder; anything odd in an entry gets the cautious value. Undefined from an older backend. */
+function parseFoundWallets(v: unknown): FoundWallet[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .flatMap((w): FoundWallet[] => {
+      if (!isObject(w) || typeof w.dir !== "string") return [];
+      return [
+        {
+          dir: w.dir,
+          address: str(w.address),
+          modifiedAt: str(w.modifiedAt) ?? "",
+          hasValidators: bool(w.hasValidators),
+          source: w.source === "backup" ? "backup" : "other",
+        },
+      ];
+    })
+    .slice(0, 20);
 }
 
 /** The status, or null when the answer is not a status at all. */
@@ -55,5 +74,6 @@ export function parseAvadoStatus(raw: unknown): AvadoStatus | null {
     passwordFilePresent: raw.passwordFilePresent !== false,
     legacyMnemonicPresent: bool(raw.legacyMnemonicPresent),
     ...(parseSettings(raw.settings) ? { settings: parseSettings(raw.settings) } : {}),
+    ...(parseFoundWallets(raw.foundWallets) ? { foundWallets: parseFoundWallets(raw.foundWallets) } : {}),
   };
 }

@@ -22,6 +22,7 @@ export type RpProblemId =
   | "daemon-stopped"
   | "daemon-starting"
   | "no-wallet"
+  | "wallet-found"
   | "password-missing"
   | "legacy-mnemonic"
   | "no-consensus-client"
@@ -140,7 +141,16 @@ export function findStatusProblems({ avado, avadoFailed, reconcile }: StatusProb
   }
 
   if (!avado.walletFilePresent) {
-    if (ready) {
+    if (ready && (avado.foundWallets?.length ?? 0) > 0) {
+      // Usually after an update: the wallet is still on the AVADO, just not where the daemon looks.
+      out.push({
+        id: "wallet-found",
+        tone: "accent",
+        title: "Your Rocket Pool wallet was found on this AVADO",
+        body: "It is not in the folder the app uses, so the app can't see it. One click puts it back. Nothing is deleted.",
+        action: { label: "Use this wallet", to: SETUP_WALLET_ROUTE },
+      });
+    } else if (ready) {
       out.push({
         id: "no-wallet",
         tone: "accent",
@@ -185,6 +195,7 @@ export const KEY_APPROVAL_ROUTE = "/";
 /** Where the old plaintext recovery-phrase file is explained and moved away (Home). */
 export const LEGACY_MNEMONIC_ROUTE = "/";
 /** The setup wizard's steps that fix node problems. */
+export const SETUP_WALLET_ROUTE = "/setup/wallet";
 export const SETUP_WITHDRAWAL_ROUTE = "/setup/withdrawal";
 export const SETUP_FUND_ROUTE = "/setup/fund";
 /** Rocket Pool's site, where a new withdrawal address confirms itself from its own wallet. */

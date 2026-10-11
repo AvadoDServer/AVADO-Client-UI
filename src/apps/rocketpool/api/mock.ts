@@ -14,6 +14,10 @@
  *  - Setting up a wallet works like the backend and Smartnode: set-password
  *    once, `wallet/init` returns a demo recovery phrase without saving it,
  *    `wallet/recover` saves it; the `fresh` node then reads as `unregistered`.
+ *  - Putting a found wallet back (`wallet-found`) works like the backend:
+ *    only a listed folder (400), never over an existing wallet (409). The
+ *    node then reads as `minipool` (a copy with validator keys) or
+ *    `unregistered`, with nothing found any more.
  *  - Approved keys read as loaded; an archived legacy recovery-phrase file is gone.
  *  - `node/get-bond-requirement?numValidators=N` answers N × 4 ETH.
  *  - A backup download answers a tiny empty .zip (`DEMO_BACKUP_ZIP`), for
@@ -25,6 +29,7 @@ import {
   APPROVE_CONFIRMATION,
   ARCHIVE_CONFIRMATION,
   CURRENT_BACKUP,
+  type AdoptWalletResult,
   type ApproveKeysResult,
   type AvadoStatus,
   type BackupDownload,
@@ -45,6 +50,7 @@ import {
   AVADO_RECONCILE_PATH,
   AVADO_RECONCILE_RUN_PATH,
   AVADO_STATUS_PATH,
+  AVADO_WALLET_ADOPT_PATH,
   SN_PREFIX,
   assertRoute,
   backupFileName,
@@ -90,6 +96,9 @@ const DAEMON_DOWN = "The Rocket Pool daemon is not reachable (it may still be st
 const TX_FAILED = "Transaction failed with status 0";
 const ARCHIVE_REFUSED = "Type ARCHIVE to confirm moving the legacy recovery phrase into the backups folder.";
 const NO_LEGACY_MNEMONIC = "No legacy recovery phrase file was found; there is nothing to archive.";
+/** The backend's refusals for putting a found wallet back (wallet/adopt). */
+export const FOUND_WALLET_GONE = "That wallet is not on the list any more. Reload the page and try again.";
+export const WALLET_ALREADY_THERE = "This AVADO already has a Rocket Pool wallet. Nothing was changed.";
 const PASSWORD_SET = "A wallet password is already set.";
 const NO_PASSWORD = "The node password has not been set. Please run 'rocketpool wallet set-password' and try again.";
 /** Smartnode's minimum password length (`passwords.MinPasswordLength`). */
@@ -316,6 +325,20 @@ export function createMockRocketpoolApi(options: RocketpoolMockOptions = {}): Mo
       if (mnemonicArchive || !scenario.avado.legacyMnemonicPresent) fail(path, new DemoSnError(404, NO_LEGACY_MNEMONIC));
       mnemonicArchive = DEMO_MNEMONIC_ARCHIVE;
       return { status: "success", error: "", archived: true, name: mnemonicArchive } as LegacyMnemonicArchiveResult;
+    },
+
+    async adoptFoundWallet(dir: string) {
+      const path = AVADO_WALLET_ADOPT_PATH;
+      await enter("POST", path, { dir });
+      // On the box a folder stays on the list while it exists, so a wallet already in place is the first refusal.
+      if (scenario.avado.walletFilePresent) fail(path, new DemoSnError(409, WALLET_ALREADY_THERE));
+      const found = (scenario.avado.foundWallets ?? []).find((w) => w.dir === dir);
+      if (!found) fail(path, new DemoSnError(400, FOUND_WALLET_GONE));
+      // The wallet is back: Smartnode reads it, and the status finds nothing elsewhere any more.
+      const next = SCENARIOS[found.hasValidators ? "minipool" : "unregistered"];
+      scenario = { ...next, avado: { ...next.avado, foundWallets: [] } };
+      const copied = ["wallet", "password", ...(found.hasValidators ? ["validators"] : [])];
+      return { status: "success", error: "", dir, copied, restarted: true } as AdoptWalletResult;
     },
 
     async downloadBackup(name: string, opts: CallOptions = {}) {

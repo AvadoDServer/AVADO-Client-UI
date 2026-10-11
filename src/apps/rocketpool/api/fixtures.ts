@@ -9,6 +9,10 @@
  *    the hot wallet, little ETH left for gas.
  *  - `fresh`: a new install: daemon running, no wallet yet. Creating or
  *    restoring a wallet in the mock turns it into `unregistered`.
+ *  - `wallet-found`: like `fresh`, but the backend found two wallet copies
+ *    elsewhere on the AVADO (an automatic backup with validator keys, and an
+ *    old folder). Putting one back in the mock turns it into `minipool` (with
+ *    validator keys) or `unregistered`.
  *  - `unregistered`: a wallet with 8.2 ETH, not registered with Rocket Pool yet.
  *  - `new-node`: registered, no validators yet, a cold withdrawal address
  *    waiting for its confirmation, not in the smoothing pool.
@@ -76,12 +80,22 @@ export class DemoSnError {
   ) {}
 }
 
-export type MockScenarioName = "minipool" | "mixed" | "fresh" | "unregistered" | "new-node" | "keys-attention" | "daemon-failed" | "exits";
+export type MockScenarioName =
+  | "minipool"
+  | "mixed"
+  | "fresh"
+  | "wallet-found"
+  | "unregistered"
+  | "new-node"
+  | "keys-attention"
+  | "daemon-failed"
+  | "exits";
 
 export const MOCK_SCENARIOS: readonly MockScenarioName[] = [
   "minipool",
   "mixed",
   "fresh",
+  "wallet-found",
   "unregistered",
   "new-node",
   "keys-attention",
@@ -780,6 +794,20 @@ const freshNode: MockScenario = {
   logLines: ["2026/09/23 09:40:00 Waiting for the node wallet to be initialized..."],
 };
 
+/** A new-looking node whose wallet sits elsewhere on the AVADO (e.g. after an update moved the data folder). */
+const walletFoundNode: MockScenario = {
+  ...freshNode,
+  name: "wallet-found",
+  title: "Wallet found elsewhere on the AVADO",
+  avado: {
+    ...freshNode.avado,
+    foundWallets: [
+      { dir: "backups/legacy-20261006T200006Z", address: DEMO.nodeAddress, modifiedAt: "2026-10-06T20:00:06Z", hasValidators: true, source: "backup" },
+      { dir: "data-old", address: null, modifiedAt: "2026-09-01T10:00:00Z", hasValidators: false, source: "other" },
+    ],
+  },
+};
+
 const NOT_REGISTERED = "The node is not registered with Rocket Pool.";
 
 /** A node with nothing on it yet: no minipools, no megapool, no express tickets. */
@@ -1048,6 +1076,7 @@ export const SCENARIOS: Record<MockScenarioName, MockScenario> = {
   minipool: minipoolNode,
   mixed: mixedNode,
   fresh: freshNode,
+  "wallet-found": walletFoundNode,
   unregistered: unregisteredNode,
   "new-node": newNode,
   "keys-attention": keysAttentionNode,
