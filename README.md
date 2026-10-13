@@ -25,12 +25,13 @@ of `wrong` (or empty) gives an error result.
 
 ## Apps
 
-The repo builds two apps on the same design system:
+The repo builds three apps on the same design system:
 
 | App | Entry | Build | Output |
 | --- | --- | --- | --- |
 | Client UI (Nimbus, Teku, Prysm, Lighthouse) | `index.html` → `src/main.tsx` | `yarn build` | `dist/` |
 | Rocket Pool | `src/apps/rocketpool/index.html` → `main.tsx` | `yarn build:rocketpool` | `dist-rocketpool/` |
+| Qtum Staking | `src/apps/qtum/index.html` → `main.tsx` | `yarn build:qtum` | `dist-qtum/` |
 
 `VITE_MOCK=1 yarn dev:rocketpool` runs the Rocket Pool app on its in-memory
 adapters (`src/apps/rocketpool/api/mock.ts`) with a demo node from
@@ -47,9 +48,30 @@ In `wallet-found`, "Use this wallet" leads on to `minipool` (the backup with
 validator keys) or `unregistered` (the old folder). Its own Vite and Tailwind
 configs (`vite.rocketpool.config.ts`, `tailwind.rocketpool.config.ts`) keep
 it out of the client build: `tailwind.config.ts` skips `src/apps/**`, so
-`dist/` is the same with or without it. Both apps use the shared shell
+`dist/` is the same with or without it. All apps use the shared shell
 (`src/components/shell/ShellFrame.tsx`: sidebar, top bar, drawer, banners)
 with their own identity and pages.
+
+The Qtum Staking app is the Qtum package's page (`qtum.my.ava.do`). It talks
+to the package's monitor (`/monitor/*`) and to the Qtum node's JSON-RPC
+through the package's nginx (`/rpc`, same origin only; nginx adds the RPC
+password). Home shows the wallet, whether it stakes (and why not) and the
+rewards; Wallet has the addresses, unlocking a wallet with a password for
+staking, the backup download and restore; Settings the delegation fee and
+minimum and a node restart; Advanced (Advanced mode) private keys, key
+import, the node log and the Qtum Web Wallet link. The wallet banners
+(upgrade, rebuild, restore, fresh backup) keep the old wizard's wording.
+`VITE_MOCK=1 yarn dev:qtum` runs it on its in-memory package
+(`src/apps/qtum/api/mock.ts`, scenarios in `src/apps/qtum/api/fixtures.ts`):
+add `?scenario=staking` (the default), `fresh` (the node starting),
+`syncing`, `locked` (a wallet with a password; the demo password is
+`demo password`), `upgrade-failed`, `needs-password`, `rebuilding`,
+`rebuilt`, `restoring` or `backup-required` to the address, e.g.
+`http://localhost:5173/?scenario=upgrade-failed#/`. Wallet tasks started in
+the demo (retry, rebuild, restore, key import, restart) finish by themselves
+after 4 seconds. Like the Rocket Pool app it has its own Vite and Tailwind
+configs (`vite.qtum.config.ts`, `tailwind.qtum.config.ts`), so `dist/` is the
+same with or without it.
 
 ## Runtime config
 
