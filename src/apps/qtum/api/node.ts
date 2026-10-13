@@ -28,10 +28,17 @@ export interface NodeInfo {
   version: string | undefined;
 }
 
-/** "/Qtum:30.2.0/" → "30.2.0". */
-export function qtumVersion(subversion: string | undefined): string | undefined {
-  const m = /Qtum:([0-9][0-9A-Za-z.\-+]*)/.exec(subversion ?? "");
-  return m ? m[1] : undefined;
+/**
+ * The node's version: "/Satoshi:30.2.0/" (what Qtum v30 reports) or
+ * "/Qtum:30.2.0/" → "30.2.0"; else from the number (300200 → "30.2.0").
+ */
+export function qtumVersion(subversion: string | undefined, version?: number): string | undefined {
+  const m = /^\/?[A-Za-z]+:([0-9]+(?:\.[0-9]+)*)/.exec(subversion ?? "");
+  if (m) return m[1];
+  if (typeof version === "number" && Number.isInteger(version) && version > 0) {
+    return `${Math.floor(version / 10000)}.${Math.floor(version / 100) % 100}.${version % 100}`;
+  }
+  return undefined;
 }
 
 /** Syncing: the node is still downloading blocks (behind its headers, or in its first download). */
@@ -53,7 +60,7 @@ export async function readNodeInfo(api: QtumApi): Promise<NodeInfo> {
     progress: chain.verificationprogress,
     syncing: isSyncing(chain),
     peers: net?.connections,
-    version: qtumVersion(net?.subversion),
+    version: qtumVersion(net?.subversion, net?.version),
   };
 }
 

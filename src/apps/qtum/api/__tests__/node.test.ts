@@ -4,8 +4,10 @@ import { addressesMakingOne, listAddresses } from "../node";
 
 describe("node reads", () => {
   it("the Qtum version from the node's subversion", () => {
+    // Qtum v30 reports Bitcoin Core's "Satoshi" name.
+    expect(qtumVersion("/Satoshi:30.2.0/")).toBe("30.2.0");
     expect(qtumVersion("/Qtum:30.2.0/")).toBe("30.2.0");
-    expect(qtumVersion("/Satoshi:25.0.0/")).toBeUndefined();
+    expect(qtumVersion("", 300200)).toBe("30.2.0");
     expect(qtumVersion(undefined)).toBeUndefined();
   });
 

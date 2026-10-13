@@ -119,7 +119,7 @@ export interface BlockchainInfo {
 
 export interface NetworkInfo {
   version: number;
-  /** "/Qtum:30.2.0/" */
+  /** "/Satoshi:30.2.0/" (Qtum v30) */
   subversion: string;
   connections: number;
 }

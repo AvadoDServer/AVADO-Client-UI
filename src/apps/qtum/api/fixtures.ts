@@ -100,7 +100,7 @@ const syncedNode = (over: Partial<DemoNode> = {}): DemoNode => ({
   progress: 0.99999987,
   ibd: false,
   peers: 12,
-  subversion: "/Qtum:30.2.0/",
+  subversion: "/Satoshi:30.2.0/",
   stakingEnabled: true,
   weight: 249_800_000_000,
   expectedtime: 3 * 86400 + 4 * 3600,
