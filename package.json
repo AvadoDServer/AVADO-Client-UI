@@ -13,6 +13,8 @@
     "build": "tsc --noEmit && vite build",
     "dev:rocketpool": "vite --config vite.rocketpool.config.ts",
     "build:rocketpool": "tsc --noEmit && vite build --config vite.rocketpool.config.ts",
+    "dev:qtum": "vite --config vite.qtum.config.ts",
+    "build:qtum": "tsc --noEmit && vite build --config vite.qtum.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
