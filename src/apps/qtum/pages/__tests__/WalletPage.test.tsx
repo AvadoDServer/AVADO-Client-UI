@@ -1,4 +1,5 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { createMockQtumApi } from "../../api/mock";
 import userEvent from "@testing-library/user-event";
 import { DEMO_ADDRESSES, DEMO_PASSWORD } from "../../api/fixtures";
 import { STAKING_UNLOCK_SECONDS } from "../../api/models";
@@ -58,6 +59,27 @@ describe("Wallet", () => {
     }
   });
 
+  it("until the backup state has loaded, no addresses show (no flash before a required backup)", async () => {
+    const api = createMockQtumApi();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const read = api.settings.bind(api);
+    api.settings = async () => {
+      await gate;
+      return read();
+    };
+    renderPage("/wallet", api);
+    expect(await screen.findByTestId("backup-first")).toHaveTextContent(BACKUP_FIRST);
+    // the wallet and the node are read, the settings are not yet
+    await waitFor(() => expect(api.calls.some((c) => c.path === "getblockchaininfo")).toBe(true));
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(screen.queryByRole("list", { name: "Wallet addresses" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("backup-required")).not.toBeInTheDocument();
+    release();
+    expect(await screen.findByRole("list", { name: "Wallet addresses" })).toBeInTheDocument();
+    expect(screen.queryByTestId("backup-first")).not.toBeInTheDocument();
+  });
+
   it("links to the Qtum Web Wallet for sending coins", async () => {
     renderPage("/wallet");
     const link = within(region("Send coins")).getByRole("link", { name: /Qtum Web Wallet \(advanced\)/ });
@@ -67,7 +89,9 @@ describe("Wallet", () => {
 
   it("no backup download while the wallet is being rebuilt", async () => {
     renderPage("/wallet", { scenario: "rebuilding" });
-    expect(await within(region("Backup")).findByTestId("backup-busy")).toBeInTheDocument();
+    // (the card moves once the backup state has loaded: read it again each time)
+    await waitFor(() => expect(within(region("Backup")).getByTestId("backup-busy")).toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByTestId("backup-first")).not.toBeInTheDocument());
     expect(within(region("Backup")).getByRole("button", { name: "Download wallet backup" })).toBeDisabled();
   });
 

@@ -258,7 +258,9 @@ function RestoreBackup() {
 
 /** Wallet (spec): addresses, staking password, backup and restore. */
 export default function WalletPage() {
-  const { walletReady, node, nodeError, backupRequired } = useAppStatus();
+  const { walletReady, node, nodeError, backupRequired, settings } = useAppStatus();
+  // Until the backup state has loaded, assume "back up first", so the addresses never flash before it.
+  const backupFirst = backupRequired || settings === undefined;
   const canRead = walletReady && !!node && nodeError === undefined;
   const backup = (
     <SectionCard
@@ -278,15 +280,15 @@ export default function WalletPage() {
     <div className="flex flex-col gap-6">
       <PageHeader title="Wallet" description="The wallet on your AVADO that holds and stakes your QTUM." />
       {/* Back up first: until then the backup comes first and the addresses wait. */}
-      {backupRequired && backup}
-      <Addresses enabled={canRead} backupFirst={backupRequired} />
+      {backupFirst && backup}
+      <Addresses enabled={canRead} backupFirst={backupFirst} />
       <SectionCard title="Send coins" description="To send coins, open the Qtum Web Wallet. It opens in a new tab." testId="send-coins">
         <div>
           <ExternalLink href={WEB_WALLET_URL}>Qtum Web Wallet (advanced)</ExternalLink>
         </div>
       </SectionCard>
       <StakingPassword enabled={canRead} />
-      {!backupRequired && backup}
+      {!backupFirst && backup}
       <RestoreBackup />
     </div>
   );

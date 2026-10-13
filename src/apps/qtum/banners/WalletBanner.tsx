@@ -18,7 +18,7 @@ import { useAppStatus } from "../status/AppStatus";
  * wallet does not stake; the Wallet page unlocks it for staking.
  */
 export const LOCKED_NOTE =
-  "Your wallet is protected with a password, so it is locked after every restart and does not stake until you unlock it for staking on the Wallet page.";
+  "A wallet with a password is locked after every restart and does not stake until you unlock it for staking on the Wallet page.";
 
 /** The monitor's plain message, or a fallback (as the old wizard's errorMessage). */
 function monitorMessage(err: unknown, fallback: string): string {
