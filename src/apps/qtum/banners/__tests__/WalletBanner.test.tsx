@@ -28,6 +28,13 @@ const rebuild = (over: Partial<NonNullable<WalletStatus["rebuild"]>> = {}): Wall
 });
 
 describe("Wallet status banners (the old wizard's states and wording)", () => {
+  it("the note for a wallet with a password points to the Wallet page's unlock (owner-approved wording)", () => {
+    expect(LOCKED_NOTE).toBe(
+      "Your wallet is protected with a password, so it is locked after every restart and does not stake until you unlock it for staking on the Wallet page.",
+    );
+    expect(LOCKED_NOTE).not.toMatch(/contact AVADO support/);
+  });
+
   it("none while the wallet is ready", async () => {
     renderPage("/");
     await screen.findByText("Running");

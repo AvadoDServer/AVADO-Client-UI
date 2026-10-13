@@ -13,9 +13,12 @@ import { BackupButton } from "../components/BackupButton";
 import { Notice, type NoticeTone } from "../components/common";
 import { useAppStatus } from "../status/AppStatus";
 
-/** An upgraded wallet with a password stays locked, and a locked wallet does not stake. */
+/**
+ * A wallet with a password is locked after every restart, and a locked
+ * wallet does not stake; the Wallet page unlocks it for staking.
+ */
 export const LOCKED_NOTE =
-  "Because your wallet has a password, it stays locked after the upgrade and does not stake. Please contact AVADO support if you want to stake with it.";
+  "Your wallet is protected with a password, so it is locked after every restart and does not stake until you unlock it for staking on the Wallet page.";
 
 /** The monitor's plain message, or a fallback (as the old wizard's errorMessage). */
 function monitorMessage(err: unknown, fallback: string): string {

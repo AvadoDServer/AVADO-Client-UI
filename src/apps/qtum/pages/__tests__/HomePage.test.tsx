@@ -28,6 +28,7 @@ describe("Home", () => {
     renderPage("/", { scenario: "syncing" });
     await waitFor(() => expect(stakingState()).toHaveTextContent("Not staking yet"));
     expect(reason()).toHaveTextContent("The Qtum node is still catching up with the network. Staking starts by itself once it has caught up.");
+    expect(await screen.findByTestId("balance-syncing")).toHaveTextContent("The balance may be incomplete until the node has caught up with the network.");
   });
 
   it("locked: not staking, with the way to unlock it", async () => {

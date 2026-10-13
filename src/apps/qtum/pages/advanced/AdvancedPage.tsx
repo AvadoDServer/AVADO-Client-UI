@@ -5,10 +5,10 @@ import { listAddresses } from "../../api/node";
 import { useQtumApi } from "../../api/QtumApiProvider";
 import { useRead } from "../../api/useRead";
 import { CopyButton, ExternalLink, LoadError, LoadingLines, Notice, PageHeader, SectionCard, TechDetails } from "../../components/common";
+import { WEB_WALLET_URL } from "../../lib/links";
 import { useAppStatus } from "../../status/AppStatus";
 
-/** The Qtum Web Wallet (sending coins, tokens, contracts) on its own port; it was at https://qtum.my.ava.do until package 0.0.14. */
-export const WEB_WALLET_URL = "https://qtum.my.ava.do:8443/";
+export { WEB_WALLET_URL };
 export const LOG_LINES = 200;
 export const LOG_READ_MS = 10_000;
 export const KEY_WARNING = "Anyone who has this key can take the coins on this address. Never share it and never type it into a website you do not trust.";

@@ -1,4 +1,5 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import { LOCKED_AFTER_RESTART } from "../settings/SettingsPage";
 import userEvent from "@testing-library/user-event";
 import { renderPage } from "./renderPage";
 
@@ -58,6 +59,20 @@ describe("Settings", () => {
     expect(await screen.findByTestId("restart-outcome")).toHaveTextContent("The Qtum node is restarting.");
     expect(posts()).toEqual([{ kind: "POST", path: "/restartQtum", params: undefined }]);
     expect(api.state.walletStatus.state).toBe("restarting");
+  });
+
+  it("a wallet with a password: says that a restart locks it, in the form and in the restart dialog", async () => {
+    renderPage("/settings", { scenario: "locked" });
+    expect(await screen.findByTestId("locked-after-restart")).toHaveTextContent(LOCKED_AFTER_RESTART);
+    await userEvent.click(screen.getByRole("button", { name: "Restart the node" }));
+    expect(screen.getByRole("dialog", { name: "Restart the Qtum node?" })).toHaveTextContent(LOCKED_AFTER_RESTART);
+  });
+
+  it("a wallet without a password: no lock note", async () => {
+    renderPage("/settings");
+    await waitFor(() => expect(fee()).toHaveValue("10"));
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(screen.queryByTestId("locked-after-restart")).not.toBeInTheDocument();
   });
 
   it("cancelling the restart sends nothing", async () => {

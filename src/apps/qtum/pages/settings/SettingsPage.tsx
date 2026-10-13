@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Button, ConfirmDialog, Input } from "../../../../components/ui";
 import { isQtumApiError, plainError } from "../../api/errors";
+import { readWallet } from "../../api/node";
 import { useQtumApi } from "../../api/QtumApiProvider";
+import { useRead } from "../../api/useRead";
 import { LoadingLines, Notice, PageHeader, SectionCard, TechDetails } from "../../components/common";
 import { useAppStatus } from "../../status/AppStatus";
 import { changes, formFrom, validate, type DelegationForm } from "./form";
@@ -10,7 +12,25 @@ type Outcome = { tone: "success" | "danger" | "accent"; text: string; error?: un
 
 const saveError = (err: unknown) => (isQtumApiError(err) && err.kind === "http" && err.detail ? err.detail : `The settings could not be saved. ${plainError(err)}`);
 
-function Delegation() {
+export const LOCKED_AFTER_RESTART =
+  "Your wallet has a password: after a restart it is locked and does not stake until you unlock it for staking on the Wallet page.";
+
+function LockedAfterRestart() {
+  return (
+    <Notice tone="warning" testId="locked-after-restart">
+      <p>{LOCKED_AFTER_RESTART}</p>
+    </Notice>
+  );
+}
+
+/** The wallet has a password (then a restart locks it). */
+function useEncrypted(): boolean {
+  const { walletReady, node, nodeError } = useAppStatus();
+  const wallet = useRead(readWallet, { enabled: walletReady && !!node && nodeError === undefined });
+  return !!wallet.data?.encrypted;
+}
+
+function Delegation({ encrypted }: { encrypted: boolean }) {
   const api = useQtumApi();
   const { settings, refreshSettings, refreshWallet } = useAppStatus();
   const [form, setForm] = useState<DelegationForm | null>(null);
@@ -79,6 +99,7 @@ function Delegation() {
             />
           </div>
           <p className="text-sm text-fg-muted">Saving a change restarts the Qtum node, so staking pauses for a few minutes.</p>
+          {encrypted && <LockedAfterRestart />}
           <div>
             <Button type="submit" loading={working} disabled={nothingToSave || !!errors.fee || !!errors.min}>
               Save
@@ -96,7 +117,7 @@ function Delegation() {
   );
 }
 
-function Restart() {
+function Restart({ encrypted }: { encrypted: boolean }) {
   const api = useQtumApi();
   const { refreshWallet, refreshNode } = useAppStatus();
   const [asking, setAsking] = useState(false);
@@ -140,8 +161,9 @@ function Restart() {
         onConfirm={() => void restart()}
         onCancel={() => setAsking(false)}
       >
-        The node stops and starts again. Staking pauses for a few minutes while it starts. If your wallet has a password, unlock it for staking again
-        afterwards.
+        {encrypted
+          ? `The node stops and starts again. Staking pauses for a few minutes while it starts. ${LOCKED_AFTER_RESTART}`
+          : "The node stops and starts again. Staking pauses for a few minutes while it starts."}
       </ConfirmDialog>
     </SectionCard>
   );
@@ -149,11 +171,12 @@ function Restart() {
 
 /** Settings (spec): the delegation fee and minimum, and restarting the node. */
 export default function SettingsPage() {
+  const encrypted = useEncrypted();
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Settings" />
-      <Delegation />
-      <Restart />
+      <Delegation encrypted={encrypted} />
+      <Restart encrypted={encrypted} />
     </div>
   );
 }

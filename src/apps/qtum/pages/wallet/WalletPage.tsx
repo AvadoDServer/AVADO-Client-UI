@@ -5,7 +5,8 @@ import { addressesMakingOne, lockWallet, newAddress, readWallet, unlockForStakin
 import { useQtumApi } from "../../api/QtumApiProvider";
 import { useRead } from "../../api/useRead";
 import { BackupButton } from "../../components/BackupButton";
-import { CopyButton, LoadingLines, Notice, PageHeader, SectionCard, TechDetails } from "../../components/common";
+import { CopyButton, ExternalLink, LoadingLines, Notice, PageHeader, SectionCard, TechDetails } from "../../components/common";
+import { WEB_WALLET_URL } from "../../lib/links";
 import { useAppStatus } from "../../status/AppStatus";
 
 /** Addresses change only when the owner makes one: read them now and then. */
@@ -23,9 +24,12 @@ function OutcomeNote({ outcome, testId }: { outcome: Outcome; testId: string }) 
   );
 }
 
-function Addresses({ enabled }: { enabled: boolean }) {
+/** Shown instead of the addresses until the first backup is downloaded (as the old page did: back up first). */
+export const BACKUP_FIRST = "Download your backup first; your addresses show here after that.";
+
+function Addresses({ enabled, backupFirst }: { enabled: boolean; backupFirst: boolean }) {
   const api = useQtumApi();
-  const list = useRead(addressesMakingOne, { enabled, intervalMs: ADDRESSES_READ_MS });
+  const list = useRead(addressesMakingOne, { enabled: enabled && !backupFirst, intervalMs: ADDRESSES_READ_MS });
   const [label, setLabel] = useState("");
   const [working, setWorking] = useState(false);
   const [outcome, setOutcome] = useState<Outcome>(null);
@@ -52,7 +56,11 @@ function Addresses({ enabled }: { enabled: boolean }) {
       description="Send QTUM to any of these addresses. They all belong to the wallet on your AVADO, and coins on all of them stake."
       testId="addresses"
     >
-      {!enabled ? (
+      {backupFirst ? (
+        <p className="text-sm text-fg" data-testid="backup-first">
+          {BACKUP_FIRST}
+        </p>
+      ) : !enabled ? (
         <p className="text-sm text-fg-muted">Shows here once your wallet is ready.</p>
       ) : list.data ? (
         <ul className="flex flex-col divide-y divide-border" aria-label="Wallet addresses">
@@ -74,7 +82,7 @@ function Addresses({ enabled }: { enabled: boolean }) {
       ) : (
         <LoadingLines />
       )}
-      {enabled && (
+      {enabled && !backupFirst && (
         <form onSubmit={create} className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-end">
           <Input
             label="Name for a new address (optional)"
@@ -252,23 +260,33 @@ function RestoreBackup() {
 export default function WalletPage() {
   const { walletReady, node, nodeError, backupRequired } = useAppStatus();
   const canRead = walletReady && !!node && nodeError === undefined;
+  const backup = (
+    <SectionCard
+      title="Backup"
+      description="Download a backup of your wallet. This is very important when you stake Qtum, because the wallet holds the private keys. Keep the file somewhere safe: anyone who has it can take your coins."
+      testId="backup"
+    >
+      {backupRequired && (
+        <Notice tone="warning" testId="backup-required">
+          <p>You have not downloaded a backup of this wallet yet. Please do it now.</p>
+        </Notice>
+      )}
+      <BackupButton />
+    </SectionCard>
+  );
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Wallet" description="The wallet on your AVADO that holds and stakes your QTUM." />
-      <Addresses enabled={canRead} />
-      <StakingPassword enabled={canRead} />
-      <SectionCard
-        title="Backup"
-        description="Download a backup of your wallet. This is very important when you stake Qtum, because the wallet holds the private keys. Keep the file somewhere safe: anyone who has it can take your coins."
-        testId="backup"
-      >
-        {backupRequired && (
-          <Notice tone="warning" testId="backup-required">
-            <p>You have not downloaded a backup of this wallet yet. Please do it now.</p>
-          </Notice>
-        )}
-        <BackupButton />
+      {/* Back up first: until then the backup comes first and the addresses wait. */}
+      {backupRequired && backup}
+      <Addresses enabled={canRead} backupFirst={backupRequired} />
+      <SectionCard title="Send coins" description="To send coins, open the Qtum Web Wallet. It opens in a new tab." testId="send-coins">
+        <div>
+          <ExternalLink href={WEB_WALLET_URL}>Qtum Web Wallet (advanced)</ExternalLink>
+        </div>
       </SectionCard>
+      <StakingPassword enabled={canRead} />
+      {!backupRequired && backup}
       <RestoreBackup />
     </div>
   );

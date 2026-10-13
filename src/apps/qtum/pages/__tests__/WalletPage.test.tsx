@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DEMO_ADDRESSES, DEMO_PASSWORD } from "../../api/fixtures";
 import { STAKING_UNLOCK_SECONDS } from "../../api/models";
+import { BACKUP_FIRST } from "../wallet/WalletPage";
 import { mockDownloads, renderPage } from "./renderPage";
 
 const region = (name: string) => screen.getByRole("region", { name });
@@ -31,12 +32,43 @@ describe("Wallet", () => {
     expect(screen.getByLabelText("Name for a new address (optional)")).toHaveValue("");
   });
 
-  it("a wallet with no address yet gets one, as with the old wizard", async () => {
-    const { rpcs } = renderPage("/wallet", { scenario: "backup-required" });
-    const list = await screen.findByRole("list", { name: "Wallet addresses" });
-    expect(within(list).getAllByRole("listitem")).toHaveLength(1);
-    expect(rpcs("getnewaddress")).toEqual([{ kind: "rpc", path: "getnewaddress", params: ["", "legacy"] }]);
-    expect(within(region("Backup")).getByTestId("backup-required")).toHaveTextContent("You have not downloaded a backup of this wallet yet.");
+  it("back up first: until the first backup the Backup card comes first and the addresses wait; restore stays available", async () => {
+    const downloads = mockDownloads();
+    try {
+      const { rpcs, posts } = renderPage("/wallet", { scenario: "backup-required" });
+      expect(await screen.findByTestId("backup-first")).toHaveTextContent(BACKUP_FIRST);
+      const cards = screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"));
+      expect(cards.slice(cards.indexOf("Backup"))).toEqual(["Backup", "Addresses", "Send coins", "Restore from a backup"]);
+      expect(within(region("Backup")).getByTestId("backup-required")).toHaveTextContent("You have not downloaded a backup of this wallet yet.");
+      expect(screen.queryByRole("list", { name: "Wallet addresses" })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Name for a new address (optional)")).not.toBeInTheDocument();
+      expect(within(region("Restore from a backup")).getByRole("button", { name: "Choose a backup file" })).toBeEnabled();
+      expect(rpcs("getnewaddress")).toEqual([]);
+      // The backup makes an address first (the wallet has none), as the old wizard did; then the addresses show.
+      await userEvent.click(within(region("Backup")).getByRole("button", { name: "Download wallet backup" }));
+      await waitFor(() => expect(posts().map((c) => c.path)).toEqual(["/backup", "/backupdone"]));
+      expect(rpcs("getnewaddress")).toEqual([{ kind: "rpc", path: "getnewaddress", params: ["", "legacy"] }]);
+      const list = await screen.findByRole("list", { name: "Wallet addresses" });
+      expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+      expect(screen.queryByTestId("backup-first")).not.toBeInTheDocument();
+      const after = screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"));
+      expect(after.indexOf("Addresses")).toBeLessThan(after.indexOf("Backup"));
+    } finally {
+      downloads.restore();
+    }
+  });
+
+  it("links to the Qtum Web Wallet for sending coins", async () => {
+    renderPage("/wallet");
+    const link = within(region("Send coins")).getByRole("link", { name: /Qtum Web Wallet \(advanced\)/ });
+    expect(link).toHaveAttribute("href", "https://qtum.my.ava.do:8443/");
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("no backup download while the wallet is being rebuilt", async () => {
+    renderPage("/wallet", { scenario: "rebuilding" });
+    expect(await within(region("Backup")).findByTestId("backup-busy")).toBeInTheDocument();
+    expect(within(region("Backup")).getByRole("button", { name: "Download wallet backup" })).toBeDisabled();
   });
 
   it("no staking-password section for a wallet without a password", async () => {

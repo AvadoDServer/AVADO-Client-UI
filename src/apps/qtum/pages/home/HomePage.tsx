@@ -9,8 +9,8 @@ import { formatAgo, formatCount, formatQtum } from "../../lib/format";
 import { useAppStatus } from "../../status/AppStatus";
 import { stakingView } from "../../status/staking";
 
-/** How often Home re-reads the rewards (the monitor caches them for 60 s). */
-export const SUMMARY_READ_MS = 60_000;
+/** How often Home re-reads the rewards: they come days apart, and the monitor recomputes only after a new wallet transaction. */
+export const SUMMARY_READ_MS = 5 * 60_000;
 
 function CardLink({ to, children }: { to: string; children: string }) {
   return (
@@ -76,6 +76,11 @@ export default function HomePage() {
             <LoadingLines />
           ) : (
             <CardDescription>{canRead ? `Could not read your wallet. ${plainError(wallet.error)}` : "Shows here once your wallet is ready."}</CardDescription>
+          )}
+          {w && node?.syncing && (
+            <CardDescription data-testid="balance-syncing">
+              The balance may be incomplete until the node has caught up with the network.
+            </CardDescription>
           )}
           {w && w.inStake > 0 && (
             <CardDescription>Coins in a recent stake come back, with the reward, after 500 blocks (about four and a half hours).</CardDescription>

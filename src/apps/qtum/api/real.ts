@@ -211,7 +211,8 @@ export function createRealQtumApi(fetchImpl: typeof fetch = (...args) => fetch(.
 
     async stakingSummary() {
       const path = `${MONITOR}/staking-summary`;
-      const data = await monitor<unknown>({ method: "GET", path, timeoutMs: 130_000 });
+      // nginx gives the monitor 90 s; the monitor keeps computing and caches the answer
+      const data = await monitor<unknown>({ method: "GET", path, timeoutMs: 85_000 });
       if (!isObject(data) || typeof data.totalRewards !== "number") throw new QtumApiError({ kind: "invalid", path, detail: "Not a staking summary" });
       return data as unknown as StakingSummary;
     },
