@@ -138,5 +138,6 @@ dist
 node_modules/
 dist/
 dist-rocketpool/
+dist-qtum/
 # the worktrees link node_modules as a symlink, which "node_modules/" does not match
 node_modules
