@@ -454,8 +454,9 @@ export interface RewardsInterval {
 export interface RewardsInfo extends SnEnvelope {
   registered: boolean;
   claimedIntervals: number[];
-  unclaimedIntervals: RewardsInterval[];
-  invalidIntervals: RewardsInterval[];
+  /** null when empty (a nil Go slice). */
+  unclaimedIntervals: RewardsInterval[] | null;
+  invalidIntervals: RewardsInterval[] | null;
   rplStake: BigNumberish;
   rplPrice: BigNumberish;
   activeMinipools: number;

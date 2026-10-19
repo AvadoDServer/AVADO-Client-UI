@@ -110,7 +110,8 @@ export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDis
     });
   }
 
-  const intervals = rewards?.registered ? rewards.unclaimedIntervals : [];
+  // Smartnode sends a nil slice as null when every period is claimed.
+  const intervals = rewards?.registered ? (rewards.unclaimedIntervals ?? []) : [];
   if (intervals.length > 0) {
     items.push({
       id: "periodic",
