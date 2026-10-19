@@ -49,6 +49,13 @@ describe("claim everything, as Smartnode's claim-all composes it", () => {
     expect(items.find((i) => i.kind === "credit")!.eth).toBe(4n * ETH);
   });
 
+  it("a registered node with every period claimed: Smartnode sends unclaimedIntervals as null (a nil Go slice)", () => {
+    const base = inputs("minipool");
+    const rewards = { ...base.rewards!, registered: true, unclaimedIntervals: null, invalidIntervals: null };
+    expect(claimItems({ ...base, rewards }).some((i) => i.kind === "periodic")).toBe(false);
+    expect(blockedIntervals(rewards)).toEqual([]);
+  });
+
   it("leaves out what is empty or not claimable", () => {
     const base = inputs("minipool");
     const items = claimItems({
@@ -70,7 +77,7 @@ describe("claim everything, as Smartnode's claim-all composes it", () => {
 
   it("lists periods whose rewards file isn't there yet", () => {
     const rewards = inputs("minipool").rewards!;
-    const bad = { ...rewards.unclaimedIntervals[0], index: 40, treeFileExists: false };
+    const bad = { ...rewards.unclaimedIntervals![0], index: 40, treeFileExists: false };
     expect(blockedIntervals({ ...rewards, invalidIntervals: [bad, { ...bad, index: 41, treeFileExists: true, merkleRootValid: true }] })).toEqual([40]);
     expect(blockedIntervals(undefined)).toEqual([]);
   });
