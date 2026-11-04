@@ -102,6 +102,14 @@ function MevBoostCheck({ lido, mev, client }: { lido: LidoNetwork; mev: MevState
       Change relays
     </Button>
   );
+  // AVADO's MEV-Boost package runs on mainnet only: on a test network, don't ask to turn it on.
+  if (!lido.relays) {
+    return (
+      <Check tone="neutral" title="MEV-Boost relays: not checked on this network">
+        AVADO&apos;s MEV-Boost is made for mainnet. On a test network you can stake without it.
+      </Check>
+    );
+  }
   if (!mev || mev.mevBoostOn === undefined) {
     return <Check tone="neutral" title="MEV-Boost: can't check right now">This page tries again by itself.</Check>;
   }
@@ -118,13 +126,6 @@ function MevBoostCheck({ lido, mev, client }: { lido: LidoNetwork; mev: MevState
       >
         Lido asks its node operators to build blocks through MEV-Boost with relays from Lido&apos;s list. Turn on MEV-Boost
         for {client} in Settings.
-      </Check>
-    );
-  }
-  if (!lido.relays) {
-    return (
-      <Check tone="neutral" title="MEV-Boost relays: not checked on this network">
-        On a test network, use only the relays on Lido&apos;s test-network list.
       </Check>
     );
   }

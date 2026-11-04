@@ -132,6 +132,14 @@ describe("LidoPage", () => {
       const c = await checks();
       expect(await c.findByText("MEV-Boost relays: not checked on this network")).toBeInTheDocument();
     });
+
+    it("doesn't ask to turn MEV-Boost on on Hoodi", async () => {
+      renderPage({ settings: { ...MOCK_SETTINGS, mev_boost: false } }, { network: "hoodi" });
+      const c = await checks();
+      expect(await c.findByText("MEV-Boost relays: not checked on this network")).toBeInTheDocument();
+      expect(c.queryByText("MEV-Boost is off")).toBeNull();
+      expect(c.queryByRole("link", { name: "Open Settings" })).toBeNull();
+    });
   });
 
   describe("deposit data for keys added before", () => {
