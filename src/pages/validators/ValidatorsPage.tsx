@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { Button, Card, Skeleton, Spinner, Table, TBody, TH, THead, TR } from "../../components/ui";
 import { useClientConfig } from "../../config/ClientConfigProvider";
 import { clientDisplayName } from "../../lib/clientName";
+import { lidoNetwork } from "../../lib/lido";
+import { summariseLido, validators as validatorCount } from "../lido/lidoStatus";
 import { useMode } from "../../settings/ModeProvider";
 import { ExitDialog } from "./ExitDialog";
 import { FeeRecipientDialog } from "./FeeRecipientDialog";
@@ -139,6 +141,8 @@ export default function ValidatorsPage({ pollMs, retryMs }: ValidatorsPageProps 
   const rows = data?.rows ?? [];
   const indices = rows.flatMap((r) => (r.state ? [r.state.index] : []));
   const defaultFeeRecipient = data?.defaultFeeRecipient ?? "";
+  // Lido fines every block whose rewards don't go to Lido: say so on the home page too.
+  const lidoWrongFee = data && lidoNetwork(config.network) ? summariseLido(rows, config.network, defaultFeeRecipient).wrongFee : [];
 
   let body;
   if (!data && error) body = <StartingState client={client} message={error.message} />;
@@ -204,6 +208,15 @@ export default function ValidatorsPage({ pollMs, retryMs }: ValidatorsPageProps 
         <div className="mb-4">
           <RocketPoolCaution>{ROCKET_POOL_TEXT.page(client)}</RocketPoolCaution>
         </div>
+      )}
+      {lidoWrongFee.length > 0 && (
+        <p role="alert" className="mb-4 rounded-lg border border-danger/30 bg-danger-subtle px-4 py-2.5 text-sm text-danger-text">
+          {validatorCount(lidoWrongFee.length)} for Lido CSM {lidoWrongFee.length === 1 ? "sends its" : "send their"} block
+          rewards to the wrong address. Lido takes a penalty from your bond for that.{" "}
+          <Link to="/lido" className="font-semibold text-danger-text underline">
+            Fix it on the Lido CSM page
+          </Link>
+        </p>
       )}
       {body}
       <FeeRecipientDialog

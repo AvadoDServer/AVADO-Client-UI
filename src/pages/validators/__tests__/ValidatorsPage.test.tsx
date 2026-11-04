@@ -1,7 +1,9 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMockApi, MOCK_DEFAULT_FEE_RECIPIENT, MOCK_PACKAGES, MOCK_PUBKEYS } from "../../../api/mock";
+import { MOCK_LIDO_PUBKEYS, mockLidoOptions } from "../../../api/mockLido";
 import type { Api } from "../../../api/types";
+import { LIDO_NETWORKS } from "../../../lib/lido";
 import ValidatorsPage from "../ValidatorsPage";
 import { renderWithApi } from "./renderWithApi";
 
@@ -447,5 +449,52 @@ describe("ValidatorsPage", () => {
       await table();
       expect(screen.queryByText(/Rocket Pool/)).toBeNull();
     });
+  });
+});
+
+describe("ValidatorsPage with Lido CSM validators", () => {
+  const VAULT = LIDO_NETWORKS.mainnet!.elRewardsVault;
+
+  it("warns when a Lido validator sends its block rewards to the wrong address", async () => {
+    renderPage(createMockApi(mockLidoOptions()));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("1 validator for Lido CSM sends its block rewards to the wrong address");
+    expect(within(alert).getByRole("link", { name: "Fix it on the Lido CSM page" })).toHaveAttribute("href", "/lido");
+  });
+
+  it("shows no Lido warning when every Lido validator pays Lido", async () => {
+    renderPage(createMockApi(mockLidoOptions({ feeRecipients: { [MOCK_LIDO_PUBKEYS.lidoActive]: VAULT, [MOCK_LIDO_PUBKEYS.lidoWrongFee]: VAULT } })));
+    await table();
+    expect(screen.queryByText(/for Lido CSM/)).toBeNull();
+  });
+
+  it("the fee recipient dialog of a Lido validator explains the rule and fills in Lido's address", async () => {
+    const api = renderPage(createMockApi(mockLidoOptions()));
+    const t = await table();
+    await userEvent.click(await t.findByRole("button", { name: "Change fee recipient of Validator 1874412" }));
+    const dialog = await screen.findByRole("dialog", { name: "Fee recipient" });
+    expect(within(dialog).getByText(/This is a Lido CSM validator/)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Use Lido's address" }));
+    expect(within(dialog).getByLabelText("Address for this validator")).toHaveValue(VAULT);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(await api.keymanager.getFeeRecipient(MOCK_LIDO_PUBKEYS.lidoWrongFee)).toBe(VAULT);
+  });
+
+  it("the fee recipient dialog of an own validator says nothing about Lido", async () => {
+    renderPage(createMockApi(mockLidoOptions()));
+    const t = await table();
+    await userEvent.click(await t.findByRole("button", { name: "Change fee recipient of Validator 412345" }));
+    const dialog = await screen.findByRole("dialog", { name: "Fee recipient" });
+    expect(within(dialog).queryByText(/Lido/)).toBeNull();
+  });
+
+  it("the exit dialog of a Lido validator says the 32 ETH goes back to Lido", async () => {
+    renderPage(createMockApi(mockLidoOptions()));
+    const t = await table();
+    await userEvent.click(await t.findByRole("button", { name: "Exit Validator 1874411" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/After the exit, the 32 ETH goes back to Lido/)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Afterwards the balance is paid to the withdrawal address/)).toBeNull();
   });
 });

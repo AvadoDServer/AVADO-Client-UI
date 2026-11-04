@@ -4,6 +4,8 @@ import { Button, Input, Modal } from "../../components/ui";
 import type { ValidatorRowData } from "./useValidators";
 import { withdrawalText } from "./statusText";
 import { ROCKET_POOL_TEXT, RocketPoolCaution } from "./rocketPool";
+import { useClientConfig } from "../../config/ClientConfigProvider";
+import { hasLidoCredentials, LIDO_TEXT } from "../lido/lidoStatus";
 
 export interface ExitDialogProps {
   /** The validator to exit; the dialog is closed when null. */
@@ -33,6 +35,7 @@ function WarningIcon() {
  */
 export function ExitDialog({ row, onClose, onSubmitted, rocketPool }: ExitDialogProps) {
   const { keymanager, beacon } = useApi();
+  const { network } = useClientConfig();
   const [typed, setTyped] = useState("");
   const [phase, setPhase] = useState<Phase>({ step: "confirm" });
   // Blocks a second submit before React re-renders with `busy`.
@@ -47,6 +50,7 @@ export function ExitDialog({ row, onClose, onSubmitted, rocketPool }: ExitDialog
   if (!row || !row.state) return null;
   const index = row.state.index;
   const withdrawal = withdrawalText(row.state.validator.withdrawal_credentials);
+  const lido = hasLidoCredentials(row, network);
   const busy = phase.step === "busy";
   const matches = typed.trim() === index;
 
@@ -122,7 +126,9 @@ export function ExitDialog({ row, onClose, onSubmitted, rocketPool }: ExitDialog
         </div>
         <ul className="flex list-disc flex-col gap-1.5 pl-5 text-fg-muted">
           <li>Keep this node running until the status says Exited. That can take from a day to several weeks.</li>
-          {withdrawal.kind === "bls" ? (
+          {lido ? (
+            <li>{LIDO_TEXT.exit}</li>
+          ) : withdrawal.kind === "bls" ? (
             <li className="text-warning-text">
               This validator has no withdrawal address yet. After the exit its balance stays locked until you set one.
             </li>

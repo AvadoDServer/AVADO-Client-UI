@@ -7,6 +7,9 @@ import { validatorName } from "./parts";
 import { FEE_RECIPIENT_RE, feeRecipientInfo, sameAddress } from "./statusText";
 import { BAD_CHECKSUM, checksumState } from "../../lib/checksum";
 import { ROCKET_POOL_TEXT, RocketPoolCaution } from "./rocketPool";
+import { useClientConfig } from "../../config/ClientConfigProvider";
+import { isLidoFeeRecipient, lidoNetwork } from "../../lib/lido";
+import { isLidoRow, LIDO_TEXT } from "../lido/lidoStatus";
 
 export interface FeeRecipientDialogProps {
   /** The validator being edited; the dialog is closed when null. */
@@ -28,7 +31,10 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
  */
 export function FeeRecipientDialog({ row, defaultFeeRecipient, onClose, onChanged, rocketPool }: FeeRecipientDialogProps) {
   const { keymanager } = useApi();
+  const { network } = useClientConfig();
   const info = row ? feeRecipientInfo(row.feeRecipient, defaultFeeRecipient) : null;
+  /** Lido's address when this is a Lido CSM validator. */
+  const lidoAddress = row && isLidoRow(row, network, defaultFeeRecipient) ? (lidoNetwork(network)?.elRewardsVault ?? null) : null;
   const hasOverride = info?.kind === "custom";
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +114,28 @@ export function FeeRecipientDialog({ row, defaultFeeRecipient, onClose, onChange
       }
     >
       <form id={formId} onSubmit={submit} noValidate className="flex flex-col gap-4">
-        {rocketPool && <RocketPoolCaution>{ROCKET_POOL_TEXT.fee}</RocketPoolCaution>}
+        {rocketPool && !lidoAddress && <RocketPoolCaution>{ROCKET_POOL_TEXT.fee}</RocketPoolCaution>}
+        {lidoAddress && (
+          <div role="note" className="flex flex-col gap-2 rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning-text">
+            <p className="mb-0">{LIDO_TEXT.fee}</p>
+            <p className="mb-0 break-all font-mono text-fg">{lidoAddress}</p>
+            {!isLidoFeeRecipient(value.trim(), network) && (
+              <div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setValue(lidoAddress);
+                    setError(null);
+                  }}
+                  disabled={busy}
+                >
+                  Use Lido&apos;s address
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
         <Input
           label="Address for this validator"
           placeholder={defaultFeeRecipient || "0x…"}
