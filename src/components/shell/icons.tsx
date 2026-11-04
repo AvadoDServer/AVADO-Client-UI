@@ -44,6 +44,13 @@ export const SettingsIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+/** A drop: Lido's mark is a water drop. */
+export const LidoIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M12 3.5l5.2 7.6a6.3 6.3 0 1 1-10.4 0L12 3.5z" />
+  </Icon>
+);
+
 export const AdvancedIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <rect x="3" y="4" width="18" height="16" rx="2" />
