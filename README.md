@@ -23,6 +23,39 @@ beacon node does not know yet), Nimbus-schema settings, a running
 supervisord, installed packages and log lines. In the mock, an import password
 of `wrong` (or empty) gives an error result.
 
+`VITE_MOCK=1 VITE_MOCK_LIDO=1 yarn dev` adds three Lido CSM validators
+(`src/api/mockLido.ts`): one set up right, one whose block rewards go to the
+owner's default address (the Lido page and the Validators page warn about
+it), and one Lido has not deposited yet.
+
+## Lido CSM
+
+On mainnet and Hoodi the consensus-client app has a Lido CSM page (`/lido`,
+`src/pages/lido/`, addresses and checks in `src/lib/lido.ts`). It only uses
+calls the app already makes: the keymanager's per-key fee recipient, the
+beacon node's validator state, the client's settings, and the MEV-Boost
+package's `RELAYS` from the DAPPMANAGER's `listPackages`. It never reads
+keystores, passwords or wallets.
+
+- A validator is a Lido validator when its withdrawal credentials (0x01 or
+  0x02) point at Lido's Withdrawal Vault, or, before Lido deposits for it,
+  when a deposit data file with those credentials lists its key.
+- Lido validators must send block rewards to Lido's Execution Layer Rewards
+  Vault. The page, a warning on the Validators page and the fee recipient
+  dialog say so; "Send them to Lido" sets it per key through the keymanager.
+  Adding a Lido deposit data file next to the keystores on Add validators does
+  the same right after the import.
+- MEV-Boost relays are checked against a copy of Lido's on-chain MEV-Boost
+  Relay Allowed List (`LIDO_RELAYS_CHECKED` is the day it was read). Mainnet
+  only: AVADO's MEV-Boost package runs on mainnet.
+- Everything else (bond, rewards, key upload, exit requests) stays in Lido's
+  own CSM app and Lido's CSM Sentinel bot, which the page links to.
+
+When Lido changes its relay list or vault addresses, update `src/lib/lido.ts`
+(addresses from docs.lido.fi/deployed-contracts, checked against the Lido
+Locator's `elRewardsVault()` and `withdrawalVault()`; relays from the list
+contract's `get_relays()`) and its tests.
+
 ## Apps
 
 The repo builds three apps on the same design system:
