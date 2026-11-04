@@ -227,6 +227,12 @@ export interface DappManager {
   listPackageStates(): Promise<PackageState[]>;
   /** The last `tail` log lines of a package, ANSI colours included. */
   logs(pkg: string, tail: number): Promise<string>;
+  /**
+   * A package's settings (its environment: the manifest defaults with the
+   * box's own values on top), or `null` when it is not installed. Used for
+   * MEV-Boost's RELAYS, never for secrets.
+   */
+  packageEnvs(pkg: string): Promise<Record<string, string> | null>;
 }
 
 // ---------------------------------------------------------------------------

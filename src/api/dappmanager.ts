@@ -1,5 +1,6 @@
 /**
- * DAPPMANAGER over WAMP (spec §2.6): only `listPackages` and `logPackage`.
+ * DAPPMANAGER over WAMP (spec §2.6): only `listPackages` (names, running
+ * state and one package's envs) and `logPackage`.
  * Each procedure returns a JSON *string* holding `{success, message, result}`;
  * the old wizards `JSON.parse`d it and used `result` only when
  * `success === true`, and so do we.
@@ -47,6 +48,28 @@ export function unwrapEnvelope(raw: unknown, procedure: string): unknown {
   return result;
 }
 
+/** `image.environment` of a manifest ("KEY=value" lines), as the DAPPMANAGER's envsHelper reads it. */
+export function manifestEnvs(manifest: unknown): Record<string, string> {
+  const env = (manifest as { image?: { environment?: unknown } } | null)?.image?.environment;
+  const out: Record<string, string> = {};
+  if (!Array.isArray(env)) return out;
+  for (const row of env) {
+    if (typeof row !== "string") continue;
+    const line = row.trim();
+    const eq = line.indexOf("=");
+    const key = eq >= 0 ? line.slice(0, eq) : line;
+    if (key) out[key] = eq >= 0 ? line.slice(eq + 1) : "";
+  }
+  return out;
+}
+
+function stringRecord(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!v || typeof v !== "object") return out;
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) if (typeof val === "string") out[k] = val;
+  return out;
+}
+
 export interface DappManagerOptions {
   /** A session to use (tests). By default a WampClient to WAMP_URL / WAMP_REALM. */
   wamp?: WampCaller;
@@ -79,6 +102,16 @@ export function createDappManager(opts: DappManagerOptions = {}): DappManager & 
     },
 
     listPackageStates,
+
+    async packageEnvs(pkg) {
+      const result = unwrapEnvelope(await wamp.call(LIST_PACKAGES, undefined, undefined, 60_000), LIST_PACKAGES);
+      if (!Array.isArray(result)) {
+        throw new ApiError({ kind: "invalid", service: "dappmanager", path: LIST_PACKAGES, detail: "result is not a list" });
+      }
+      const dnp = (result as Array<{ name?: unknown; envs?: unknown; manifest?: unknown }>).find((p) => p?.name === pkg);
+      if (!dnp) return null;
+      return { ...manifestEnvs(dnp.manifest), ...stringRecord(dnp.envs) };
+    },
 
     async logs(pkg, tail) {
       const result = unwrapEnvelope(await wamp.call(LOG_PACKAGE, [], { id: pkg, options: { tail } }), LOG_PACKAGE);
