@@ -115,7 +115,7 @@ export function Modal({
     <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4">
       <div
         data-testid="modal-backdrop"
-        className="absolute inset-0 animate-fade-in bg-bg-inset/70 backdrop-blur-sm"
+        className="absolute inset-0 animate-fade-in bg-bg-inset/70 backdrop-blur-xs"
         onClick={closeOnBackdrop ? onClose : undefined}
       />
       <div
@@ -126,7 +126,7 @@ export function Modal({
         aria-describedby={description ? descId : undefined}
         tabIndex={-1}
         className={cn(
-          "relative max-h-[90vh] w-full animate-rise overflow-y-auto rounded-xl bg-surface-raised text-fg shadow-xl focus:outline-none dark:border dark:border-border",
+          "relative max-h-[90vh] w-full animate-rise overflow-y-auto rounded-xl bg-surface-raised text-fg shadow-xl focus:outline-hidden dark:border dark:border-border",
           SIZES[size] ?? SIZES.md,
           className,
         )}
@@ -150,7 +150,7 @@ export function Modal({
                 type="button"
                 onClick={onClose}
                 aria-label="Close dialog"
-                className="-mr-2 -mt-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-fg/[0.06] hover:text-fg focus:outline-none focus-visible:shadow-focus"
+                className="-mr-2 -mt-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-fg/[0.06] hover:text-fg focus:outline-hidden focus-visible:shadow-focus"
               >
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M18 6 6 18M6 6l12 12" />

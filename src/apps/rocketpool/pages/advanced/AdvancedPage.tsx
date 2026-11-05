@@ -243,7 +243,7 @@ function Logs() {
             const el = box.current;
             if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
           }}
-          className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-bg-inset p-3 font-mono text-xs leading-5 text-fg focus:outline-none focus-visible:shadow-focus"
+          className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-bg-inset p-3 font-mono text-xs leading-5 text-fg focus:outline-hidden focus-visible:shadow-focus"
         >
           {logs.data.lines.length ? logs.data.lines.join("\n") : "No log lines yet."}
         </pre>

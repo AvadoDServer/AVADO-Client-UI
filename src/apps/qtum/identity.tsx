@@ -9,7 +9,7 @@ export function QtumIdentity({ size = "md" }: { size?: "sm" | "md" }) {
       <span
         aria-hidden="true"
         className={cn(
-          "flex flex-shrink-0 items-center justify-center rounded-md bg-accent/15 font-display font-extrabold text-accent",
+          "flex shrink-0 items-center justify-center rounded-md bg-accent/15 font-display font-extrabold text-accent",
           size === "md" ? "h-10 w-10 text-sm" : "h-8 w-8 text-[0.8125rem]",
         )}
       >

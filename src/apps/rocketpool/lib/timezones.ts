@@ -29,7 +29,7 @@ const FALLBACK_ZONES = [
 
 /** Every zone the browser knows, sorted, plus Etc/UTC. */
 export function timezoneOptions(): string[] {
-  let zones: string[] = [];
+  let zones: string[];
   try {
     const intl = Intl as unknown as { supportedValuesOf?: (key: string) => string[] };
     zones = intl.supportedValuesOf?.("timeZone") ?? [];

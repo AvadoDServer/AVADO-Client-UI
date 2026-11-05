@@ -29,7 +29,7 @@ const Header = forwardRef<HTMLHeadingElement, { count?: number; action?: ReactNo
     <header className="mb-6 flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 ref={ref} tabIndex={-1} className="mb-0 font-display text-4xl font-bold tracking-tight text-fg focus:outline-none">
+          <h1 ref={ref} tabIndex={-1} className="mb-0 font-display text-4xl font-bold tracking-tight text-fg focus:outline-hidden">
             Validators
           </h1>
           {typeof count === "number" && count > 0 && (

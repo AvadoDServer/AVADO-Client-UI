@@ -10,7 +10,7 @@ const TONE: Record<ProblemTone, { box: string; title: string }> = {
 
 function FixButton({ problem }: { problem: Problem<string> }) {
   const { label, to, href } = problem.action;
-  const common = { size: "sm" as const, variant: "secondary" as const, className: "flex-shrink-0 self-start sm:self-center" };
+  const common = { size: "sm" as const, variant: "secondary" as const, className: "shrink-0 self-start sm:self-center" };
   return to ? (
     <Button as={Link} to={to} {...common}>
       {label}

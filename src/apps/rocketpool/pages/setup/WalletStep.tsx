@@ -105,7 +105,7 @@ function ChoiceButton({ title, text, onClick, disabled }: { title: string; text:
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex flex-col gap-1 rounded-xl border border-border bg-surface p-4 text-left transition-colors hover:border-accent hover:bg-surface-hover focus:outline-none focus-visible:shadow-focus disabled:pointer-events-none disabled:opacity-55"
+      className="flex flex-col gap-1 rounded-xl border border-border bg-surface p-4 text-left transition-colors hover:border-accent hover:bg-surface-hover focus:outline-hidden focus-visible:shadow-focus disabled:pointer-events-none disabled:opacity-55"
     >
       <span className="text-[0.9375rem] font-semibold text-fg">{title}</span>
       <span className="text-sm text-fg-muted">{text}</span>
@@ -211,7 +211,7 @@ function CreateWallet({ onCancel, onSaved }: { onCancel: () => void; onSaved: ()
   };
 
   const heading = (text: string) => (
-    <p ref={headingRef} tabIndex={-1} className="text-[0.9375rem] font-semibold text-fg focus:outline-none">
+    <p ref={headingRef} tabIndex={-1} className="text-[0.9375rem] font-semibold text-fg focus:outline-hidden">
       {text}
     </p>
   );
@@ -268,7 +268,7 @@ function CreateWallet({ onCancel, onSaved }: { onCancel: () => void; onSaved: ()
           ))}
         </ol>
         <label className="flex items-start gap-3 text-sm text-fg">
-          <input type="checkbox" className="mt-1 h-4 w-4 flex-shrink-0 accent-[rgb(var(--accent))]" checked={written} onChange={(e) => setWritten(e.target.checked)} />
+          <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-[rgb(var(--accent))]" checked={written} onChange={(e) => setWritten(e.target.checked)} />
           <span>I have written down all {words.length} words in order, on paper.</span>
         </label>
         <div>
@@ -497,7 +497,7 @@ function RestoreWallet({ onCancel, onSaved }: { onCancel: () => void; onSaved: (
           aria-invalid={touched && !!problem ? true : undefined}
           aria-describedby={`${phraseId}-hint`}
           className={cn(
-            "w-full rounded-control border bg-surface px-3.5 py-2.5 font-mono text-sm text-fg focus:outline-none focus-visible:border-accent focus-visible:shadow-focus",
+            "w-full rounded-control border bg-surface px-3.5 py-2.5 font-mono text-sm text-fg focus:outline-hidden focus-visible:border-accent focus-visible:shadow-focus",
             touched && problem ? "border-danger" : "border-border",
           )}
         />
@@ -506,7 +506,7 @@ function RestoreWallet({ onCancel, onSaved }: { onCancel: () => void; onSaved: (
         </span>
       </div>
       <label className="flex items-start gap-3 text-sm text-fg">
-        <input type="checkbox" className="mt-1 h-4 w-4 flex-shrink-0 accent-[rgb(var(--accent))]" checked={withKeys} onChange={(e) => setWithKeys(e.target.checked)} />
+        <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-[rgb(var(--accent))]" checked={withKeys} onChange={(e) => setWithKeys(e.target.checked)} />
         <span>
           Also restore my validator keys
           <span className="block text-fg-muted">Needed if this wallet already has validators. They only start after you approve them.</span>

@@ -130,7 +130,7 @@ export function FoundWalletCard({
                 </div>
                 <Button
                   variant={i === 0 ? "primary" : "secondary"}
-                  className="flex-shrink-0 self-start sm:self-center"
+                  className="shrink-0 self-start sm:self-center"
                   onClick={() => void adopt(w.dir)}
                   loading={busyDir === w.dir}
                   disabled={busy}

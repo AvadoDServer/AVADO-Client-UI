@@ -20,7 +20,7 @@ export const TopBar = forwardRef<HTMLButtonElement, TopBarProps>(function TopBar
         aria-label="Open menu"
         aria-expanded={menuOpen}
         aria-controls={SIDEBAR_ID}
-        className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-fg/[0.06] hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-fg/[0.06] hover:text-fg focus-visible:shadow-focus focus-visible:outline-hidden"
       >
         <MenuIcon />
       </button>

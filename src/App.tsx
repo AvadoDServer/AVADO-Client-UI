@@ -52,7 +52,7 @@ function AdvancedRoute() {
           <p className="min-w-0 flex-1 text-sm text-fg">
             This page is part of Advanced mode, so the menu doesn&apos;t list it in Simple mode.
           </p>
-          <Button size="sm" variant="secondary" className="flex-shrink-0 self-start sm:self-center" onClick={() => setMode("advanced")}>
+          <Button size="sm" variant="secondary" className="shrink-0 self-start sm:self-center" onClick={() => setMode("advanced")}>
             Switch to advanced
           </Button>
         </div>

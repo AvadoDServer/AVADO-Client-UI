@@ -138,7 +138,7 @@ export function ShellFrame({ brand, compactBrand, items, strip, problems = NO_PR
             ref={main}
             id="main"
             tabIndex={-1}
-            className="mx-auto w-full min-w-0 max-w-6xl px-4 py-6 focus:outline-none sm:px-6 lg:px-8 lg:py-8"
+            className="mx-auto w-full min-w-0 max-w-6xl px-4 py-6 focus:outline-hidden sm:px-6 lg:px-8 lg:py-8"
           >
             <Banners problems={problems} />
             {children}

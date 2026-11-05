@@ -1,6 +1,7 @@
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -27,7 +28,7 @@ export default defineConfig({
   // broke trailing-slash or nested deep links such as /settings/: the page
   // then asked for /settings/assets/*.js, got index.html back and stayed blank.
   base: "/",
-  plugins: [react(), dropDevClientConfig()],
+  plugins: [react(), tailwindcss(), dropDevClientConfig()],
   build: {
     outDir: "dist",
     sourcemap: false,

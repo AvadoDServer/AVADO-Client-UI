@@ -23,7 +23,7 @@ export const Card = forwardRef(function Card(
         "relative rounded-xl bg-surface text-fg shadow-[0_1px_0_rgb(var(--border))] transition-all duration-200 dark:border dark:border-border dark:shadow-none",
         PADDING[padding] ?? PADDING.md,
         interactive &&
-          "cursor-pointer hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:shadow-focus dark:hover:border-accent/60",
+          "cursor-pointer hover:-translate-y-0.5 hover:shadow-md focus:outline-hidden focus-visible:shadow-focus dark:hover:border-accent/60",
         className,
       )}
       {...props}

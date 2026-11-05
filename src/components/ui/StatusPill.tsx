@@ -26,7 +26,7 @@ export function StatusDot({ tone = "neutral", className }: { tone?: StatusTone; 
     <span
       aria-hidden="true"
       data-tone={tone}
-      className={cn("inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full", DOT_TONE[tone] ?? DOT_TONE.neutral, className)}
+      className={cn("inline-block h-2.5 w-2.5 shrink-0 rounded-full", DOT_TONE[tone] ?? DOT_TONE.neutral, className)}
     />
   );
 }

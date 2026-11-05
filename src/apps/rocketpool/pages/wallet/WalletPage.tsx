@@ -310,7 +310,7 @@ function Backups({ onDownload }: { onDownload: (t: BackupTarget) => void }) {
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="flex-shrink-0 self-start sm:self-center"
+                  className="shrink-0 self-start sm:self-center"
                   aria-label={`Download ${b.title}${b.time !== null ? ` from ${formatDateTime(b.time)}` : ""}`}
                   // While the old phrase file is still next to the wallet, any backup may include it.
                   onClick={() => onDownload({ name: b.name, title: b.title, phrase: b.phrase === true ? true : avado.legacyMnemonicPresent ? "maybe" : b.phrase })}

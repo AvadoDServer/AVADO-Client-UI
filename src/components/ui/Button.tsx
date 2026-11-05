@@ -92,7 +92,7 @@ export const Button = forwardRef(function Button(
       aria-busy={loading || undefined}
       onClick={handleClick}
       className={cn(
-        "relative inline-flex select-none items-center justify-center whitespace-nowrap font-semibold transition-all duration-150 focus:outline-none",
+        "relative inline-flex select-none items-center justify-center whitespace-nowrap font-semibold transition-all duration-150 focus:outline-hidden",
         isPill ? "rounded-full" : "rounded-control",
         SIZES[size] ?? SIZES.md,
         VARIANTS[variant] ?? VARIANTS.primary,

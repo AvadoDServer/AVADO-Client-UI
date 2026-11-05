@@ -1,0 +1,4 @@
+/* The Rocket Pool app's Tailwind entry. Its theme and sources are in tailwind.rocketpool.config.ts. */
+@import "tailwindcss" source(none);
+@import "../../app.css";
+@config "../../../tailwind.rocketpool.config.ts";

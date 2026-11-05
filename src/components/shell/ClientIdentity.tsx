@@ -10,7 +10,7 @@ export function ClientIdentity({ size = "md" }: { size?: "sm" | "md" }) {
     <span className="flex min-w-0 items-center gap-3">
       <span
         className={cn(
-          "flex flex-shrink-0 items-center justify-center overflow-hidden rounded-md",
+          "flex shrink-0 items-center justify-center overflow-hidden rounded-md",
           size === "md" ? "h-10 w-10" : "h-8 w-8",
           // A light plate in both themes (surface is white in light, fg is near-white in dark).
           plate && "bg-surface p-1 dark:bg-fg",

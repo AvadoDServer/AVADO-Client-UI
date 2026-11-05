@@ -124,7 +124,7 @@ export function WithdrawalStep({ node, onChanged }: { node?: NodeStatus; onChang
           className="font-mono"
         />
         <label className="flex items-start gap-3 text-sm text-fg">
-          <input type="checkbox" className="mt-1 h-4 w-4 flex-shrink-0 accent-[rgb(var(--accent))]" checked={owned} onChange={(e) => setOwned(e.target.checked)} />
+          <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-[rgb(var(--accent))]" checked={owned} onChange={(e) => setOwned(e.target.checked)} />
           <span>This is my own wallet, and I have its recovery phrase or hardware device. It is not an exchange address.</span>
         </label>
         <Notice tone="neutral" title="How it works">

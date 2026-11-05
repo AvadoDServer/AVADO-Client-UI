@@ -52,14 +52,14 @@ export const Sidebar = forwardRef<HTMLElement, SidebarProps>(function Sidebar(
     >
       <div className="flex min-h-0 flex-1 flex-col gap-1 px-4 py-6">
         <div className="flex items-start justify-between gap-2 px-2 pb-6">
-          <NavLink to="/" onClick={onClose} className="min-w-0 rounded-md no-underline focus-visible:shadow-focus focus-visible:outline-none">
+          <NavLink to="/" onClick={onClose} className="min-w-0 rounded-md no-underline focus-visible:shadow-focus focus-visible:outline-hidden">
             {brand}
           </NavLink>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="-mr-2 -mt-1 inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-fg/[0.06] hover:text-fg focus-visible:shadow-focus focus-visible:outline-none lg:hidden"
+            className="-mr-2 -mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-fg/[0.06] hover:text-fg focus-visible:shadow-focus focus-visible:outline-hidden lg:hidden"
           >
             <CloseIcon />
           </button>
@@ -74,15 +74,15 @@ export const Sidebar = forwardRef<HTMLElement, SidebarProps>(function Sidebar(
               onClick={onClose}
               className={({ isActive }) =>
                 cn(
-                  "flex h-[2.875rem] flex-shrink-0 items-center gap-3 rounded-lg px-3.5 text-[0.9375rem] no-underline transition-colors",
-                  "focus-visible:shadow-focus focus-visible:outline-none",
+                  "flex h-[2.875rem] shrink-0 items-center gap-3 rounded-lg px-3.5 text-[0.9375rem] no-underline transition-colors",
+                  "focus-visible:shadow-focus focus-visible:outline-hidden",
                   isActive
                     ? "bg-accent font-semibold text-accent-fg hover:text-accent-fg"
                     : "font-medium text-fg-muted hover:bg-fg/[0.05] hover:text-fg",
                 )
               }
             >
-              <Icon className="flex-shrink-0" />
+              <Icon className="shrink-0" />
               <span className="truncate">{label}</span>
             </NavLink>
           ))}

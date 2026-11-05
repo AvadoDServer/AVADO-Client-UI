@@ -182,7 +182,7 @@ function Note({ tone, title, children, noteRef }: { tone: NoteTone; title: strin
       ref={noteRef}
       tabIndex={-1}
       role={tone === "danger" || tone === "warning" ? "alert" : "status"}
-      className={cn("mt-4 flex gap-3 rounded-xl border p-4 focus:outline-none", box)}
+      className={cn("mt-4 flex gap-3 rounded-xl border p-4 focus:outline-hidden", box)}
     >
       <StatusDot tone={tone} className="mt-1.5" />
       <div className="min-w-0 text-sm text-fg">

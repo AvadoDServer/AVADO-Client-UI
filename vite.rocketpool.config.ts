@@ -1,9 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import autoprefixer from "autoprefixer";
-import tailwindcss from "tailwindcss";
+import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
-import rocketpoolTailwind from "./tailwind.rocketpool.config";
 
 const repo = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
@@ -22,10 +20,8 @@ export default defineConfig({
   envDir: repo("."),
   // public/ holds the client app's dev client-config.json; the Rocket Pool app has none.
   publicDir: false,
-  plugins: [react()],
-  css: {
-    postcss: { plugins: [tailwindcss(rocketpoolTailwind), autoprefixer()] },
-  },
+  // Tailwind reads tailwind.rocketpool.config.ts through src/apps/rocketpool/index.css.
+  plugins: [react(), tailwindcss()],
   build: {
     outDir: ROCKETPOOL_OUT_DIR,
     // outDir is outside root: Vite only empties it when asked.
