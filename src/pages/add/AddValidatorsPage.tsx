@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { useApi } from "../../api/ApiProvider";
 import { isApiError } from "../../api/errors";
 import type { ImportResult } from "../../api/types";
@@ -73,7 +73,7 @@ function PasswordField({ label, value, onChange, hint, error }: { label: string;
         onClick={() => setShow((s) => !s)}
         aria-pressed={show}
         aria-label={show ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
-        className="absolute right-2 top-[1.9rem] rounded-md px-2 py-1.5 text-xs font-semibold text-fg-muted hover:bg-fg/[0.06] hover:text-fg focus:outline-none focus-visible:shadow-focus"
+        className="absolute right-2 top-[1.9rem] rounded-md px-2 py-1.5 text-xs font-semibold text-fg-muted hover:bg-fg/[0.06] hover:text-fg focus:outline-hidden focus-visible:shadow-focus"
       >
         {show ? "Hide" : "Show"}
       </button>

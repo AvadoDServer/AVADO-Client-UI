@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
-import { HashRouter, Route, Routes } from "react-router-dom";
-import { ROUTER_FUTURE } from "../../routing/routerFuture";
+import { HashRouter, Route, Routes } from "react-router";
 import { ModeProvider } from "../../settings/ModeProvider";
 import { ThemeProvider } from "../../theme/ThemeProvider";
 import { RocketpoolApiProvider } from "./api/RocketpoolApiProvider";
@@ -50,7 +49,7 @@ export function AppRoutes() {
 export default function App() {
   return (
     <Providers>
-      <HashRouter future={ROUTER_FUTURE}>
+      <HashRouter>
         <AppRoutes />
       </HashRouter>
     </Providers>

@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Button, Card, CardDescription, CardTitle, StatusDot, StatusPill, cn, type StatusTone } from "../../../components/ui";
 import type { Problem } from "../../../components/shell/problems";
 import { plainError } from "../api/errors";
@@ -35,7 +35,7 @@ function NodeFixes({ problems }: { problems: Problem<string>[] }) {
             </div>
           </div>
           {p.action.to && (
-            <Button as={Link} to={p.action.to} size="sm" variant="secondary" className="flex-shrink-0 self-start sm:self-center">
+            <Button as={Link} to={p.action.to} size="sm" variant="secondary" className="shrink-0 self-start sm:self-center">
               {p.action.label}
             </Button>
           )}
@@ -112,7 +112,7 @@ function SetupCallout({ walletReady, walletFound, node }: { walletReady: boolean
         <CardTitle>{title}</CardTitle>
         <CardDescription>{text}</CardDescription>
       </div>
-      <Button as={Link} to={to} variant="primary" className="flex-shrink-0 self-start sm:self-center">
+      <Button as={Link} to={to} variant="primary" className="shrink-0 self-start sm:self-center">
         {label}
       </Button>
     </Card>

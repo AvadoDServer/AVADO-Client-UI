@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet } from "react-router";
 import { ShellFrame } from "../../components/shell/ShellFrame";
 import { useMode } from "../../settings/ModeProvider";
 import { WalletBanner } from "./banners/WalletBanner";

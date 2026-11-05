@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { useApi } from "../../api/ApiProvider";
 import { isApiError } from "../../api/errors";
 import { isSettingsChangedError, saveSettingsMerged, SETTINGS_CHANGED_MESSAGE } from "../../api/settings";
@@ -46,7 +46,7 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-function focusField(ref: RefObject<HTMLInputElement>) {
+function focusField(ref: RefObject<HTMLInputElement | null>) {
   ref.current?.focus();
   // Not every environment implements scrollIntoView (e.g. jsdom in tests); focus() alone still works.
   ref.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
@@ -80,7 +80,7 @@ export default function SettingsPage() {
   const graffitiRef = useRef<HTMLInputElement>(null);
   const peerLimitRef = useRef<HTMLInputElement>(null);
   const checkpointUrlRef = useRef<HTMLInputElement>(null);
-  const fieldRefs: Record<keyof SettingsFormErrors, RefObject<HTMLInputElement>> = {
+  const fieldRefs: Record<keyof SettingsFormErrors, RefObject<HTMLInputElement | null>> = {
     feeRecipient: feeRecipientRef,
     graffiti: graffitiRef,
     peerLimit: peerLimitRef,

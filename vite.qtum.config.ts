@@ -1,9 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import autoprefixer from "autoprefixer";
-import tailwindcss from "tailwindcss";
+import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
-import qtumTailwind from "./tailwind.qtum.config";
 
 const repo = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
@@ -22,10 +20,8 @@ export default defineConfig({
   envDir: repo("."),
   // public/ holds the client app's dev client-config.json; the Qtum app has none.
   publicDir: false,
-  plugins: [react()],
-  css: {
-    postcss: { plugins: [tailwindcss(qtumTailwind), autoprefixer()] },
-  },
+  // Tailwind reads tailwind.qtum.config.ts through src/apps/qtum/index.css.
+  plugins: [react(), tailwindcss()],
   build: {
     outDir: QTUM_OUT_DIR,
     // outDir is outside root: Vite only empties it when asked.

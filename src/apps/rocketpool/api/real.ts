@@ -56,7 +56,7 @@ export function isBackupName(name: string): boolean {
  */
 export function backupFileName(name: string, contentDisposition: string | null): string {
   const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(contentDisposition ?? "");
-  let given = "";
+  let given: string;
   try {
     given = m ? decodeURIComponent(m[1].trim()) : "";
   } catch {

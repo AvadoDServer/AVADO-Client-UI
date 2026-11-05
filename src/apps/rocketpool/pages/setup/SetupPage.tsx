@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router";
 import { Button, Card, CardTitle, StatusDot, cn, type StatusTone } from "../../../../components/ui";
 import { plainError } from "../../api/errors";
 import { TechDetails } from "../../components/common";
@@ -127,16 +127,16 @@ export default function SetupPage() {
               const st = STATUS_TEXT[statuses[s.id]];
               const here = s.id === current;
               return (
-                <li key={s.id} className="flex-shrink-0 lg:flex-shrink">
+                <li key={s.id} className="shrink-0 lg:shrink">
                   <Link
                     to={`/setup/${s.id}`}
                     aria-current={here ? "step" : undefined}
                     className={cn(
-                      "flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition-colors focus:outline-none focus-visible:shadow-focus",
+                      "flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition-colors focus:outline-hidden focus-visible:shadow-focus",
                       here ? "border-accent bg-accent-subtle" : "border-transparent hover:bg-surface-hover",
                     )}
                   >
-                    <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-surface text-xs font-semibold text-fg ring-1 ring-border">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface text-xs font-semibold text-fg ring-1 ring-border">
                       {i + 1}
                     </span>
                     <span className="flex min-w-0 flex-col">
@@ -157,7 +157,7 @@ export default function SetupPage() {
             <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
               Step {index + 1} of {SETUP_STEPS.length}
             </p>
-            <h2 id="setup-step-title" ref={headingRef} tabIndex={-1} className="mt-1 font-display text-2xl font-bold text-fg focus:outline-none">
+            <h2 id="setup-step-title" ref={headingRef} tabIndex={-1} className="mt-1 font-display text-2xl font-bold text-fg focus:outline-hidden">
               {titleOf(current)}
             </h2>
           </div>

@@ -38,8 +38,15 @@ describe("yarn build: the client app, unchanged", () => {
     expect(clientTailwind.content).toEqual(["./index.html", "./src/**/*.{ts,tsx}", "!./src/apps/**"]);
   });
 
-  it("keeps the client's PostCSS setup (postcss.config.js, no inline plugins)", () => {
+  it("runs Tailwind as a Vite plugin, with no inline PostCSS setup", () => {
     expect(client.css).toBeUndefined();
+  });
+
+  it("builds its CSS from its own Tailwind config only (no automatic source scan)", () => {
+    const css = readFileSync(repo("src/index.css"), "utf8");
+    expect(css).toContain('@import "tailwindcss" source(none);');
+    expect(css).toContain('@config "../tailwind.config.ts";');
+    expect(readFileSync(repo("src/main.tsx"), "utf8")).toContain('import "./index.css";');
   });
 });
 
@@ -74,5 +81,9 @@ describe("yarn build:rocketpool: the Rocket Pool app", () => {
     expect(rocketpoolTailwind.theme).toBe(clientTailwind.theme);
     expect(rocketpoolTailwind.darkMode).toEqual(clientTailwind.darkMode);
     expect(rocketpoolTailwind.content).toEqual([repo("src/apps/rocketpool/index.html"), `${repo("src")}/**/*.{ts,tsx}`]);
+    const css = readFileSync(repo("src/apps/rocketpool/index.css"), "utf8");
+    expect(css).toContain('@import "tailwindcss" source(none);');
+    expect(css).toContain('@config "../../../tailwind.rocketpool.config.ts";');
+    expect(readFileSync(repo("src/apps/rocketpool/main.tsx"), "utf8")).toContain('import "./index.css";');
   });
 });

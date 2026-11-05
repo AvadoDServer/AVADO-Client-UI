@@ -182,7 +182,7 @@ function Note({ tone, title, children, noteRef }: { tone: NoteTone; title: strin
       ref={noteRef}
       tabIndex={-1}
       role={tone === "danger" || tone === "warning" ? "alert" : "status"}
-      className={cn("mt-4 flex gap-3 rounded-xl border p-4 focus:outline-none", box)}
+      className={cn("mt-4 flex gap-3 rounded-xl border p-4 focus:outline-hidden", box)}
     >
       <StatusDot tone={tone} className="mt-1.5" />
       <div className="min-w-0 text-sm text-fg">
@@ -234,7 +234,10 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
   const api = useRocketpoolApi();
   const pending = usePendingTxs();
   const [phase, setPhase] = useState<Phase<C>>({ k: "checking" });
-  const [armed, setArmed] = useState(false);
+  const [armedLater, setArmed] = useState(false);
+  // With no delay, confirm is armed from the first render of the summary, not
+  // one render later when the effect below has run.
+  const armed = armDelayMs <= 0 || armedLater;
   const [typed, setTyped] = useState("");
   /** The action this dialog shows: the props' until checked, then the checked one. */
   const [key, setKey] = useState(() => specLockKey(tx));

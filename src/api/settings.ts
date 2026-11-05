@@ -83,7 +83,7 @@ export async function saveSettingsMerged(
 
   // The fallback can only be recognised by comparing with the defaults. If
   // they can't be read, the per-field check above still stands on its own.
-  let defaults: Settings | null = null;
+  let defaults: Settings | null;
   try {
     defaults = await backend.getDefaultSettings();
   } catch {

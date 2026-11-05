@@ -1,0 +1,4 @@
+/* The Qtum app's Tailwind entry. Its theme and sources are in tailwind.qtum.config.ts. */
+@import "tailwindcss" source(none);
+@import "../../app.css";
+@config "../../../tailwind.qtum.config.ts";

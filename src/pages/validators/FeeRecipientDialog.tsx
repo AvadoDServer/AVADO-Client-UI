@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { useApi } from "../../api/ApiProvider";
 import { Button, Input, Modal } from "../../components/ui";
 import type { ValidatorRowData } from "./useValidators";

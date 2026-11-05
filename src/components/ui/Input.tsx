@@ -2,7 +2,7 @@ import { forwardRef, useId, type InputHTMLAttributes, type ReactNode, type Selec
 import { cn } from "./cn";
 
 const baseField =
-  "w-full rounded-control border bg-surface text-fg placeholder:text-fg-subtle transition-colors duration-150 focus:outline-none focus-visible:border-accent focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-55";
+  "w-full rounded-control border bg-surface text-fg placeholder:text-fg-subtle transition-colors duration-150 focus:outline-hidden focus-visible:border-accent focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-55";
 
 // Below sm the text is 16px: iOS zooms the page into any smaller field.
 const SIZES = {

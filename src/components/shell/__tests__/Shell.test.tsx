@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
-import { AppRoutes, Providers, ROUTER_FUTURE } from "../../../App";
+import { MemoryRouter } from "react-router";
+import { AppRoutes, Providers } from "../../../App";
 import { ApiError } from "../../../api/errors";
 import { createMockApi, MOCK_SETTINGS, type MockOptions } from "../../../api/mock";
 import type { Api } from "../../../api/types";
@@ -27,7 +27,7 @@ function renderApp({
 }: { path?: string; mock?: MockOptions; config?: ClientConfig; configResult?: ClientConfigResult; api?: Api } = {}) {
   const utils = render(
     <Providers config={configResult ? undefined : config} configResult={configResult} api={api}>
-      <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
+      <MemoryRouter initialEntries={[path]}>
         <AppRoutes />
       </MemoryRouter>
     </Providers>,

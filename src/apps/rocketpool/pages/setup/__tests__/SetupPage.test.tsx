@@ -1,7 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { ROUTER_FUTURE } from "../../../../../routing/routerFuture";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { AppRoutes, Providers } from "../../../App";
 import { DEMO, DemoSnError, reconcileView } from "../../../api/fixtures";
 import { createMockRocketpoolApi, type MockRocketpoolApi, type RocketpoolMockOptions } from "../../../api/mock";
@@ -23,7 +22,7 @@ function renderSetup(path: string, mock: RocketpoolMockOptions | MockRocketpoolA
   const user = userEvent.setup();
   render(
     <Providers api={api}>
-      <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
+      <MemoryRouter initialEntries={[path]}>
         <AppRoutes />
         <Routes>
           <Route path="*" element={<Where />} />

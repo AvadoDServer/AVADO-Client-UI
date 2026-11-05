@@ -1,7 +1,6 @@
 import { render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
-import { ROUTER_FUTURE } from "../../../../routing/routerFuture";
+import { MemoryRouter } from "react-router";
 import { MODE_STORAGE_KEY } from "../../../../settings/ModeProvider";
 import { createMockRocketpoolApi, type MockRocketpoolApi, type RocketpoolMockOptions } from "../../api/mock";
 import { AppRoutes, Providers } from "../../App";
@@ -12,7 +11,7 @@ export function renderPage(path: string, mock: RocketpoolMockOptions | MockRocke
   const api = "calls" in mock ? mock : createMockRocketpoolApi(mock);
   const utils = render(
     <Providers api={api}>
-      <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
+      <MemoryRouter initialEntries={[path]}>
         <AppRoutes />
       </MemoryRouter>
     </Providers>,

@@ -41,7 +41,7 @@ function SegmentedControl<T extends string>({
           onClick={() => onChange(opt.value)}
           className={cn(
             "h-11 flex-1 rounded-md px-1 text-[0.8125rem] leading-tight transition-colors lg:h-[2.125rem]",
-            "focus-visible:shadow-focus focus-visible:outline-none",
+            "focus-visible:shadow-focus focus-visible:outline-hidden",
             opt.value === value
               ? "bg-surface font-semibold text-fg shadow-sm dark:bg-border"
               : "bg-transparent text-fg-muted hover:text-fg",
@@ -62,16 +62,16 @@ export function SidebarFooter() {
     <div className="flex flex-col gap-2.5 rounded-lg bg-bg-subtle p-3.5">
       <a
         href={ADMIN_URL}
-        className="flex items-center gap-2.5 rounded-md p-1 text-sm font-semibold text-fg no-underline transition-colors hover:bg-fg/[0.05] hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
+        className="flex items-center gap-2.5 rounded-md p-1 text-sm font-semibold text-fg no-underline transition-colors hover:bg-fg/[0.05] hover:text-fg focus-visible:shadow-focus focus-visible:outline-hidden"
       >
         <span
           aria-hidden="true"
-          className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-accent/15 font-display text-[0.8125rem] font-extrabold text-accent"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent/15 font-display text-[0.8125rem] font-extrabold text-accent"
         >
           AV
         </span>
         <span className="min-w-0 flex-1 truncate">My AVADO</span>
-        <ArrowLeftIcon className="flex-shrink-0 text-fg-muted" width={16} height={16} />
+        <ArrowLeftIcon className="shrink-0 text-fg-muted" width={16} height={16} />
       </a>
       <SegmentedControl label="Theme" options={THEME_OPTIONS} value={preference} onChange={setPreference} />
       <SegmentedControl label="Mode" options={MODE_OPTIONS} value={mode} onChange={setMode} />

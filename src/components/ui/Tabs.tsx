@@ -60,7 +60,7 @@ export function Tabs({ tabs, active, onChange, className, "aria-label": ariaLabe
             onClick={() => onChange(t.id)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
-              "inline-flex items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:shadow-focus",
+              "inline-flex items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors focus:outline-hidden focus-visible:shadow-focus",
               selected ? "bg-accent/10 text-fg" : "text-fg-muted hover:bg-fg/[0.05] hover:text-fg",
             )}
           >

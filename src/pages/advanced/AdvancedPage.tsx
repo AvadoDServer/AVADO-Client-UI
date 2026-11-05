@@ -255,7 +255,7 @@ export default function AdvancedPage() {
           data-theme="dark"
           tabIndex={0}
           aria-label="Live logs"
-          className="h-96 overflow-auto rounded-lg border border-border bg-bg-inset p-4 focus:outline-none focus-visible:shadow-focus"
+          className="h-96 overflow-auto rounded-lg border border-border bg-bg-inset p-4 focus:outline-hidden focus-visible:shadow-focus"
         >
           {logsPlaceholder !== null ? (
             <p className="font-mono text-xs text-fg-muted" aria-live="polite">

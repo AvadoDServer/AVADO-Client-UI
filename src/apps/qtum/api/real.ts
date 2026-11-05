@@ -19,7 +19,7 @@ export const UPLOAD_TIMEOUT_MS = 300_000;
 /** The file name to save a backup under: the monitor's when it is a plain name, else the old wizard's. */
 export function backupFileName(contentDisposition: string | null, today = new Date()): string {
   const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(contentDisposition ?? "");
-  let given = "";
+  let given: string;
   try {
     given = m ? decodeURIComponent(m[1].trim()) : "";
   } catch {

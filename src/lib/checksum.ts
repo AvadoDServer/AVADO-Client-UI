@@ -2,7 +2,7 @@
  * EIP-55 address checksums: the capital letters of a mixed-case address
  * encode a keccak-256 hash of it, so a typo or a swapped character shows.
  */
-import { keccak_256 } from "@noble/hashes/sha3";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 
 const HEX_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 

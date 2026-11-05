@@ -1,7 +1,6 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
-import { ROUTER_FUTURE } from "../../../routing/routerFuture";
+import { MemoryRouter } from "react-router";
 import { MODE_STORAGE_KEY } from "../../../settings/ModeProvider";
 import { createMockRocketpoolApi, type RocketpoolMockOptions } from "../api/mock";
 import App, { AppRoutes, Providers } from "../App";
@@ -9,7 +8,7 @@ import App, { AppRoutes, Providers } from "../App";
 function renderAt(path = "/", mock: RocketpoolMockOptions = {}) {
   return render(
     <Providers api={createMockRocketpoolApi(mock)}>
-      <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
+      <MemoryRouter initialEntries={[path]}>
         <AppRoutes />
       </MemoryRouter>
     </Providers>,

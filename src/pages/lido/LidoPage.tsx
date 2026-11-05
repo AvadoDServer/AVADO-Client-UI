@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { useApi } from "../../api/ApiProvider";
 import { Button, Card, CardDescription, CardTitle, StatusPill, cn, type StatusTone } from "../../components/ui";
 import { adminPackageUrl } from "../../components/shell/links";
