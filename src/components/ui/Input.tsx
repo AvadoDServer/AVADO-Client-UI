@@ -4,9 +4,10 @@ import { cn } from "./cn";
 const baseField =
   "w-full rounded-control border bg-surface text-fg placeholder:text-fg-subtle transition-colors duration-150 focus:outline-none focus-visible:border-accent focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-55";
 
+// Below sm the text is 16px: iOS zooms the page into any smaller field.
 const SIZES = {
-  sm: "h-8 px-2.5 text-[0.8125rem]",
-  md: "h-11 px-3.5 text-sm",
+  sm: "h-10 px-2.5 text-base sm:h-8 sm:text-[0.8125rem]",
+  md: "h-11 px-3.5 text-base sm:text-sm",
   lg: "h-12 px-4 text-base",
 } as const;
 
