@@ -7,7 +7,9 @@ Advanced modes.
 
 ## Develop
 
-Yarn 1 only (never npm), Node 20.
+Yarn 1 only (never npm), Node 24 LTS (22.22.2 or newer works too; Node 20
+is too old for Vite 8, Vitest 5 and React Router 8). Package builds use
+`node:24.22.2-bookworm-slim`, which ships Yarn 1.22.22.
 
 ```sh
 yarn install --frozen-lockfile
