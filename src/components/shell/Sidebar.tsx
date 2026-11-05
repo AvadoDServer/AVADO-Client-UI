@@ -1,5 +1,5 @@
 import { forwardRef, type ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink } from "react-router";
 import { cn } from "../ui";
 import { CloseIcon } from "./icons";
 import type { NavItem } from "./navItems";

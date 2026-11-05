@@ -2,7 +2,7 @@
  * Pieces shared by the desktop table row and the phone card, so both show
  * the same words.
  */
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Badge, Button, StatusPill, cn } from "../../components/ui";
 import type { Network } from "../../config/clientConfig";
 import type { ValidatorRowData } from "./useValidators";

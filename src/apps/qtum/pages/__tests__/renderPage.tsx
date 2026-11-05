@@ -1,6 +1,5 @@
 import { render } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import { ROUTER_FUTURE } from "../../../../routing/routerFuture";
+import { MemoryRouter } from "react-router";
 import { MODE_STORAGE_KEY } from "../../../../settings/ModeProvider";
 import { createMockQtumApi, type MockQtumApi, type QtumMockOptions } from "../../api/mock";
 import { AppRoutes, Providers } from "../../App";
@@ -11,7 +10,7 @@ export function renderPage(path: string, mock: QtumMockOptions | MockQtumApi = {
   const api = "calls" in mock ? mock : createMockQtumApi(mock);
   const utils = render(
     <Providers api={api}>
-      <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
+      <MemoryRouter initialEntries={[path]}>
         <AppRoutes />
       </MemoryRouter>
     </Providers>,

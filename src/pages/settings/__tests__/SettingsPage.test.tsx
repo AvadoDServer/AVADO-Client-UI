@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { ApiProvider } from "../../../api/ApiProvider";
 import { ApiError } from "../../../api/errors";
 import { createMockApi, MOCK_DEFAULT_FEE_RECIPIENT, MOCK_DEFAULT_SETTINGS, MOCK_PACKAGES, MOCK_SETTINGS } from "../../../api/mock";
@@ -8,7 +8,6 @@ import type { Api, PackageBackend, Settings } from "../../../api/types";
 import { ClientConfigProvider } from "../../../config/ClientConfigProvider";
 import { normalizeClientConfig, type ClientConfig } from "../../../config/clientConfig";
 import { MODE_STORAGE_KEY, ModeProvider, useMode } from "../../../settings/ModeProvider";
-import { ROUTER_FUTURE } from "../../../App";
 import { SETTINGS_SAVED_EVENT } from "../../../components/shell/events";
 import SettingsPage from "../SettingsPage";
 
@@ -29,7 +28,7 @@ function renderPage(
 ) {
   if (advanced) localStorage.setItem(MODE_STORAGE_KEY, "advanced");
   return render(
-    <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
+    <MemoryRouter initialEntries={[path]}>
       <ClientConfigProvider config={normalizeClientConfig(config)}>
         <ApiProvider api={api}>
           <ModeProvider>

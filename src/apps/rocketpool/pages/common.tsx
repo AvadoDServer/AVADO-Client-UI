@@ -4,7 +4,7 @@
  * facts stack, rows wrap, nothing needs a table.
  */
 import { useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Button, Card, CardDescription, CardTitle, Skeleton, StatusDot, cn } from "../../../components/ui";
 import { plainError } from "../api/errors";
 import { TechDetails } from "../components/common";

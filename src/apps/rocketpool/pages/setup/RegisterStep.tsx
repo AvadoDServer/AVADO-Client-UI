@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Button, Select } from "../../../../components/ui";
 import type { CanRegisterResponse, NodeStatus } from "../../api/models";
 import { Notice } from "../../components/common";

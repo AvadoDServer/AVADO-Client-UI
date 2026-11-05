@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet } from "react-router";
 import { ShellFrame } from "../../components/shell/ShellFrame";
 import { useMode } from "../../settings/ModeProvider";
 import { APP_TITLE, RocketpoolIdentity } from "./identity";

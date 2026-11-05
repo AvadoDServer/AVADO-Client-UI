@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router";
 import { Button, Card, CardTitle, StatusDot, cn, type StatusTone } from "../../../../components/ui";
 import { plainError } from "../../api/errors";
 import { TechDetails } from "../../components/common";

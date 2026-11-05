@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Button, StatusDot, cn } from "../ui";
 import type { Problem, ProblemTone } from "./problems";
 

@@ -1,12 +1,11 @@
 import type { ReactNode } from "react";
-import { HashRouter, Route, Routes } from "react-router-dom";
+import { HashRouter, Route, Routes } from "react-router";
 import { ApiProvider } from "./api/ApiProvider";
 import type { Api } from "./api/types";
 import { Shell } from "./components/shell/Shell";
 import { Button } from "./components/ui";
 import { ClientConfigProvider } from "./config/ClientConfigProvider";
 import type { ClientConfig, ClientConfigResult } from "./config/clientConfig";
-import { ROUTER_FUTURE } from "./routing/routerFuture";
 import AddValidatorsPage from "./pages/add/AddValidatorsPage";
 import AdvancedPage from "./pages/advanced/AdvancedPage";
 import LidoPage from "./pages/lido/LidoPage";
@@ -15,8 +14,6 @@ import SettingsPage from "./pages/settings/SettingsPage";
 import ValidatorsPage from "./pages/validators/ValidatorsPage";
 import { ModeProvider, useMode } from "./settings/ModeProvider";
 import { ThemeProvider } from "./theme/ThemeProvider";
-
-export { ROUTER_FUTURE };
 
 /** Theme, mode, config and API context around the app. */
 export function Providers({
@@ -83,7 +80,7 @@ export function AppRoutes() {
 export default function App() {
   return (
     <Providers>
-      <HashRouter future={ROUTER_FUTURE}>
+      <HashRouter>
         <AppRoutes />
       </HashRouter>
     </Providers>

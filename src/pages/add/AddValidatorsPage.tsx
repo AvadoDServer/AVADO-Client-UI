@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { useApi } from "../../api/ApiProvider";
 import { isApiError } from "../../api/errors";
 import type { ImportResult } from "../../api/types";

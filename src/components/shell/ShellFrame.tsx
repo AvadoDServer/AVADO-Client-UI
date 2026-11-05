@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import { Banners } from "./Banners";
 import type { NavItem } from "./navItems";
 import type { Problem } from "./problems";

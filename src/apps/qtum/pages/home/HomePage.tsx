@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Card, CardDescription, CardTitle, StatusPill } from "../../../../components/ui";
 import { plainError } from "../../api/errors";
 import { readStakingInfo, readWallet } from "../../api/node";

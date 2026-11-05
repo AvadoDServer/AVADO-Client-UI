@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation } from "react-router";
 import { useApi } from "../../api/ApiProvider";
 import type { PackageState, Settings } from "../../api/types";
 import { useClientConfigStatus } from "../../config/ClientConfigProvider";

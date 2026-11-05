@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { ApiProvider } from "../../../api/ApiProvider";
 import type { Api } from "../../../api/types";
 import { ClientConfigProvider } from "../../../config/ClientConfigProvider";
@@ -10,7 +10,7 @@ import { normalizeClientConfig, type ClientConfig } from "../../../config/client
 export function renderWithApi(ui: ReactElement, api: Api, config: Partial<ClientConfig> = {}) {
   const cfg = normalizeClientConfig({ client: "nimbus", network: "mainnet", ...config });
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <ClientConfigProvider config={cfg}>
         <ApiProvider api={api}>{ui}</ApiProvider>
       </ClientConfigProvider>

@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Button, Card, Skeleton, Spinner, Table, TBody, TH, THead, TR } from "../../components/ui";
 import { useClientConfig } from "../../config/ClientConfigProvider";
 import { clientDisplayName } from "../../lib/clientName";

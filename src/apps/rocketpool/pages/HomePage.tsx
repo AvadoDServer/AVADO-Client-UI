@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Button, Card, CardDescription, CardTitle, StatusDot, StatusPill, cn, type StatusTone } from "../../../components/ui";
 import type { Problem } from "../../../components/shell/problems";
 import { plainError } from "../api/errors";

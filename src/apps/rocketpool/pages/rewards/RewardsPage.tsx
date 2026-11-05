@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Button, Card, Input } from "../../../../components/ui";
 import { useMode } from "../../../../settings/ModeProvider";
 import {

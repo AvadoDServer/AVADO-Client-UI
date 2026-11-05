@@ -1,8 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { createFetchMock } from "../../../../api/__tests__/fetchMock";
-import { ROUTER_FUTURE } from "../../../../routing/routerFuture";
 import { MODE_STORAGE_KEY } from "../../../../settings/ModeProvider";
 import { AppRoutes, Providers } from "../../App";
 import { RpApiError, plainError } from "../../api/errors";
@@ -24,7 +23,7 @@ function renderHome(mock: RocketpoolMockOptions | MockRocketpoolApi = {}) {
   const api = "calls" in mock ? mock : createMockRocketpoolApi(mock);
   render(
     <Providers api={api}>
-      <MemoryRouter initialEntries={["/"]} future={ROUTER_FUTURE}>
+      <MemoryRouter initialEntries={["/"]}>
         <AppRoutes />
         <Routes>
           <Route path="*" element={<Where />} />
