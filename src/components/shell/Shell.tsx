@@ -122,7 +122,7 @@ export function Shell() {
     <ShellFrame
       brand={<ClientIdentity />}
       compactBrand={<ClientIdentity size="sm" />}
-      items={visibleNavItems(isAdvanced)}
+      items={visibleNavItems(isAdvanced, config.network)}
       strip={<StatusStrip status={node.data} loading={node.loading} execution={execution} />}
       problems={problems}
     >

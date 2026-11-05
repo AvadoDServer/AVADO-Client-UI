@@ -138,6 +138,8 @@ export interface MockOptions {
   syncing?: SyncingStatus;
   peers?: Peer[];
   version?: string;
+  /** Package settings by package name (`packageEnvs`); MEV-Boost gets AVADO's default relays. */
+  packageEnvs?: Record<string, Record<string, string>>;
   /** Artificial latency per call; 0 in tests. */
   latencyMs?: number;
 }
@@ -148,6 +150,17 @@ export const MOCK_PACKAGES = [
   "nimbus.avado.dnp.dappnode.eth",
   "mevboost.avado.dnp.dappnode.eth",
 ];
+
+/** AVADO MEV-Boost 0.0.19's default RELAYS (dappnode_package.json). */
+export const MOCK_MEVBOOST_RELAYS = [
+  "https://0xa15b52576bcbf1072f4a011c0f99f9fb6c66f3e1ff321f11f461d15e31b1cb359caa092c71bbded0bae5b5ea401aab7e@aestus.live",
+  "https://0xa7ab7a996c8584251c8f925da3170bdfd6ebc75d50f5ddc4050a6fdc77f2a3b5fce2cc750d0865e05d7228af97d69561@agnostic-relay.net",
+  "https://0x8c4ed5e24fe5c6ae21018437bde147693f68cda427cd1122cf20819c30eda7ed74f72dece09bb313f2a1855595ab677d@global.titanrelay.xyz",
+  "https://0xa1559ace749633b997cb3fdacffb890aeebdb0f5a3b6aaa7eeeaf1a38af0a8fe88b9e4b1f61f236d2e64d95733327a62@relay.ultrasound.money",
+  "https://0xac6e77dfe25ecd6110b8e780608cce0dab71fdd5ebea22a16c0205200f2f8e2e3ad3b71d3499c54ad14d6c21b41a37ae@boost-relay.flashbots.net",
+  "https://0xb0b07cd0abef743db4260b0ed50619cf6ad4d82064cb4fbec9d3ec530f7c5e6793d9f286c4e082c0244ffb9f2658fe88@bloxroute.regulated.blxrbdn.com",
+  "https://0x8c4ed5e24fe5c6ae21018437bde147693f68cda427cd1122cf20819c30eda7ed74f72dece09bb313f2a1855595ab677d@regional.titanrelay.xyz",
+].join(",");
 
 function mockPeers(): Peer[] {
   return Array.from({ length: 78 }, (_, i) => ({
@@ -198,6 +211,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
     feeRecipients: { ...(opts.feeRecipients ?? { [MOCK_PUBKEYS.active02]: MOCK_OVERRIDE_FEE_RECIPIENT }) } as Record<string, string>,
     packages: [...(opts.packages ?? MOCK_PACKAGES)],
     stoppedPackages: [...(opts.stoppedPackages ?? [])],
+    packageEnvs: clone(opts.packageEnvs ?? { "mevboost.avado.dnp.dappnode.eth": { NETWORK: "mainnet", RELAYS: MOCK_MEVBOOST_RELAYS, EXTRA_OPTS: "" } }),
     health: opts.health ?? ("ready" as NodeHealth),
     syncing: opts.syncing ?? { head_slot: "12634567", sync_distance: "0", is_syncing: false, is_optimistic: false, el_offline: false },
     peers: opts.peers ?? mockPeers(),
@@ -374,6 +388,11 @@ export function createMockApi(opts: MockOptions = {}): Api {
     async listPackageStates() {
       await wait();
       return state.packages.map((name) => ({ name, running: !state.stoppedPackages.includes(name) }));
+    },
+    async packageEnvs(pkg) {
+      await wait();
+      if (!state.packages.includes(pkg)) return null;
+      return { ...(state.packageEnvs[pkg] ?? {}) };
     },
     async logs(_pkg, tail) {
       await wait();

@@ -6,6 +6,7 @@ import type { ImportResult } from "../../api/types";
 import { Badge, Button, Card, CardDescription, CardTitle, Input, cn, type BadgeVariant } from "../../components/ui";
 import { useClientConfig } from "../../config/ClientConfigProvider";
 import { shortHex } from "../validators/statusText";
+import { lidoNetwork, readDepositData } from "../../lib/lido";
 import { classifyFile, importErrorText, readFileText, tally, tallyText, type DroppedKind } from "./keystoreFiles";
 
 interface Entry {
@@ -24,6 +25,8 @@ interface Entry {
   unknown?: boolean;
   /** Seen in the node's key list after a timed-out import. */
   found?: boolean;
+  /** A Lido deposit data file: the pubkeys in it that pay out to Lido. */
+  lidoKeys?: string[];
 }
 
 type PasswordMode = "same" | "each";
@@ -32,6 +35,7 @@ const isDone = (e: Entry) => e.found === true || e.result?.status === "imported"
 const isPending = (e: Entry) => e.kind === "keystore" && !isDone(e);
 
 function resultBadge(e: Entry): { variant: BadgeVariant; label: string } | null {
+  if (e.lidoKeys) return { variant: "accent", label: "Lido" };
   if (e.kind !== "keystore") return { variant: "warning", label: "Skipped" };
   if (e.found) return { variant: "success", label: "On this node" };
   if (e.unknown) return { variant: "warning", label: "Unknown" };
@@ -80,7 +84,8 @@ function PasswordField({ label, value, onChange, hint, error }: { label: string;
 /** Import one or many keystore files through the keymanager. */
 export default function AddValidatorsPage() {
   const { keymanager } = useApi();
-  const { features } = useClientConfig();
+  const { features, network } = useClientConfig();
+  const lido = lidoNetwork(network);
   const multiple = features.batchImport;
   const [entries, setEntries] = useState<Entry[]>([]);
   const [slashing, setSlashing] = useState<{ name: string; text: string } | null>(null);
@@ -91,6 +96,10 @@ export default function AddValidatorsPage() {
   const [summary, setSummary] = useState<{ text: string; failed: boolean } | null>(null);
   const [checking, setChecking] = useState(false);
   const [dragging, setDragging] = useState(false);
+  /** After an import with a Lido deposit data file: how setting Lido's fee recipient went. */
+  const [lidoResult, setLidoResult] = useState<{ ok: number; failed: string[] } | null>(null);
+  /** Keys that already got Lido's fee recipient in this visit. */
+  const lidoDone = useRef(new Set<string>());
   const nextId = useRef(1);
   // The latest list, for the async file reader (state may be stale there).
   const entriesRef = useRef<Entry[]>([]);
@@ -126,7 +135,18 @@ export default function AddValidatorsPage() {
         );
         continue;
       }
-      incoming.push({ id: nextId.current++, name: f.name, kind: c.kind, text, pubkey: c.pubkey, reason: c.reason, password: "" });
+      let reason = c.reason;
+      let lidoKeys: string[] | undefined;
+      if (c.kind === "deposit" && lido) {
+        const d = readDepositData(text, network);
+        if (d.kind === "lido") {
+          lidoKeys = d.lido;
+          reason = `Lido deposit data: ${d.lido.length === 1 ? "the key" : `the ${d.lido.length} keys`} in it will send ${d.lido.length === 1 ? "its" : "their"} block rewards to Lido, as Lido requires.`;
+        } else if (d.kind === "wrong-network") {
+          reason = `This deposit data file is for ${d.fileNetwork}, but this node runs on ${network}.`;
+        }
+      }
+      incoming.push({ id: nextId.current++, name: f.name, kind: c.kind, text, pubkey: c.pubkey, reason, password: "", lidoKeys });
     }
     if (foundSlashing) setSlashing(foundSlashing);
     const seen = new Set(entriesRef.current.flatMap((e) => (e.pubkey ? [e.pubkey] : [])));
@@ -151,6 +171,8 @@ export default function AddValidatorsPage() {
     setEntries(list);
     setNotes(newNotes);
     setSummary(null);
+    // A Lido deposit data file added after its keys were imported.
+    if (incoming.some((e) => e.lidoKeys)) await applyLido(list.filter((e) => e.kind === "keystore" && isDone(e)));
   };
 
   const onPick = (e: ChangeEvent<HTMLInputElement>) => {
@@ -221,7 +243,31 @@ export default function AddValidatorsPage() {
     setEntries((prev) => prev.map((e) => (byId.has(e.id) ? { ...e, result: byId.get(e.id) } : e)));
     const t = tally([...byId.values()]);
     setSummary({ text: tallyText(t), failed: t.error > 0 });
+    await applyLido(batch.filter((e) => byId.get(e.id)?.status === "imported" || byId.get(e.id)?.status === "duplicate"));
     setBusy(false);
+  };
+
+  /**
+   * Keys from a Lido deposit data file must send their block rewards to
+   * Lido's address: set it through the keymanager right after the import,
+   * before Lido deposits for them.
+   */
+  const applyLido = async (added: Entry[]) => {
+    if (!lido) return;
+    const lidoKeys = new Set(entriesRef.current.flatMap((e) => e.lidoKeys ?? []));
+    const todo = added.flatMap((e) => (e.pubkey && lidoKeys.has(e.pubkey) && !lidoDone.current.has(e.pubkey) ? [e.pubkey] : []));
+    if (todo.length === 0) return;
+    const out = { ok: 0, failed: [] as string[] };
+    for (const pk of todo) {
+      try {
+        await keymanager.setFeeRecipient(pk, lido.elRewardsVault);
+        lidoDone.current.add(pk);
+        out.ok += 1;
+      } catch (err) {
+        out.failed.push(err instanceof Error ? err.message : String(err));
+      }
+    }
+    setLidoResult((prev) => ({ ok: (prev?.ok ?? 0) + out.ok, failed: out.failed }));
   };
 
   /** After a timed-out import: mark the files whose key is on the node now. */
@@ -234,6 +280,7 @@ export default function AddValidatorsPage() {
       );
       entriesRef.current = next;
       setEntries(next);
+      await applyLido(next.filter((e) => e.found));
     } catch {
       /* the node is still busy or restarting: the files stay "Unknown" */
     } finally {
@@ -265,6 +312,7 @@ export default function AddValidatorsPage() {
             {multiple
               ? "The files are called keystore-m_12381_3600_… .json. You can add many at once."
               : "The file is called keystore-m_12381_3600_… .json."}
+            {lido && " For Lido CSM keys, add the deposit data file (deposit_data-… .json) too."}
           </CardDescription>
           <label
             htmlFor={inputId}
@@ -425,6 +473,18 @@ export default function AddValidatorsPage() {
             </p>
           )}
         </div>
+        {lidoResult && (
+          <p role="status" className={cn("text-sm font-medium", lidoResult.failed.length ? "text-danger-text" : "text-fg")}>
+            {lidoResult.ok > 0 &&
+              `${lidoResult.ok === 1 ? "1 key now sends its" : `${lidoResult.ok} keys now send their`} block rewards to Lido. `}
+            {lidoResult.failed.length > 0 && (
+              <>
+                {lidoResult.failed.length === 1 ? "1 key" : `${lidoResult.failed.length} keys`} didn&apos;t get Lido&apos;s
+                address: {lidoResult.failed[0]}. <Link to="/lido">Fix it on the Lido CSM page</Link>.
+              </>
+            )}
+          </p>
+        )}
         {unknownCount > 0 && (
           <div role="status" className="flex flex-wrap items-center gap-3 text-sm text-warning-text">
             <p>

@@ -40,17 +40,23 @@ const navLabels = () => within(mainNav()).getAllByRole("link").map((a) => a.text
 const problems = () => screen.queryByRole("region", { name: "Problems" });
 
 describe("Shell navigation", () => {
-  it("lists Validators, Add validators and Settings in Simple mode, without Advanced", async () => {
+  it("lists Validators, Add validators, Lido CSM and Settings in Simple mode, without Advanced", async () => {
     renderApp();
-    expect(navLabels()).toEqual(["Validators", "Add validators", "Settings"]);
+    expect(navLabels()).toEqual(["Validators", "Add validators", "Lido CSM", "Settings"]);
     expect(await screen.findByText("Synced")).toBeInTheDocument();
   });
 
   it("adds Advanced in Advanced mode", async () => {
     localStorage.setItem(MODE_STORAGE_KEY, "advanced");
     renderApp();
-    expect(navLabels()).toEqual(["Validators", "Add validators", "Settings", "Advanced"]);
+    expect(navLabels()).toEqual(["Validators", "Add validators", "Lido CSM", "Settings", "Advanced"]);
     await screen.findByText("Synced");
+  });
+
+  it("lists Lido CSM only on mainnet and Hoodi", async () => {
+    renderApp({ config: { ...NIMBUS, network: "gnosis", packageName: "nimbus-gnosis.avado.dnp.dappnode.eth" } });
+    expect(navLabels()).toEqual(["Validators", "Add validators", "Settings"]);
+    await screen.findByRole("heading", { name: "Validators" });
   });
 
   it("the footer's mode switch shows and hides Advanced", async () => {

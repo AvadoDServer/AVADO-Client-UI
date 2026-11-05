@@ -1,4 +1,4 @@
-import { createDappManager, unwrapEnvelope, WAMP_REALM, WAMP_URL, type WampCaller } from "../dappmanager";
+import { createDappManager, manifestEnvs, unwrapEnvelope, WAMP_REALM, WAMP_URL, type WampCaller } from "../dappmanager";
 
 type Call = { procedure: string; args?: unknown[]; kwargs?: Record<string, unknown> };
 
@@ -80,6 +80,40 @@ describe("createDappManager", () => {
   it("listPackages rejects a result that is not a list", async () => {
     const wamp = fakeCaller(() => JSON.stringify({ success: true, result: {} }));
     await expect(createDappManager({ wamp }).listPackages()).rejects.toMatchObject({ kind: "invalid" });
+  });
+
+  it("packageEnvs gives one package's settings: the manifest defaults with the box's values on top", async () => {
+    const result = [
+      { name: "nimbus.avado.dnp.dappnode.eth", envs: { SECRET_OF_ANOTHER_PACKAGE: "x" } },
+      {
+        name: "mevboost.avado.dnp.dappnode.eth",
+        envs: { RELAYS: "https://0xaa@relay.one", NOT_A_STRING: 5 },
+        manifest: { image: { environment: ["NETWORK=mainnet", "RELAYS=https://0xbb@default", "EXTRA_OPTS=", "FLAG"] } },
+      },
+    ];
+    const wamp = fakeCaller(() => JSON.stringify({ success: true, result }));
+    const dm = createDappManager({ wamp });
+    expect(await dm.packageEnvs("mevboost.avado.dnp.dappnode.eth")).toEqual({
+      NETWORK: "mainnet",
+      RELAYS: "https://0xaa@relay.one",
+      EXTRA_OPTS: "",
+      FLAG: "",
+    });
+    expect(wamp.calls[0].procedure).toBe("listPackages.dappmanager.dnp.dappnode.eth");
+    expect(await dm.packageEnvs("not-installed.avado.dnp.dappnode.eth")).toBeNull();
+  });
+
+  it("packageEnvs rejects a result that is not a list", async () => {
+    const wamp = fakeCaller(() => JSON.stringify({ success: true, result: {} }));
+    await expect(createDappManager({ wamp }).packageEnvs("x")).rejects.toMatchObject({ kind: "invalid" });
+  });
+});
+
+describe("manifestEnvs", () => {
+  it("reads KEY=value lines and keeps '=' inside values", () => {
+    expect(manifestEnvs({ image: { environment: ["A=1", "B=x=y", 7, ""] } })).toEqual({ A: "1", B: "x=y" });
+    expect(manifestEnvs(null)).toEqual({});
+    expect(manifestEnvs({ image: {} })).toEqual({});
   });
 });
 

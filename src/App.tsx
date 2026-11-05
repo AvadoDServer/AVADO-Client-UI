@@ -9,6 +9,7 @@ import type { ClientConfig, ClientConfigResult } from "./config/clientConfig";
 import { ROUTER_FUTURE } from "./routing/routerFuture";
 import AddValidatorsPage from "./pages/add/AddValidatorsPage";
 import AdvancedPage from "./pages/advanced/AdvancedPage";
+import LidoPage from "./pages/lido/LidoPage";
 import NotFound from "./pages/NotFound";
 import SettingsPage from "./pages/settings/SettingsPage";
 import ValidatorsPage from "./pages/validators/ValidatorsPage";
@@ -70,6 +71,7 @@ export function AppRoutes() {
       <Route element={<Shell />}>
         <Route index element={<ValidatorsPage />} />
         <Route path="add" element={<AddValidatorsPage />} />
+        <Route path="lido" element={<LidoPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="advanced" element={<AdvancedRoute />} />
         <Route path="*" element={<NotFound />} />
