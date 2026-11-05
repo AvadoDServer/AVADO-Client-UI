@@ -234,7 +234,10 @@ export function TransactionFlow<C extends CanResponse = CanResponse>({
   const api = useRocketpoolApi();
   const pending = usePendingTxs();
   const [phase, setPhase] = useState<Phase<C>>({ k: "checking" });
-  const [armed, setArmed] = useState(false);
+  const [armedLater, setArmed] = useState(false);
+  // With no delay, confirm is armed from the first render of the summary, not
+  // one render later when the effect below has run.
+  const armed = armDelayMs <= 0 || armedLater;
   const [typed, setTyped] = useState("");
   /** The action this dialog shows: the props' until checked, then the checked one. */
   const [key, setKey] = useState(() => specLockKey(tx));
