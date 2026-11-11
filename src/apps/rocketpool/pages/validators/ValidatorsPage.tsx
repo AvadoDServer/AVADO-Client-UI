@@ -17,6 +17,7 @@ import { useAppStatus } from "../../status/AppStatus";
 import { TransactionFlow } from "../../tx/TransactionFlow";
 import { Address, Callout, Facts, LoadError, LoadingCard, NodeGate, PageHeader, SectionCard } from "../common";
 import {
+  claimMinipoolRefundFlow,
   claimRefundFlow,
   closeMinipoolFlow,
   distributeMegapoolFlow,
@@ -31,7 +32,7 @@ import {
 } from "./actions";
 import { AddValidatorDialog } from "./AddValidatorDialog";
 import { CloseMinipoolFlow } from "./CloseMinipoolFlow";
-import { megapoolDelegate, megapoolSummary, megapoolValidatorView, minipoolView, sortMinipools, type MinipoolView } from "./model";
+import { megapoolDelegate, megapoolSummary, megapoolValidatorView, minipoolView, refundHowTo, sortMinipools, type MinipoolView } from "./model";
 
 /** Validators: minipools (the existing fleet) and the megapool, with their actions. */
 export default function ValidatorsPage() {
@@ -224,7 +225,10 @@ function MinipoolSection({
       {!views && error === undefined && <LoadingCard label="Loading your minipools" />}
       {detailsError !== undefined && views && (
         <Callout tone="warning" title="Some details could not be loaded">
-          <p>The buttons to close a minipool or pay out its rewards may be missing until they load. The page tries again by itself.</p>
+          <p>
+            The buttons to close a minipool, pay out its rewards or claim its refund may be missing until they load. The page tries again
+            by itself.
+          </p>
         </Callout>
       )}
       {views?.map((v) => (
@@ -279,6 +283,15 @@ function MinipoolCard({
             value: formatEth(mp.nodeShareOfETHBalance),
             hint: "Your share. Paid out when you pay out its rewards or close it.",
           },
+          ...(view.refund > 0n
+            ? [
+                {
+                  label: "Refund for you",
+                  value: formatEth(view.refund),
+                  hint: `Your share from an earlier payout someone else started. ${refundHowTo(view)}`,
+                },
+              ]
+            : []),
           {
             label: "Validator",
             value: index ? <BeaconLink pubkey={mp.validatorPubkey} label={`Number ${index}`} /> : <BeaconLink pubkey={mp.validatorPubkey} label="Not started yet" />,
@@ -286,7 +299,7 @@ function MinipoolCard({
           ...(isAdvanced ? [{ label: "Contract version", value: delegate }] : []),
         ]}
       />
-      {(view.canClose || view.canDistribute || view.canExit) && (
+      {(view.canClose || view.canDistribute || view.canClaimRefund || view.canExit) && (
         <div className="flex flex-wrap gap-2 border-t border-border pt-4">
           {view.canClose && <Button onClick={() => onClose(mp.address)}>Close minipool</Button>}
           {view.canClose && feeDistributorHasBalance && isAdvanced && (
@@ -295,8 +308,13 @@ function MinipoolCard({
             </Button>
           )}
           {view.canDistribute && (
-            <Button variant="secondary" onClick={() => onAction(distributeMinipoolFlow(mp.address))}>
+            <Button variant="secondary" onClick={() => onAction(distributeMinipoolFlow(mp.address, view.refund))}>
               Pay out rewards
+            </Button>
+          )}
+          {view.canClaimRefund && (
+            <Button variant="secondary" onClick={() => onAction(claimMinipoolRefundFlow(mp.address, view.refund))}>
+              Claim refund
             </Button>
           )}
           {view.canExit && (

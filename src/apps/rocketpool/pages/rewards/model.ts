@@ -6,6 +6,10 @@
  *   1. megapool rewards        megapool/can-distribute → megapool/distribute
  *   2. fee distributor         node/can-distribute → node/distribute
  *   3. minipool balances       minipool/distribute-balance, one per minipool
+ *                              (it pays the minipool's refund too)
+ *   3b. minipool refunds       minipool/refund, one per minipool whose
+ *                              balance can't be paid out (not in claim-all:
+ *                              Smartnode's `rocketpool minipool refund`)
  *   4. periodic rewards        node/claim-rewards (or claim-and-stake-rewards)
  *   5. unclaimed rewards       node/claim-unclaimed-rewards
  *   6. credit                  node/withdraw-credit (paid as rETH)
@@ -19,14 +23,16 @@ import type {
   CanDistributeFeeDistributor,
   CanDistributeMegapool,
   MegapoolPendingRewards,
+  MinipoolDetails,
   MinipoolDistributeDetails,
   NodeStatus,
   RewardsInfo,
   RewardsInterval,
 } from "../../api/models";
-import { isZeroAddress, toBigInt, WEI_PER_ETH } from "../../lib/units";
+import { isZeroAddress, sameAddress, toBigInt, WEI_PER_ETH } from "../../lib/units";
+import { minipoolRefund, refundClaimable } from "../validators/model";
 
-export type ClaimKind = "megapool" | "fee-distributor" | "minipool" | "periodic" | "unclaimed" | "credit" | "eth-on-behalf";
+export type ClaimKind = "megapool" | "fee-distributor" | "minipool" | "minipool-refund" | "periodic" | "unclaimed" | "credit" | "eth-on-behalf";
 
 export interface ClaimItem {
   /** Unique: "periodic", "minipool:0x…". */
@@ -41,6 +47,8 @@ export interface ClaimItem {
   approx?: boolean;
   /** Minipool items: the minipool. */
   address?: string;
+  /** Minipool items: the refund included in `eth` (wei). */
+  refund?: bigint;
   /** Periodic rewards: the interval indices to claim. */
   indices?: number[];
 }
@@ -52,6 +60,24 @@ export interface ClaimInputs {
   megapoolPending?: MegapoolPendingRewards;
   feeDistributor?: CanDistributeFeeDistributor;
   minipoolBalances?: MinipoolDistributeDetails[] | null;
+  /** `minipool/status`: the refund of each minipool (the distribute read reports it only for contract version 3 and newer). */
+  minipools?: MinipoolDetails[] | null;
+}
+
+const EIGHT_ETH = 8n * WEI_PER_ETH;
+
+/**
+ * A minipool whose refund can be claimed on its own here: Smartnode's refund
+ * rule holds, and its balance can't be paid out (Pay out pays the refund too).
+ * Left out: minipools to be closed instead (closing pays the refund too, on the
+ * Validators page). Without the close-details read, that is one that isn't
+ * staking, or holds 8 ETH or more besides the refund (its ETH back from an exit).
+ */
+export function refundOnlyMinipool(mp: MinipoolDetails, balances: MinipoolDistributeDetails[] | null | undefined): boolean {
+  const d = balances?.find((b) => sameAddress(b.address, mp.address));
+  if (!d || d.canDistribute || d.isFinalized || !refundClaimable(mp)) return false;
+  if (mp.status.status !== "Staking") return false;
+  return big(mp.balances.eth) - minipoolRefund(mp) < EIGHT_ETH;
 }
 
 const big = (v: unknown): bigint => toBigInt(v as string | number | null | undefined) ?? 0n;
@@ -66,7 +92,7 @@ export const intervalRpl = (i: RewardsInterval): bigint => big(i.collateralRplAm
 export const intervalEth = (i: RewardsInterval): bigint => big(i.smoothingPoolEthAmount) + big(i.voterShareEth);
 
 /** Everything that can be claimed now, in claim-all's order. Items with nothing in them are left out. */
-export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDistributor, minipoolBalances }: ClaimInputs): ClaimItem[] {
+export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDistributor, minipoolBalances, minipools }: ClaimInputs): ClaimItem[] {
   const items: ClaimItem[] = [];
 
   if (megapoolCan?.canDistribute && megapoolPending) {
@@ -103,10 +129,26 @@ export function claimItems({ node, rewards, megapoolCan, megapoolPending, feeDis
       id: `minipool:${d.address.toLowerCase()}`,
       kind: "minipool",
       title: "Minipool rewards",
-      text: "Staking rewards paid into this minipool. Your share goes to your withdrawal address.",
+      text: "Staking rewards paid into this minipool, plus any refund. Your share goes to your withdrawal address.",
       eth,
       rpl: 0n,
       address: d.address,
+      refund: big(d.refund),
+    });
+  }
+
+  for (const mp of minipools ?? []) {
+    if (!refundOnlyMinipool(mp, minipoolBalances)) continue;
+    const refund = minipoolRefund(mp);
+    items.push({
+      id: `minipool-refund:${mp.address.toLowerCase()}`,
+      kind: "minipool-refund",
+      title: "Minipool refund",
+      text: "Your share from an earlier payout someone else started, waiting in this minipool. Paid to your withdrawal address.",
+      eth: refund,
+      rpl: 0n,
+      address: mp.address,
+      refund,
     });
   }
 

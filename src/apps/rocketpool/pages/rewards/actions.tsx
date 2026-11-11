@@ -1,6 +1,12 @@
 import { formatEth, formatRpl, shortAddress } from "../../lib/units";
 import { CAN_RULES } from "../../tx/rules";
-import { distributeFeeDistributorFlow, distributeMegapoolFlow, distributeMinipoolFlow, type FlowConfig } from "../validators/actions";
+import {
+  claimMinipoolRefundFlow,
+  distributeFeeDistributorFlow,
+  distributeMegapoolFlow,
+  distributeMinipoolFlow,
+  type FlowConfig,
+} from "../validators/actions";
 import type { ClaimItem } from "./model";
 
 /** The flow that claims one item. `restakeRpl` (periodic rewards only): stake this much of the RPL again instead of paying it out. */
@@ -9,7 +15,9 @@ export function claimFlow(item: ClaimItem, { nodeAddress, restakeRpl = 0n }: { n
     case "megapool":
       return distributeMegapoolFlow(item.eth);
     case "minipool":
-      return distributeMinipoolFlow(item.address!);
+      return distributeMinipoolFlow(item.address!, item.refund ?? 0n);
+    case "minipool-refund":
+      return claimMinipoolRefundFlow(item.address!, item.eth);
     case "fee-distributor":
       return distributeFeeDistributorFlow(item.eth);
     case "periodic": {

@@ -7,6 +7,7 @@ import {
   getMegapoolCanDistribute,
   getMegapoolPendingRewards,
   getMinipoolDistributeDetails,
+  getMinipoolStatus,
   getNodeStatus,
   getRewardsInfo,
 } from "../../api/sn";
@@ -53,6 +54,8 @@ function Rewards() {
   const megapoolPending = useRead(getMegapoolPendingRewards, { enabled: daemonReady && hasMegapool });
   const feeDistributor = useRead(getFeeDistributorCanDistribute, { enabled: daemonReady && !!status?.isFeeDistributorInitialized });
   const minipoolBalances = useRead(getMinipoolDistributeDetails, { enabled: daemonReady && hasMinipools });
+  // For the refunds of minipools whose balance can't be paid out (refund-only items).
+  const minipools = useRead(getMinipoolStatus, { enabled: daemonReady && hasMinipools });
 
   const [open, setOpen] = useState<ClaimItem | null>(null);
   const [sequence, setSequence] = useState<Sequence | null>(null);
@@ -67,7 +70,10 @@ function Rewards() {
       void megapoolPending.refresh();
     }
     if (status?.isFeeDistributorInitialized) void feeDistributor.refresh();
-    if (hasMinipools) void minipoolBalances.refresh();
+    if (hasMinipools) {
+      void minipoolBalances.refresh();
+      void minipools.refresh();
+    }
   };
 
   if (node.error !== undefined && !status) return <LoadError what="your node" error={node.error} onRetry={() => void node.refresh()} />;
@@ -80,6 +86,7 @@ function Rewards() {
     megapoolPending: megapoolPending.data,
     feeDistributor: feeDistributor.data,
     minipoolBalances: minipoolBalances.data?.details,
+    minipools: minipools.data?.minipools,
   });
   const totals = claimTotals(items);
   const periodic = items.find((i) => i.kind === "periodic");
@@ -88,11 +95,11 @@ function Rewards() {
     rewards,
     ...(hasMegapool ? [megapoolCan, megapoolPending] : []),
     ...(status.isFeeDistributorInitialized ? [feeDistributor] : []),
-    ...(hasMinipools ? [minipoolBalances] : []),
+    ...(hasMinipools ? [minipoolBalances, minipools] : []),
   ];
   // No answer yet (also in the render right after a read is switched on, before its first poll starts).
   const stillLoading = reads.some((r) => r.data === undefined && r.error === undefined);
-  const failed = [rewards, megapoolCan, megapoolPending, feeDistributor, minipoolBalances].some((r) => r.error !== undefined);
+  const failed = [rewards, megapoolCan, megapoolPending, feeDistributor, minipoolBalances, minipools].some((r) => r.error !== undefined);
   const blocked = blockedIntervals(rewards.data);
   const payout = payoutAddress(status);
 
@@ -242,7 +249,7 @@ function Rewards() {
               )}
               <div>
                 <Button variant="secondary" size="sm" onClick={() => setOpen(item)} disabled={running || (item.kind === "periodic" && !!restakeError)}>
-                  {item.kind === "periodic" ? (restake ? "Claim and stake" : "Claim") : item.kind === "credit" || item.kind === "eth-on-behalf" ? "Withdraw" : item.kind === "unclaimed" ? "Claim" : "Pay out"}
+                  {item.kind === "periodic" ? (restake ? "Claim and stake" : "Claim") : item.kind === "credit" || item.kind === "eth-on-behalf" ? "Withdraw" : item.kind === "unclaimed" || item.kind === "minipool-refund" ? "Claim" : "Pay out"}
                 </Button>
               </div>
             </Card>

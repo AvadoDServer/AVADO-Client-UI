@@ -25,6 +25,13 @@ describe("can-X rules with Smartnode's real flag names", () => {
     expect(rule(can({}))).toBe("Generic");
   });
 
+  it("minipool refund: canRefund, and says so when there is no refund", () => {
+    const rule = CAN_RULES["minipool/can-refund"];
+    expect(rule(can({ canRefund: true, insufficientRefundBalance: false }))).toBeNull();
+    expect(rule(can({ canRefund: false, insufficientRefundBalance: true }))).toBe("There is no refund waiting in this minipool right now.");
+    expect(rule(can({}))).toMatch(/can't be claimed right now/);
+  });
+
   it("legacy RPL: Smartnode's canUnstake ignores the 15% rule, so belowMaxRPLStake blocks here", () => {
     const rule = CAN_RULES["node/can-unstake-legacy-rpl"];
     expect(rule(can({ canUnstake: true, belowMaxRPLStake: false }))).toBeNull();

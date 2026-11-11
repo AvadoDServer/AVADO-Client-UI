@@ -102,16 +102,29 @@ export function exitMinipoolFlow(address: string, pubkey: string): FlowConfig {
   };
 }
 
-export function distributeMinipoolFlow(address: string): FlowConfig {
+/**
+ * Pay out a minipool's rewards (`distributeBalance(true)` from the node). The
+ * contract also pays the whole refund waiting in the minipool, so `refund`
+ * (wei, from minipool/status) is named in the summary when there is one.
+ */
+export function distributeMinipoolFlow(address: string, refund = 0n): FlowConfig {
   const find = (can: CanResponse) =>
     ((can as unknown as MinipoolDistributeDetailsResponse).details ?? []).find((d) => sameAddress(d.address, address));
   return {
     title: `Pay out the rewards of minipool ${shortAddress(address)}`,
     summary: (
-      <p>
-        Pays out the rewards that collected in this minipool: your share goes to your withdrawal address, the rest to Rocket
-        Pool's stakers. The minipool keeps validating.
-      </p>
+      <div className="flex flex-col gap-2">
+        <p>
+          Pays out the rewards that collected in this minipool: your share goes to your withdrawal address, the rest to Rocket
+          Pool's stakers. The minipool keeps validating.
+        </p>
+        {refund > 0n && (
+          <p>
+            It also pays you the refund of {formatEth(refund)} waiting in the minipool (your share from an earlier payout someone
+            else started).
+          </p>
+        )}
+      </div>
     ),
     tx: {
       canRoute: "minipool/get-distribute-balance-details",
@@ -127,14 +140,43 @@ export function distributeMinipoolFlow(address: string): FlowConfig {
         const d = find(can);
         if (!d) return null;
         const yours = minipoolPayout(d);
+        const included = toBigInt(d.refund) ?? 0n;
         return (
           <p>
-            You receive about <strong>{formatEth(yours)}</strong> of the {formatEth(d.balance)} in the minipool.
+            You receive about <strong>{formatEth(yours)}</strong> of the {formatEth(d.balance)} in the minipool
+            {included > 0n ? `, including a refund of ${formatEth(included)}` : ""}.
           </p>
         );
       },
     },
     confirmLabel: "Pay out",
+  };
+}
+
+/**
+ * Claim only the refund waiting in a minipool (`refund()` on the minipool,
+ * Smartnode's `rocketpool minipool refund`): for when Pay out rewards, which
+ * pays the refund too, isn't possible. The refund goes to the withdrawal address.
+ */
+export function claimMinipoolRefundFlow(address: string, refund: bigint): FlowConfig {
+  return {
+    title: `Claim the refund of minipool ${shortAddress(address)}`,
+    summary: (
+      <div className="flex flex-col gap-2">
+        <p>
+          Sends the refund of <strong>{formatEth(refund)}</strong> waiting in this minipool to your withdrawal address. It is your share
+          from an earlier payout someone else started.
+        </p>
+        <p>Nothing else changes: the rest of the minipool's ETH stays where it is.</p>
+      </div>
+    ),
+    tx: {
+      canRoute: "minipool/can-refund",
+      route: "minipool/refund",
+      params: { address: address.toLowerCase() },
+      blockedReason: CAN_RULES["minipool/can-refund"],
+    },
+    confirmLabel: "Claim refund",
   };
 }
 

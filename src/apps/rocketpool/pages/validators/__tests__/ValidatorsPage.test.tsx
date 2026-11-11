@@ -170,6 +170,46 @@ describe("Validators page", () => {
     expect(posts()[0]).toMatchObject({ path: "/api/sn/minipool/distribute-balance", params: { address: DEMO.minipoolA.toLowerCase(), gasLimit: "181500" } });
   });
 
+  it("shows a minipool's refund; Pay out rewards says it pays the refund too", async () => {
+    const { posts } = renderPage("/validators", { scenario: "minipool-refund" });
+    const f = await card(`minipool-${DEMO.minipoolF.toLowerCase()}`);
+    const fact = within(f).getByText("Refund for you");
+    expect(fact.nextElementSibling).toHaveTextContent("0.0523 ETH");
+    expect(f).toHaveTextContent("Your share from an earlier payout someone else started. You get it with Pay out rewards.");
+    expect(within(f).queryByRole("button", { name: "Claim refund" })).toBeNull();
+    await userEvent.click(within(f).getByRole("button", { name: "Pay out rewards" }));
+    expect(await within(dialog()).findByText(/It also pays you the refund of 0.0523 ETH waiting in the minipool/)).toBeInTheDocument();
+    expect(await within(dialog()).findByText(/You receive about/)).toHaveTextContent(
+      "You receive about 0.0664 ETH of the 0.0835 ETH in the minipool, including a refund of 0.0523 ETH.",
+    );
+    await confirmIn(dialog(), "Pay out");
+    await within(dialog()).findByText("Transaction confirmed");
+    expect(posts()[0]).toMatchObject({ path: "/api/sn/minipool/distribute-balance", params: { address: DEMO.minipoolF.toLowerCase() } });
+  });
+
+  it("claims a minipool's refund on its own when its rewards can't be paid out", async () => {
+    const { posts, api } = renderPage("/validators", { scenario: "minipool-refund" });
+    const g = await card(`minipool-${DEMO.minipoolG.toLowerCase()}`);
+    expect(within(g).getByText("Refund for you").nextElementSibling).toHaveTextContent("0.0611 ETH");
+    expect(g).toHaveTextContent("You get it with Claim refund.");
+    expect(within(g).queryByRole("button", { name: "Pay out rewards" })).toBeNull();
+    await userEvent.click(await within(g).findByRole("button", { name: "Claim refund" }));
+    const d = await screen.findByRole("dialog", { name: /Claim the refund of minipool/ });
+    expect(d).toHaveTextContent("Sends the refund of 0.0611 ETH waiting in this minipool to your withdrawal address.");
+    await confirmIn(d, "Claim refund");
+    await within(dialog()).findByText("Transaction confirmed");
+    expect(api.calls.find((c) => c.path === "/api/sn/minipool/can-refund")?.params).toEqual({ address: DEMO.minipoolG.toLowerCase() });
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0]).toMatchObject({ path: "/api/sn/minipool/refund", params: { address: DEMO.minipoolG.toLowerCase(), gasLimit: "87000" } });
+  });
+
+  it("no refund line on a minipool without a refund", async () => {
+    renderPage("/validators", { scenario: "minipool" });
+    const a = await card(`minipool-${DEMO.minipoolA.toLowerCase()}`);
+    expect(within(a).queryByText("Refund for you")).toBeNull();
+    expect(within(a).queryByRole("button", { name: "Claim refund" })).toBeNull();
+  });
+
   it("shows the megapool, exits a validator after its index is typed, and takes a queued one out of the queue", async () => {
     const { posts } = renderPage("/validators", { scenario: "mixed" });
     const mega = await card("megapool");

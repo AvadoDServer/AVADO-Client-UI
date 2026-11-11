@@ -74,8 +74,10 @@ adapters (`src/apps/rocketpool/api/mock.ts`) with a demo node from
 (the default), `fresh` (no wallet), `wallet-found` (no wallet where the app
 looks, but two copies found elsewhere on the AVADO), `unregistered` (wallet, not registered),
 `new-node` (registered, no validators), `keys-attention` (every key-check
-state), `daemon-failed` or `exits` (a minipool ready to close, megapool
-validators exiting, a debt, a refund, credit and unstaking RPL) to the
+state), `daemon-failed`, `exits` (a minipool ready to close, megapool
+validators exiting, a debt, a refund, credit and unstaking RPL) or
+`minipool-refund` (two minipools holding a refund: one paid out with its
+rewards, one on an older contract claimed with Claim refund) to the
 address, e.g. `http://localhost:5173/?scenario=fresh#/setup`. In `fresh`,
 creating or restoring a wallet leads on to `unregistered`, and registering
 that leads on to `new-node`, so the whole setup wizard can be walked through.
