@@ -7,6 +7,7 @@ import {
   megapoolValidatorView,
   minipoolStatus,
   minipoolView,
+  refundHowTo,
   sortMinipools,
 } from "../model";
 
@@ -51,6 +52,38 @@ describe("minipools", () => {
     expect(minipoolView(a, a.delegate, [beacon("active_exiting")], []).canExit).toBe(false);
     // Closed: nothing to do.
     expect(minipoolView({ ...a, finalised: true }, a.delegate, close("minipool"), distribute("minipool"))).toMatchObject({ canExit: false, canDistribute: false, canClose: false });
+  });
+
+  it("refunds: Pay out rewards pays it where it can; Claim refund only where neither Pay out nor Close can", () => {
+    const [f, g] = minipools("minipool-refund");
+    const vf = minipoolView(f, f.delegate, close("minipool-refund"), distribute("minipool-refund"));
+    expect(vf).toMatchObject({ refund: 523n * 10n ** 14n, canDistribute: true, canClaimRefund: false });
+    expect(refundHowTo(vf)).toBe("You get it with Pay out rewards.");
+    // G is on an older contract: Smartnode can't pay out its rewards, so the refund comes out on its own.
+    const vg = minipoolView(g, g.delegate, close("minipool-refund"), distribute("minipool-refund"));
+    expect(vg).toMatchObject({ refund: 611n * 10n ** 14n, canDistribute: false, canClose: false, canClaimRefund: true });
+    expect(refundHowTo(vg)).toBe("You get it with Claim refund.");
+    // No refund: nothing to claim.
+    const [a] = minipools("minipool");
+    expect(minipoolView(a, a.delegate, close("minipool"), distribute("minipool"))).toMatchObject({ refund: 0n, canClaimRefund: false });
+  });
+
+  it("refunds: no Claim refund before the details load, for a minipool to close, a closed one, or too little ETH to pay it", () => {
+    const [, g] = minipools("minipool-refund");
+    const c = close("minipool-refund");
+    const d = distribute("minipool-refund");
+    expect(minipoolView(g, g.delegate, undefined, d).canClaimRefund).toBe(false);
+    expect(minipoolView(g, g.delegate, c, undefined).canClaimRefund).toBe(false);
+    const closable = c!.map((x) => ({ ...x, canClose: true, beaconState: "withdrawal_done" }));
+    const v = minipoolView(g, g.delegate, closable, d);
+    expect(v).toMatchObject({ canClose: true, canClaimRefund: false });
+    expect(refundHowTo(v)).toBe("You get it when you close the minipool.");
+    expect(minipoolView({ ...g, finalised: true }, g.delegate, c, d).canClaimRefund).toBe(false);
+    // Smartnode's RefundAvailable is false when the minipool holds less ETH than the refund.
+    const short = { ...g, refundAvailable: false, balances: { ...g.balances, eth: "1000" } };
+    const vs = minipoolView(short, g.delegate, c, d);
+    expect(vs.canClaimRefund).toBe(false);
+    expect(refundHowTo(vs)).toBe("You get it with Pay out rewards, or when the minipool is closed.");
   });
 
   it("the exit code is the address's last 6 characters, lower-case", () => {

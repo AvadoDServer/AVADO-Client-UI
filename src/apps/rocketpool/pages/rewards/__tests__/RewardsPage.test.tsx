@@ -34,6 +34,24 @@ describe("Rewards page", () => {
     expect(posts().map((p) => p.path)).toEqual(["/api/sn/minipool/distribute-balance"]);
   });
 
+  it("claims a minipool's payout with its refund, then a refund on its own, in Claim everything", async () => {
+    const { posts } = renderPage("/rewards", { scenario: "minipool-refund" });
+    expect(await screen.findByTestId("claim-total", {}, { timeout: 3000 })).toHaveTextContent("0.1275 ETH");
+    expect(within(screen.getByTestId(`claim-minipool-refund:${DEMO.minipoolG.toLowerCase()}`)).getByText(/Your share from an earlier payout someone else started/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Claim everything (2 transactions)" }));
+    expect(await screen.findByRole("dialog", { name: /Step 1 of 2: Pay out the rewards of minipool/ })).toHaveTextContent("It also pays you the refund of 0.0523 ETH");
+    await confirmIn(dialog(), "Pay out");
+    await within(dialog()).findByText("Transaction confirmed");
+    await userEvent.click(within(dialog()).getByRole("button", { name: "Done" }));
+    expect(await screen.findByRole("dialog", { name: /Step 2 of 2: Claim the refund of minipool/ })).toBeInTheDocument();
+    await confirmIn(dialog(), "Claim refund");
+    await within(dialog()).findByText("Transaction confirmed");
+    expect(posts().map((p) => [p.path, p.params.address])).toEqual([
+      ["/api/sn/minipool/distribute-balance", DEMO.minipoolF.toLowerCase()],
+      ["/api/sn/minipool/refund", DEMO.minipoolG.toLowerCase()],
+    ]);
+  });
+
   it("claims the periodic rewards and stakes the chosen RPL again", async () => {
     const { posts } = renderPage("/rewards", { scenario: "minipool" });
     const card = await screen.findByTestId("claim-periodic", {}, { timeout: 3000 });

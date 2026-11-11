@@ -36,6 +36,14 @@ export interface MinipoolView {
   canClose: boolean;
   /** Its balance can be distributed now (skimmed rewards). */
   canDistribute: boolean;
+  /**
+   * The refund waiting in the minipool for the owner (wei): the node's share
+   * of an earlier payout someone else started. Pay out rewards and closing
+   * pay it too.
+   */
+  refund: bigint;
+  /** The refund can be claimed on its own now: there is one, and neither Pay out rewards nor Close is possible. */
+  canClaimRefund: boolean;
   /** Its delegate (contract code) is the newest, or follows the newest automatically. */
   delegate: { upToDate: boolean; followsLatest: boolean };
 }
@@ -90,19 +98,56 @@ export function minipoolView(
   const status = minipoolStatus(mp, close);
   const leaving = LEAVING.has(close?.beaconState ?? "");
   const finished = mp.finalised || !!close?.isFinalized;
+  const canClose = !finished && !!close?.canClose;
+  const canDistribute = !finished && !!distribute?.canDistribute && !close?.canClose;
+  const refund = minipoolRefund(mp);
+  // Only once both detail reads have answered: before that a minipool that can
+  // be paid out or closed would briefly show Claim refund instead.
+  const detailsKnown = closeDetails !== undefined && distributeDetails !== undefined;
   return {
     mp,
     status,
     close,
     distribute,
     canExit: !finished && mp.status.status === "Staking" && mp.validator.exists && mp.validator.active && !leaving && !close?.canClose,
-    canClose: !finished && !!close?.canClose,
-    canDistribute: !finished && !!distribute?.canDistribute && !close?.canClose,
+    canClose,
+    canDistribute,
+    refund,
+    canClaimRefund: detailsKnown && !finished && !canClose && !canDistribute && refundClaimable(mp),
     delegate: {
       upToDate: !!latestDelegate && sameAddress(mp.effectiveDelegate, latestDelegate),
       followsLatest: mp.useLatestDelegate,
     },
   };
+}
+
+/**
+ * The refund a minipool holds for its owner (wei), from `minipool/status`
+ * (`node.refundBalance`, the contract's `nodeRefundBalance`). It grows when
+ * someone other than the owner pays out the minipool's rewards: the node's
+ * share stays in the minipool as a refund. `minipool/status` reads it for every
+ * minipool; `get-distribute-balance-details` reports it only for minipools on
+ * contract version 3 or newer.
+ */
+export const minipoolRefund = (mp: Pick<MinipoolDetails, "node">): bigint => toBigInt(mp.node?.refundBalance) ?? 0n;
+
+/**
+ * Smartnode's own rule for `rocketpool minipool refund` (`RefundAvailable`,
+ * rocketpool/api/minipool/utils.go at v1.24.2): a refund, and enough ETH in the
+ * minipool to pay it.
+ */
+export function refundClaimable(mp: Pick<MinipoolDetails, "node" | "balances" | "refundAvailable" | "finalised">): boolean {
+  const refund = minipoolRefund(mp);
+  const balance = toBigInt(mp.balances?.eth) ?? 0n;
+  return !mp.finalised && mp.refundAvailable === true && refund > 0n && balance >= refund;
+}
+
+/** How the owner gets a minipool's refund, in one sentence, for the button the card shows. */
+export function refundHowTo(v: Pick<MinipoolView, "canDistribute" | "canClaimRefund" | "canClose">): string {
+  if (v.canClose) return "You get it when you close the minipool.";
+  if (v.canDistribute) return "You get it with Pay out rewards.";
+  if (v.canClaimRefund) return "You get it with Claim refund.";
+  return "You get it with Pay out rewards, or when the minipool is closed.";
 }
 
 /** Minipools still to show: closed ones go to the end. */

@@ -4,10 +4,11 @@ import type {
   CanDistributeMegapool,
   MegapoolPendingRewards,
   MinipoolDistributeDetailsResponse,
+  MinipoolStatusResponse,
   NodeStatus,
   RewardsInfo,
 } from "../../../api/models";
-import { blockedIntervals, claimItems, claimTotals, ethOnBehalfElsewhere, floatEthToWei, payoutAddress } from "../model";
+import { blockedIntervals, claimItems, claimTotals, ethOnBehalfElsewhere, floatEthToWei, payoutAddress, refundOnlyMinipool } from "../model";
 
 const ETH = 10n ** 18n;
 const milli = (n: number) => (BigInt(n) * ETH) / 10_000n; // n / 10,000 ETH
@@ -21,6 +22,7 @@ const inputs = (name: keyof typeof SCENARIOS) => {
     megapoolPending: get<MegapoolPendingRewards>("megapool/pending-rewards"),
     feeDistributor: get<CanDistributeFeeDistributor>("node/can-distribute"),
     minipoolBalances: get<MinipoolDistributeDetailsResponse>("minipool/get-distribute-balance-details")?.details,
+    minipools: get<MinipoolStatusResponse>("minipool/status")?.minipools,
   };
 };
 
@@ -66,6 +68,29 @@ describe("claim everything, as Smartnode's claim-all composes it", () => {
       minipoolBalances: base.minipoolBalances!.map((d) => ({ ...d, canDistribute: false })),
     });
     expect(items).toEqual([]);
+  });
+
+  it("minipool refunds: in the minipool's payout where it can be paid out, else claimed on its own", () => {
+    const items = claimItems(inputs("minipool-refund"));
+    expect(items.map((i) => i.id)).toEqual([`minipool:${DEMO.minipoolF.toLowerCase()}`, `minipool-refund:${DEMO.minipoolG.toLowerCase()}`]);
+    expect(items[0]).toMatchObject({ kind: "minipool", eth: milli(141) + milli(523), refund: milli(523) });
+    expect(items[0].text).toMatch(/plus any refund/);
+    expect(items[1]).toMatchObject({ kind: "minipool-refund", title: "Minipool refund", eth: milli(611), refund: milli(611), address: DEMO.minipoolG });
+    expect(claimTotals(items).eth).toBe(milli(141) + milli(523) + milli(611));
+  });
+
+  it("minipool refunds: not on their own while the status read is missing, or for a minipool to close", () => {
+    const base = inputs("minipool-refund");
+    expect(claimItems({ ...base, minipools: undefined }).map((i) => i.kind)).toEqual(["minipool"]);
+    const g = base.minipools![1];
+    expect(refundOnlyMinipool(g, base.minipoolBalances)).toBe(true);
+    expect(refundOnlyMinipool(g, undefined)).toBe(false);
+    // Holding its exit ETH (8 ETH or more besides the refund): closing pays the refund too.
+    expect(refundOnlyMinipool({ ...g, balances: { ...g.balances, eth: "8061100000000000000" } }, base.minipoolBalances)).toBe(false);
+    expect(refundOnlyMinipool({ ...g, status: { ...g.status, status: "Dissolved" } }, base.minipoolBalances)).toBe(false);
+    expect(refundOnlyMinipool({ ...g, finalised: true }, base.minipoolBalances)).toBe(false);
+    // Pay out works for F: no second item for its refund.
+    expect(refundOnlyMinipool(base.minipools![0], base.minipoolBalances)).toBe(false);
   });
 
   it("converts Smartnode's float share to wei, rounded down", () => {

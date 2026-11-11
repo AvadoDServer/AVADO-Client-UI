@@ -31,6 +31,9 @@ const DIFFERENT_RPL_ADDRESS: Reasons[number] = [
 /** The rules, by `can-X` route. Routes without a flag (claim-rewards, approval gas) have no entry. */
 export const CAN_RULES = {
   "minipool/can-exit": blockedUnless("canExit", [["invalidStatus", "Only a minipool that is staking can be exited."]]),
+  "minipool/can-refund": blockedUnless("canRefund", [
+    ["insufficientRefundBalance", "There is no refund waiting in this minipool right now."],
+  ], "This refund can't be claimed right now. Try again later."),
   "megapool/can-exit-validator": blockedUnless("canExit", [["invalidStatus", "Only a validator that is staking can be exited."]]),
   "megapool/can-exit-queue": blockedUnless("canExit", [], "This validator can't leave the queue right now."),
   "megapool/can-distribute": blockedUnless("canDistribute", [

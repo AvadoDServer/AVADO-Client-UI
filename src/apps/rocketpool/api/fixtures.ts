@@ -23,6 +23,10 @@
  *  - `exits`: winding down: a minipool exited and ready to close, one still
  *    staking; a megapool with validators exiting, locked and queued, a debt,
  *    a refund and credit; RPL unstaking.
+ *  - `minipool-refund`: two minipools holding a refund (someone else paid out
+ *    their rewards, so the node's share waits in the minipool): one whose
+ *    rewards can be paid out (Pay out pays the refund too), and one on an older
+ *    contract whose rewards can't, so only Claim refund gets it out.
  *
  * Big integers follow the wire format: a number when it is a safe integer,
  * else a string with the exact digits.
@@ -89,7 +93,8 @@ export type MockScenarioName =
   | "new-node"
   | "keys-attention"
   | "daemon-failed"
-  | "exits";
+  | "exits"
+  | "minipool-refund";
 
 export const MOCK_SCENARIOS: readonly MockScenarioName[] = [
   "minipool",
@@ -101,6 +106,7 @@ export const MOCK_SCENARIOS: readonly MockScenarioName[] = [
   "keys-attention",
   "daemon-failed",
   "exits",
+  "minipool-refund",
 ];
 
 export interface MockScenario {
@@ -142,6 +148,10 @@ export const DEMO = {
   megaPubkey3: pubkey(8),
   megaPubkey4: pubkey(9),
   megaPubkey5: pubkey(10),
+  minipoolF: address(15),
+  minipoolG: address(16),
+  pubkeyF: pubkey(11),
+  pubkeyG: pubkey(12),
 } as const;
 
 const NOW = "2026-09-23T10:00:00Z";
@@ -603,16 +613,19 @@ export const can = (flags: Record<string, unknown>, gasLimits: { estimated: numb
   gasLimits,
 });
 
-function closeDetail(mp: MinipoolDetails, o: { canClose: boolean; beaconState: string; balance?: string; nodeShare?: string; distributed?: boolean }) {
+function closeDetail(
+  mp: MinipoolDetails,
+  o: { canClose: boolean; beaconState: string; balance?: string; nodeShare?: string; distributed?: boolean; refund?: string; version?: number },
+) {
   return {
     address: mp.address,
     isFinalized: false,
     minipoolStatus: mp.status.status,
-    minipoolVersion: 3,
+    minipoolVersion: o.version ?? 3,
     distributed: o.distributed ?? false,
     canClose: o.canClose,
     balance: eth(o.balance ?? "0.0412"),
-    refund: 0,
+    refund: eth(o.refund ?? "0"),
     userDepositBalance: mp.user?.depositBalance ?? 0,
     beaconState: o.beaconState,
     nodeShare: eth(o.nodeShare ?? "0"),
@@ -620,13 +633,13 @@ function closeDetail(mp: MinipoolDetails, o: { canClose: boolean; beaconState: s
   };
 }
 
-function distributeDetail(mp: MinipoolDetails, o: { canDistribute: boolean; balance?: string; nodeShare?: string }) {
+function distributeDetail(mp: MinipoolDetails, o: { canDistribute: boolean; balance?: string; nodeShare?: string; refund?: string; version?: number }) {
   return {
     address: mp.address,
     balance: eth(o.balance ?? "0.0412"),
-    refund: 0,
+    refund: eth(o.refund ?? "0"),
     nodeShareOfBalance: eth(o.nodeShare ?? "0.0187"),
-    minipoolVersion: 3,
+    minipoolVersion: o.version ?? 3,
     status: mp.status.status,
     isFinalized: false,
     canDistribute: o.canDistribute,
@@ -1072,6 +1085,82 @@ const exitsNode: MockScenario = {
   ],
 };
 
+/*
+ * Minipools holding a refund. Someone other than the owner paid out their
+ * rewards (anyone may, below 8 ETH): the rETH stakers got their share, and the
+ * node's share stayed in the minipool as a refund (`nodeRefundBalance`).
+ * F: Pay out rewards works and pays the refund too.
+ * G: an older contract (version 2). Smartnode can't pay out its rewards
+ *    (canDistribute false, and it reports the refund there as 0), so the
+ *    refund comes out with Claim refund (`minipool/refund`).
+ */
+const MINIPOOL_F: MinipoolDetails = {
+  ...minipool(DEMO.minipoolF, DEMO.pubkeyF, { index: "523411", bond: "8", fee: 0.14, balance: "32.0235", nodeShare: "8.0101" }),
+  node: { address: DEMO.nodeAddress, fee: 0.14, depositBalance: eth("8"), refundBalance: eth("0.0523"), depositAssigned: true },
+  balances: { eth: eth("0.0835"), reth: 0, rpl: 0, fixedSupplyRpl: 0 },
+  nodeShareOfETHBalance: eth("0.0141"),
+  refundAvailable: true,
+};
+const MINIPOOL_G: MinipoolDetails = {
+  ...minipool(DEMO.minipoolG, DEMO.pubkeyG, { index: "302118", bond: "16", fee: 0.15, balance: "32.0198", nodeShare: "16.0099" }),
+  node: { address: DEMO.nodeAddress, fee: 0.15, depositBalance: eth("16"), refundBalance: eth("0.0611"), depositAssigned: true },
+  balances: { eth: eth("0.0907"), reth: 0, rpl: 0, fixedSupplyRpl: 0 },
+  nodeShareOfETHBalance: eth("0.0171"),
+  refundAvailable: true,
+  delegate: DEMO.oldDelegate,
+  effectiveDelegate: DEMO.oldDelegate,
+};
+
+const minipoolRefundNode: MockScenario = {
+  name: "minipool-refund",
+  title: "Minipools with a refund",
+  avado: baseAvado,
+  reconcile: reconcileView({
+    state: "ok",
+    client: NIMBUS,
+    keys: [
+      demoKey(DEMO.pubkeyF, "minipool", DEMO.minipoolF, "loaded", "smoothing-pool", DEMO.smoothingPool),
+      demoKey(DEMO.pubkeyG, "minipool", DEMO.minipoolG, "loaded", "smoothing-pool", DEMO.smoothingPool),
+    ],
+  }),
+  reads: {
+    ...sharedReads,
+    "wallet/status": walletStatus(true),
+    "node/status": nodeStatus({
+      withdrawal: DEMO.coldWallet,
+      eth: "0.2416",
+      rpl: "0",
+      legacyRpl: "1120",
+      minipools: [MINIPOOL_F, MINIPOOL_G],
+      megapool: NO_MEGAPOOL,
+      smoothingPool: true,
+      unclaimed: "0",
+      extra: { minipoolCounts: { ...counts(2), refundAvailable: 2 } },
+    }),
+    "minipool/status": minipoolStatus([MINIPOOL_F, MINIPOOL_G]),
+    "megapool/status": megapoolStatus(NO_MEGAPOOL),
+    "node/get-rewards-info": rewardsInfo({ minipools: 2, megapool: 0, stake: "1120", unclaimed: [] }),
+    "node/get-smoothing-pool-registration-status": spStatus(true),
+    "node/can-deposit": canDeposit("0.2416", false),
+    ...walletReads({}),
+    "minipool/get-minipool-close-details-for-node": closeDetails([
+      closeDetail(MINIPOOL_F, { canClose: false, beaconState: "active_ongoing", balance: "0.0835", refund: "0.0523" }),
+      closeDetail(MINIPOOL_G, { canClose: false, beaconState: "active_ongoing", balance: "0.0907", refund: "0.0611", version: 2 }),
+    ]),
+    "minipool/get-distribute-balance-details": {
+      status: "success",
+      error: "",
+      details: [
+        distributeDetail(MINIPOOL_F, { canDistribute: true, balance: "0.0835", nodeShare: "0.0141", refund: "0.0523" }),
+        distributeDetail(MINIPOOL_G, { canDistribute: false, balance: "0.0907", nodeShare: "0", version: 2 }),
+      ],
+    },
+    "minipool/can-refund": can({ canRefund: true, insufficientRefundBalance: false }, { estimated: 58_000, safe: 87_000 }),
+    "megapool/can-distribute": can({ canDistribute: false, megapoolNotDeployed: true, lastDistributionTime: 0, lockedValidatorCount: 0, exitingValidatorCount: 0 }, { estimated: 0, safe: 0 }),
+  },
+  logLines: NORMAL_LOG,
+};
+
 export const SCENARIOS: Record<MockScenarioName, MockScenario> = {
   minipool: minipoolNode,
   mixed: mixedNode,
@@ -1082,6 +1171,7 @@ export const SCENARIOS: Record<MockScenarioName, MockScenario> = {
   "keys-attention": keysAttentionNode,
   "daemon-failed": daemonFailed,
   exits: exitsNode,
+  "minipool-refund": minipoolRefundNode,
 };
 
 export const isScenarioName = (v: unknown): v is MockScenarioName =>
